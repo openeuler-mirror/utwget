@@ -586,3 +586,13 @@ pub struct HstsConfig {
     /// HSTS cache file path (--hsts-file)
     pub file: Option<PathBuf>,
 }
+
+#[cfg(feature = "hsts")]
+impl Default for HstsConfig {
+    fn default() -> Self {
+        HstsConfig {
+            enabled: true,
+            file: None,
+        }
+    }
+}
