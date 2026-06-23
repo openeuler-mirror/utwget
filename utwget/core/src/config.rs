@@ -661,3 +661,15 @@ impl Default for ProxyConfig {
         }
     }
 }
+
+/// Progress display configuration.
+///
+/// Contains settings for progress bar style and behavior.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ProgressConfig {
+    /// Progress display style (--progress)
+    pub style: ProgressStyle,
+    /// Force non-scrolling progress display (--no-scroll)
+    pub force_noscroll: bool,
+}
