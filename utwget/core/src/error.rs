@@ -221,3 +221,34 @@ pub enum FtpError {
     #[error("FTP I/O error: {0}")]
     Io(#[from] std::io::Error),
 }
+
+/// Configuration errors.
+///
+/// Represents errors that can occur when parsing or applying
+/// configuration settings.
+#[derive(Debug, thiserror::Error)]
+pub enum ConfigError {
+    /// Unknown configuration option.
+    #[error("unknown config option: {0}")]
+    UnknownOption(String),
+
+    /// Invalid value for a configuration option.
+    #[error("invalid value for '{option}': {reason}")]
+    InvalidValue { option: String, reason: String },
+
+    /// Error reading configuration file.
+    #[error("config file error at {path}: {reason}")]
+    FileError { path: PathBuf, reason: String },
+
+    /// Failed to read configuration file.
+    #[error("cannot read config file: {0}")]
+    ReadFailed(#[source] std::io::Error),
+
+    /// Duplicate configuration option.
+    #[error("duplicate config option: {0}")]
+    DuplicateOption(String),
+
+    /// Required option is missing.
+    #[error("missing required option: {0}")]
+    MissingOption(String),
+}
