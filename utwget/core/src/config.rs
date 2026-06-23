@@ -562,3 +562,13 @@ pub struct MetalinkConfig {
     /// Input Metalink file path (--input-metalink)
     pub input_file: Option<PathBuf>,
 }
+
+impl Default for MetalinkConfig {
+    fn default() -> Self {
+        MetalinkConfig {
+            enabled: false,
+            over_http: false,
+            input_file: None,
+        }
+    }
+}
