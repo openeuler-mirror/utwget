@@ -472,3 +472,32 @@ pub struct RecursiveConfig {
     /// Respect robots.txt rules (--use-robots)
     pub use_robots: bool,
 }
+
+impl Default for RecursiveConfig {
+    fn default() -> Self {
+        RecursiveConfig {
+            enabled: false,
+            max_level: Some(5),
+            span_hosts: false,
+            no_parent: false,
+            relative_only: false,
+            follow_tags: vec![
+                "a".into(), "area".into(), "audio".into(), "base".into(),
+                "body".into(), "embed".into(), "frame".into(), "iframe".into(),
+                "img".into(), "input".into(), "link".into(), "object".into(),
+                "script".into(), "source".into(), "track".into(), "video".into(),
+            ],
+            ignore_tags: Vec::new(),
+            accept_patterns: Vec::new(),
+            reject_patterns: Vec::new(),
+            accept_regex: None,
+            reject_regex: None,
+            domains: Vec::new(),
+            exclude_domains: Vec::new(),
+            include_directories: Vec::new(),
+            exclude_directories: Vec::new(),
+            spider: false,
+            use_robots: true,
+        }
+    }
+}
