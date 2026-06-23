@@ -427,3 +427,21 @@ pub struct MetalinkConfig {
     /// Input Metalink file path (--input-metalink)
     pub input_file: Option<PathBuf>,
 }
+
+
+/// Cookie handling configuration.
+///
+/// Contains settings for cookie persistence, including input/output files
+/// and session cookie handling.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CookieConfig {
+    /// Enable cookie support (--cookies)
+    pub enabled: bool,
+    /// Cookie input file path (--load-cookies)
+    pub input_file: Option<PathBuf>,
+    /// Cookie output file path (--save-cookies)
+    pub output_file: Option<PathBuf>,
+    /// Keep session cookies when saving (--keep-session-cookies)
+    pub keep_session_cookies: bool,
+}
