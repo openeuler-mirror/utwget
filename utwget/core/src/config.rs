@@ -613,3 +613,14 @@ pub struct CookieConfig {
     /// Keep session cookies when saving (--keep-session-cookies)
     pub keep_session_cookies: bool,
 }
+
+impl Default for CookieConfig {
+    fn default() -> Self {
+        CookieConfig {
+            enabled: true,
+            input_file: None,
+            output_file: None,
+            keep_session_cookies: false,
+        }
+    }
+}
