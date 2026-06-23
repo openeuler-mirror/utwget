@@ -131,3 +131,58 @@ pub enum WgetError {
 
 /// Result type alias for wget operations.
 pub type Result<T> = std::result::Result<T, WgetError>;
+
+/// TLS/SSL related errors.
+///
+/// Represents errors that can occur during TLS handshake, certificate
+/// verification, or secure communication.
+#[derive(Debug, thiserror::Error)]
+pub enum TlsError {
+    /// TLS handshake failed.
+    #[error("TLS handshake failed: {0}")]
+    HandshakeFailed(String),
+
+    /// Certificate validation error.
+    #[error("certificate error: {0}")]
+    CertError(String),
+
+    /// Invalid certificate file.
+    #[error("invalid certificate file: {0}")]
+    InvalidCertFile(PathBuf),
+
+    /// Invalid private key file.
+    #[error("invalid private key file: {0}")]
+    InvalidKeyFile(PathBuf),
+
+    /// Unsupported TLS protocol version.
+    #[error("unsupported protocol version: {0}")]
+    UnsupportedProtocol(String),
+
+    /// Cipher suite negotiation error.
+    #[error("cipher suite error: {0}")]
+    CipherError(String),
+
+    /// Certificate hostname mismatch.
+    #[error("hostname mismatch: expected {expected}, got {got}")]
+    HostnameMismatch { expected: String, got: String },
+
+    /// Certificate has expired.
+    #[error("certificate expired")]
+    CertExpired,
+
+    /// Certificate is not yet valid.
+    #[error("certificate not yet valid")]
+    CertNotYetValid,
+
+    /// Self-signed certificate encountered.
+    #[error("self-signed certificate")]
+    SelfSigned,
+
+    /// Certificate signed by unknown authority.
+    #[error("unknown authority: {0}")]
+    UnknownAuthority(String),
+
+    /// TLS I/O error.
+    #[error("TLS I/O error: {0}")]
+    Io(#[from] std::io::Error),
+}
