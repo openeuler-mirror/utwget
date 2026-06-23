@@ -501,3 +501,32 @@ impl Default for RecursiveConfig {
         }
     }
 }
+
+/// WARC (Web ARChive) configuration.
+///
+/// Contains settings for creating WARC archive files during downloads,
+/// including compression, digests, and CDX indexing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WarcConfig {
+    /// Enable WARC file creation (--warc-file)
+    pub enabled: bool,
+    /// Base filename for WARC files
+    pub filename: Option<String>,
+    /// Temporary directory for WARC writing (--warc-temp-dir)
+    pub tempdir: Option<PathBuf>,
+    /// Maximum WARC file size in bytes (--warc-maxsize)
+    pub max_size: Option<u64>,
+    /// Enable WARC compression (--warc-compression)
+    pub compression: bool,
+    /// Enable digest computation (--warc-digests)
+    pub digests: bool,
+    /// Enable CDX index file creation (--warc-cdx)
+    pub cdx: bool,
+    /// Keep log file in WARC (--warc-keep-log)
+    pub keep_log: bool,
+    /// Additional WARC headers (--warc-header)
+    pub user_headers: Vec<String>,
+    /// CDX deduplication filename (--warc-dedup)
+    pub cdx_dedup_filename: Option<String>,
+}
