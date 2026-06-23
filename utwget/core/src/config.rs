@@ -304,3 +304,110 @@ pub struct HttpConfig {
     /// Force HTTP/1.1 usage (--http1.1)
     pub force_http1_1: bool,
 }
+
+impl Default for HttpConfig {
+    fn default() -> Self {
+        HttpConfig {
+            user: None,
+            password: None,
+            headers: Vec::new(),
+            keep_alive: true,
+            method: None,
+            post_data: None,
+            post_file: None,
+            body_data: None,
+            body_file: None,
+            user_agent: None,
+            referer: None,
+            save_headers: false,
+            content_on_error: false,
+            https_only: false,
+            default_page: "index.html".to_string(),
+            force_http2: false,
+            force_http1_1: false,
+        }
+    }
+}
+
+/// FTP protocol configuration.
+///
+/// Contains settings specific to FTP downloads, including authentication,
+/// passive/active mode, and FTPS (FTP over SSL/TLS) options.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FtpConfig {
+    /// FTP authentication username (--ftp-user)
+    pub user: Option<String>,
+    /// FTP authentication password (--ftp-password)
+    pub password: Option<String>,
+    /// Use passive FTP mode (--passive-ftp)
+    pub passive: bool,
+    /// Enable globbing for FTP URLs (--glob)
+    pub glob: bool,
+    /// Retrieve symbolic links as files (--retr-symlinks)
+    pub retrieve_symlinks: bool,
+    /// Follow FTP links from HTML documents (--follow-ftp)
+    pub follow_ftp: bool,
+    /// Remove .listing files after download (--remove-listing)
+    pub remove_listing: bool,
+    /// Generate HTML directory listings (--htmlify)
+    pub htmlify: bool,
+    /// Use implicit FTPS (port 990)
+    pub ftps_implicit: bool,
+    /// Resume SSL/TLS session for data connection
+    pub ftps_resume_ssl: bool,
+    /// Use cleartext for data connection
+    pub ftps_clear_data: bool,
+    /// Fallback to FTP if FTPS not supported
+    pub ftps_fallback: bool,
+}
+
+impl Default for FtpConfig {
+    fn default() -> Self {
+        FtpConfig {
+            user: None,
+            password: None,
+            passive: true,
+            glob: true,
+            retrieve_symlinks: false,
+            follow_ftp: false,
+            remove_listing: false,
+            htmlify: true,
+            ftps_implicit: false,
+            ftps_resume_ssl: false,
+            ftps_clear_data: false,
+            ftps_fallback: false,
+        }
+    }
+}
+
+/// TLS/SSL security configuration.
+///
+/// Contains settings for secure connections, including certificate verification,
+/// client certificates, and protocol version selection.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TlsConfig {
+    /// Secure protocol version to use (--secure-protocol)
+    pub secure_protocol: SecureProtocol,
+    /// Certificate verification mode (--check-certificate)
+    pub check_certificate: CheckCertMode,
+    /// Client certificate file path (--certificate)
+    pub cert_file: Option<PathBuf>,
+    /// Private key file path (--private-key)
+    pub private_key: Option<PathBuf>,
+    /// Client certificate file type (--certificate-type)
+    pub cert_type: KeyFileType,
+    /// Private key file type (--private-key-type)
+    pub private_key_type: KeyFileType,
+    /// CA certificates directory (--ca-directory)
+    pub ca_directory: Option<PathBuf>,
+    /// CA certificate bundle file (--ca-certificate)
+    pub ca_cert: Option<PathBuf>,
+    /// Certificate revocation list file (--crl-file)
+    pub crl_file: Option<PathBuf>,
+    /// Pinned public key for certificate verification (--pinnedpubkey)
+    pub pinned_pubkey: Option<String>,
+    /// Cipher suite specification (--ciphers)
+    pub ciphers: Option<String>,
+}
