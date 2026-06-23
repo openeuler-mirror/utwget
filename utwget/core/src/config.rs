@@ -673,3 +673,12 @@ pub struct ProgressConfig {
     /// Force non-scrolling progress display (--no-scroll)
     pub force_noscroll: bool,
 }
+
+impl Default for ProgressConfig {
+    fn default() -> Self {
+        ProgressConfig {
+            style: ProgressStyle::default(),
+            force_noscroll: false,
+        }
+    }
+}
