@@ -490,3 +490,9 @@ impl CookieJar {
         self.cookies.is_empty()
     }
 }
+
+impl Default for CookieJar {
+    fn default() -> Self {
+        Self::new()
+    }
+}
