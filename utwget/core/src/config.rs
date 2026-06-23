@@ -710,3 +710,17 @@ impl Default for FilenameRestrictions {
         }
     }
 }
+
+/// IRI (Internationalized Resource Identifier) configuration.
+///
+/// Contains settings for handling internationalized URLs with non-ASCII characters.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct IriConfig {
+    /// Enable IRI support (--iri)
+    pub enabled: bool,
+    /// Remote server encoding (--remote-encoding)
+    pub remote_encoding: Option<String>,
+    /// Local encoding for filenames (--local-encoding)
+    pub locale: Option<String>,
+}
