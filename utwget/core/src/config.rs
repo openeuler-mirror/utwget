@@ -682,3 +682,20 @@ impl Default for ProgressConfig {
         }
     }
 }
+
+/// Filename restriction configuration.
+///
+/// Contains settings for restricting characters in downloaded filenames
+/// to ensure compatibility with different operating systems.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FilenameRestrictions {
+    /// OS-specific filename restrictions (--restrict-file-names)
+    pub restrict_os: RestrictOs,
+    /// Restrict control characters in filenames
+    pub restrict_ctrl_chars: bool,
+    /// Restrict non-ASCII characters in filenames
+    pub restrict_nonascii: bool,
+    /// Case restriction mode for filenames
+    pub case_restriction: CaseRestriction,
+}
