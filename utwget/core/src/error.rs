@@ -128,3 +128,6 @@ pub enum WgetError {
     #[error("{0}")]
     Other(String),
 }
+
+/// Result type alias for wget operations.
+pub type Result<T> = std::result::Result<T, WgetError>;
