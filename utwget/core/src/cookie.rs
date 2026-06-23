@@ -496,3 +496,31 @@ impl Default for CookieJar {
         Self::new()
     }
 }
+
+/// Checks if a request path matches a cookie's path attribute.
+///
+/// Implements the path matching rules from RFC 6265 Section 5.1.4.
+///
+/// # Arguments
+///
+/// * `request_path` - The request path to check.
+/// * `cookie_path` - The cookie's path attribute.
+///
+/// # Returns
+///
+/// `true` if the paths match, `false` otherwise.
+fn path_matches(request_path: &str, cookie_path: &str) -> bool {
+    if cookie_path.is_empty() || cookie_path == "/" {
+        return true;
+    }
+    if request_path == cookie_path {
+        return true;
+    }
+    if request_path.starts_with(cookie_path)
+        && (cookie_path.ends_with('/')
+            || request_path[cookie_path.len()..].starts_with('/'))
+    {
+        return true;
+    }
+    false
+}
