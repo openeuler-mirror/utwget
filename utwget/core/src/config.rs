@@ -724,3 +724,13 @@ pub struct IriConfig {
     /// Local encoding for filenames (--local-encoding)
     pub locale: Option<String>,
 }
+
+impl Default for IriConfig {
+    fn default() -> Self {
+        IriConfig {
+            enabled: true,
+            remote_encoding: None,
+            locale: None,
+        }
+    }
+}
