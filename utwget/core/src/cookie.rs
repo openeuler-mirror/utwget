@@ -89,3 +89,13 @@ impl Cookie {
         false
     }
 }
+
+/// A container for storing and managing HTTP cookies.
+///
+/// Provides functionality for parsing Set-Cookie headers, matching cookies
+/// to requests, and persisting cookies to/from files in Netscape format.
+#[derive(Debug, Clone)]
+pub struct CookieJar {
+    /// Internal storage keyed by (domain, path, name) tuple.
+    cookies: HashMap<(String, String, String), Cookie>,
+}
