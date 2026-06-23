@@ -572,3 +572,17 @@ impl Default for MetalinkConfig {
         }
     }
 }
+
+/// HSTS (HTTP Strict Transport Security) configuration.
+///
+/// Contains settings for HSTS caching, which remembers sites that
+/// should only be accessed via HTTPS.
+#[cfg(feature = "hsts")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct HstsConfig {
+    /// Enable HSTS support (--hsts)
+    pub enabled: bool,
+    /// HSTS cache file path (--hsts-file)
+    pub file: Option<PathBuf>,
+}
