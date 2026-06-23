@@ -530,3 +530,20 @@ pub struct WarcConfig {
     /// CDX deduplication filename (--warc-dedup)
     pub cdx_dedup_filename: Option<String>,
 }
+
+impl Default for WarcConfig {
+    fn default() -> Self {
+        WarcConfig {
+            enabled: false,
+            filename: None,
+            tempdir: None,
+            max_size: None,
+            compression: false,
+            digests: true,
+            cdx: false,
+            keep_log: false,
+            user_headers: Vec::new(),
+            cdx_dedup_filename: None,
+        }
+    }
+}
