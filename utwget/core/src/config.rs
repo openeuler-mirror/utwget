@@ -412,36 +412,63 @@ pub struct TlsConfig {
     pub ciphers: Option<String>,
 }
 
-
-/// Metalink configuration.
-///
-/// Contains settings for Metalink download support, which enables
-/// downloading from multiple mirrors with automatic verification.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct MetalinkConfig {
-    /// Enable Metalink processing (--metalink)
-    pub enabled: bool,
-    /// Use Metalink over HTTP headers (--metalink-over-http)
-    pub over_http: bool,
-    /// Input Metalink file path (--input-metalink)
-    pub input_file: Option<PathBuf>,
+impl Default for TlsConfig {
+    fn default() -> Self {
+        TlsConfig {
+            secure_protocol: SecureProtocol::Auto,
+            check_certificate: CheckCertMode::On,
+            cert_file: None,
+            private_key: None,
+            cert_type: KeyFileType::Pem,
+            private_key_type: KeyFileType::Pem,
+            ca_directory: None,
+            ca_cert: None,
+            crl_file: None,
+            pinned_pubkey: None,
+            ciphers: None,
+        }
+    }
 }
 
-
-/// Cookie handling configuration.
+/// Recursive download configuration.
 ///
-/// Contains settings for cookie persistence, including input/output files
-/// and session cookie handling.
+/// Contains settings for recursive site downloading, including depth limits,
+/// URL filtering, and robots.txt handling.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
-pub struct CookieConfig {
-    /// Enable cookie support (--cookies)
+pub struct RecursiveConfig {
+    /// Enable recursive downloading (--recursive)
     pub enabled: bool,
-    /// Cookie input file path (--load-cookies)
-    pub input_file: Option<PathBuf>,
-    /// Cookie output file path (--save-cookies)
-    pub output_file: Option<PathBuf>,
-    /// Keep session cookies when saving (--keep-session-cookies)
-    pub keep_session_cookies: bool,
+    /// Maximum recursion depth (--level)
+    pub max_level: Option<u32>,
+    /// Span to other hosts (--span-hosts)
+    pub span_hosts: bool,
+    /// Don't ascend to parent directory (--no-parent)
+    pub no_parent: bool,
+    /// Only follow relative links (--relative)
+    pub relative_only: bool,
+    /// HTML tags whose links to follow (--follow-tags)
+    pub follow_tags: Vec<String>,
+    /// HTML tags whose links to ignore (--ignore-tags)
+    pub ignore_tags: Vec<String>,
+    /// Filename patterns to accept (--accept)
+    pub accept_patterns: Vec<String>,
+    /// Filename patterns to reject (--reject)
+    pub reject_patterns: Vec<String>,
+    /// Regex pattern to accept URLs (--accept-regex)
+    pub accept_regex: Option<String>,
+    /// Regex pattern to reject URLs (--reject-regex)
+    pub reject_regex: Option<String>,
+    /// Domains to follow (--domains)
+    pub domains: Vec<String>,
+    /// Domains to exclude (--exclude-domains)
+    pub exclude_domains: Vec<String>,
+    /// Directory patterns to include (--include-directories)
+    pub include_directories: Vec<String>,
+    /// Directory patterns to exclude (--exclude-directories)
+    pub exclude_directories: Vec<String>,
+    /// Spider mode - don't download, just check (--spider)
+    pub spider: bool,
+    /// Respect robots.txt rules (--use-robots)
+    pub use_robots: bool,
 }
