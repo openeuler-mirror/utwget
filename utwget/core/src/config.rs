@@ -647,3 +647,17 @@ pub struct ProxyConfig {
     /// Proxy authentication password (--proxy-password)
     pub proxy_password: Option<String>,
 }
+
+impl Default for ProxyConfig {
+    fn default() -> Self {
+        ProxyConfig {
+            use_proxy: true,
+            http_proxy: None,
+            https_proxy: None,
+            ftp_proxy: None,
+            no_proxy: Vec::new(),
+            proxy_user: None,
+            proxy_password: None,
+        }
+    }
+}
