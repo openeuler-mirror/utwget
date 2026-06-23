@@ -524,3 +524,33 @@ fn path_matches(request_path: &str, cookie_path: &str) -> bool {
     }
     false
 }
+
+/// Parses a cookie expires date string.
+///
+/// Supports multiple date formats commonly used in Set-Cookie headers,
+/// as specified in RFC 6265 and historical practice.
+///
+/// # Arguments
+///
+/// * `s` - The date string to parse.
+///
+/// # Returns
+///
+/// `Ok(DateTime)` if parsing succeeds, `Err(())` otherwise.
+fn parse_cookie_expires(s: &str) -> Result<DateTime<Utc>, ()> {
+    let formats = [
+        "%a, %d %b %Y %H:%M:%S GMT",
+        "%a, %d-%b-%Y %H:%M:%S GMT",
+        "%A, %d-%b-%y %H:%M:%S GMT",
+        "%a %b %d %H:%M:%S %Y",
+        "%a, %d %b %Y %H:%M:%S",
+        "%d %b %Y %H:%M:%S",
+        "%Y-%m-%d %H:%M:%S",
+    ];
+    for fmt in &formats {
+        if let Ok(dt) = DateTime::parse_from_str(s, fmt) {
+            return Ok(dt.with_timezone(&Utc));
+        }
+    }
+    Err(())
+}
