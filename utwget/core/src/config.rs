@@ -699,3 +699,14 @@ pub struct FilenameRestrictions {
     /// Case restriction mode for filenames
     pub case_restriction: CaseRestriction,
 }
+
+impl Default for FilenameRestrictions {
+    fn default() -> Self {
+        FilenameRestrictions {
+            restrict_os: RestrictOs::default(),
+            restrict_ctrl_chars: false,
+            restrict_nonascii: false,
+            case_restriction: CaseRestriction::None,
+        }
+    }
+}
