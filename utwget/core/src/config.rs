@@ -624,3 +624,26 @@ impl Default for CookieConfig {
         }
     }
 }
+
+/// Proxy configuration.
+///
+/// Contains settings for HTTP, HTTPS, and FTP proxies,
+/// including authentication and proxy bypass rules.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ProxyConfig {
+    /// Enable proxy usage (--use-proxy)
+    pub use_proxy: bool,
+    /// HTTP proxy URL (--http-proxy)
+    pub http_proxy: Option<String>,
+    /// HTTPS proxy URL (--https-proxy)
+    pub https_proxy: Option<String>,
+    /// FTP proxy URL (--ftp-proxy)
+    pub ftp_proxy: Option<String>,
+    /// Hosts to bypass proxy (--no-proxy)
+    pub no_proxy: Vec<String>,
+    /// Proxy authentication username (--proxy-user)
+    pub proxy_user: Option<String>,
+    /// Proxy authentication password (--proxy-password)
+    pub proxy_password: Option<String>,
+}
