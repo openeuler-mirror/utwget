@@ -1,3 +1,33 @@
+//! Configuration types and settings for utwget.
+//!
+//! This module defines all configuration structures used throughout the
+//! application, including HTTP, FTP, TLS, proxy, and recursive download settings.
+
+use crate::error::ConfigError;
+use crate::types::{
+    AddressFamily, CaseRestriction, CheckCertMode, CompressionMode, Credentials,
+    HttpMethod, KeyFileType, ProgressStyle, RestrictOs, Scheme, SecureProtocol,
+};
+use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+/// Main configuration structure for utwget.
+///
+/// This struct holds all settings that control the behavior of the downloader,
+/// including network settings, authentication, proxy configuration, and
+/// recursive download options.
+///
+/// # Example
+///
+/// ```
+/// use ut_core::Config;
+///
+/// let config = Config::default();
+/// assert_eq!(config.tries, 20);
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Config {
     /// Verbosity level (-v, -q options)
     pub verbose: i32,
@@ -145,4 +175,132 @@ pub struct Config {
     pub cut_dirs: u32,
     /// Log rejected URLs to file (--reject-log)
     pub reject_log: Option<PathBuf>,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            verbose: -1,
+            quiet: false,
+            tries: 20,
+            retry_connrefused: false,
+            retry_on_host_error: false,
+            retry_on_http_error: Vec::new(),
+            background: false,
+            debug: false,
+            server_response: false,
+
+            output_document: None,
+            input_filename: None,
+            force_html: false,
+            dir_prefix: None,
+            noclobber: false,
+            unlink: false,
+            backups: None,
+            continue_download: false,
+            start_position: None,
+            timestamping: false,
+            if_modified_since: true,
+            use_server_timestamps: true,
+            quota: None,
+            limit_rate: None,
+            wait: None,
+            concurrent_downloads: 1,
+            wait_retry: None,
+            random_wait: false,
+            delete_after: false,
+            content_disposition: false,
+            auth_without_challenge: false,
+            use_netrc: true, // Default: use .netrc
+
+            http: HttpConfig::default(),
+            ftp: FtpConfig::default(),
+            tls: TlsConfig::default(),
+            recursive: RecursiveConfig::default(),
+            warc: WarcConfig::default(),
+            metalink: MetalinkConfig::default(),
+            #[cfg(feature = "hsts")]
+            hsts: HstsConfig::default(),
+            cookie: CookieConfig::default(),
+            proxy: ProxyConfig::default(),
+            progress: ProgressConfig::default(),
+            filename_restrictions: FilenameRestrictions::default(),
+            iri: IriConfig::default(),
+            #[cfg(feature = "compression")]
+            compression: CompressionMode::Auto,
+
+            prefer_family: AddressFamily::Unspecified,
+            force_ipv4: false,
+            force_ipv6: false,
+
+            convert_links: false,
+            convert_file_only: false,
+            backup_converted: false,
+            adjust_extension: false,
+            page_requisites: false,
+
+            ignore_length: false,
+            ignore_case: false,
+
+            xattr: false,
+            preserve_permissions: false,
+
+            max_redirect: 20,
+            timeout: None,
+            connect_timeout: None,
+            read_timeout: None,
+            dns_timeout: None,
+
+            bind_address: None,
+            no_host_directories: false,
+            protocol_directories: false,
+            no_directories: false,
+            force_directories: false,
+            cut_dirs: 0,
+            reject_log: None,
+        }
+    }
+}
+
+/// HTTP protocol configuration.
+///
+/// Contains settings specific to HTTP downloads, including authentication,
+/// headers, request methods, and user agent settings.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct HttpConfig {
+    /// HTTP authentication username (--http-user)
+    pub user: Option<String>,
+    /// HTTP authentication password (--http-password)
+    pub password: Option<String>,
+    /// Additional HTTP headers to send (--header)
+    pub headers: Vec<String>,
+    /// Use persistent HTTP connections (--keep-alive)
+    pub keep_alive: bool,
+    /// HTTP request method (--method)
+    pub method: Option<HttpMethod>,
+    /// POST data as bytes (--post-data)
+    pub post_data: Option<Vec<u8>>,
+    /// POST data from file (--post-file)
+    pub post_file: Option<PathBuf>,
+    /// Request body data as bytes (--body-data)
+    pub body_data: Option<Vec<u8>>,
+    /// Request body data from file (--body-file)
+    pub body_file: Option<PathBuf>,
+    /// User-Agent header value (--user-agent)
+    pub user_agent: Option<String>,
+    /// Referer header value (--referer)
+    pub referer: Option<String>,
+    /// Save HTTP headers to output file (--save-headers)
+    pub save_headers: bool,
+    /// Output content even on HTTP error (--content-on-error)
+    pub content_on_error: bool,
+    /// Only follow HTTPS links (--https-only)
+    pub https_only: bool,
+    /// Default page name for directory URLs (--default-page)
+    pub default_page: String,
+    /// Force HTTP/2 usage (--http2)
+    pub force_http2: bool,
+    /// Force HTTP/1.1 usage (--http1.1)
+    pub force_http1_1: bool,
 }
