@@ -547,3 +547,18 @@ impl Default for WarcConfig {
         }
     }
 }
+
+/// Metalink configuration.
+///
+/// Contains settings for Metalink download support, which enables
+/// downloading from multiple mirrors with automatic verification.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MetalinkConfig {
+    /// Enable Metalink processing (--metalink)
+    pub enabled: bool,
+    /// Use Metalink over HTTP headers (--metalink-over-http)
+    pub over_http: bool,
+    /// Input Metalink file path (--input-metalink)
+    pub input_file: Option<PathBuf>,
+}
