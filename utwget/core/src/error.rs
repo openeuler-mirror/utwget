@@ -186,3 +186,38 @@ pub enum TlsError {
     #[error("TLS I/O error: {0}")]
     Io(#[from] std::io::Error),
 }
+
+/// FTP protocol errors.
+///
+/// Represents errors that can occur during FTP operations,
+/// including connection issues and protocol violations.
+#[derive(Debug, thiserror::Error)]
+pub enum FtpError {
+    /// Unexpected FTP response code.
+    #[error("FTP unexpected response: {code} {message}")]
+    UnexpectedResponse { code: u16, message: String },
+
+    /// FTP connection was lost.
+    #[error("FTP connection lost")]
+    ConnectionLost,
+
+    /// FTP data connection failed.
+    #[error("FTP data connection failed: {0}")]
+    DataConnectionFailed(String),
+
+    /// PASV (passive) mode failed.
+    #[error("FTP PASV mode failed: {0}")]
+    PasvFailed(String),
+
+    /// PORT (active) mode failed.
+    #[error("FTP PORT mode failed: {0}")]
+    PortFailed(String),
+
+    /// FTP command syntax error.
+    #[error("FTP syntax error: {0}")]
+    SyntaxError(String),
+
+    /// FTP I/O error.
+    #[error("FTP I/O error: {0}")]
+    Io(#[from] std::io::Error),
+}
