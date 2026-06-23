@@ -252,3 +252,40 @@ pub enum ConfigError {
     #[error("missing required option: {0}")]
     MissingOption(String),
 }
+
+impl WgetError {
+    /// Determines if the error is retryable.
+    ///
+    /// Some errors (like connection refused, timeouts, or server errors)
+    /// may succeed on retry, while others (like file not found or
+    /// authentication failures) will likely fail again.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the operation might succeed on retry, `false` otherwise.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ut_core::error::WgetError;
+    ///
+    /// let err = WgetError::ConnectionRefused;
+    /// assert!(err.is_retryable());
+    ///
+    /// let err = WgetError::AuthFailed("example.com".to_string());
+    /// assert!(!err.is_retryable());
+    /// ```
+    pub fn is_retryable(&self) -> bool {
+        matches!(
+            self,
+            WgetError::ConnectionRefused
+                | WgetError::ConnectionTimeout(_)
+                | WgetError::SocketError(_)
+                | WgetError::Tls(TlsError::HandshakeFailed(_))
+                | WgetError::Http { status: 500..=599, .. }
+                | WgetError::Ftp(FtpError::UnexpectedResponse { .. })
+                | WgetError::Ftp(FtpError::ConnectionLost)
+                | WgetError::TooManyRedirects { .. }
+        )
+    }
+}
