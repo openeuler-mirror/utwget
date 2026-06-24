@@ -90,3 +90,29 @@ pub fn sha256_file(path: &std::path::Path) -> std::io::Result<String> {
     let mut reader = BufReader::new(file);
     sha256_reader(&mut reader)
 }
+
+/// Computes SHA-256 hash from a reader.
+///
+/// # Arguments
+///
+/// * `reader` - A reader providing the data to hash.
+///
+/// # Returns
+///
+/// The SHA-256 hash as a lowercase hexadecimal string.
+///
+/// # Errors
+///
+/// Returns an IO error if the reader fails.
+pub fn sha256_reader<R: Read>(reader: &mut R) -> std::io::Result<String> {
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 8192];
+    loop {
+        let n = reader.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(hex_encode(hasher.finalize().as_slice()))
+}
