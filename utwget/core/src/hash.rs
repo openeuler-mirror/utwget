@@ -184,3 +184,21 @@ pub fn md5_reader<R: Read>(reader: &mut R) -> std::io::Result<String> {
 fn hex_encode(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }
+
+/// MD5 hash computation state.
+///
+/// Implements the MD5 algorithm as specified in RFC 1321.
+struct Md5Computer {
+    /// State variable A.
+    a: u32,
+    /// State variable B.
+    b: u32,
+    /// State variable C.
+    c: u32,
+    /// State variable D.
+    d: u32,
+    /// Buffer for partial blocks.
+    buffer: Vec<u8>,
+    /// Total length of input data.
+    len: u64,
+}
