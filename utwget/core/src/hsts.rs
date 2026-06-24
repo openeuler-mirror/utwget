@@ -292,3 +292,9 @@ impl HstsStore {
         self.entries.retain(|_, e| !e.is_expired());
     }
 }
+
+impl Default for HstsStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
