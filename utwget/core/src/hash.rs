@@ -231,3 +231,98 @@ const MD5_K: [u32; 64] = [
     0x6fa87e4f, 0xfe2ce6e0, 0xa3014314, 0x4e0811a1,
     0xf7537e82, 0xbd3af235, 0x2ad7d2bb, 0xeb86d391,
 ];
+
+impl Md5Computer {
+    /// Creates a new MD5 hash computer with initial state.
+    fn new() -> Self {
+        Md5Computer {
+            a: 0x67452301,
+            b: 0xefcdab89,
+            c: 0x98badcfe,
+            d: 0x10325476,
+            buffer: Vec::with_capacity(MD5_BLOCK),
+            len: 0,
+        }
+    }
+
+    /// Updates the hash with additional data.
+    ///
+    /// # Arguments
+    ///
+    /// * `data` - Additional bytes to hash.
+    fn update(&mut self, data: &[u8]) {
+        self.len += data.len() as u64;
+        self.buffer.extend_from_slice(data);
+        while self.buffer.len() >= MD5_BLOCK {
+            let block: [u8; MD5_BLOCK] = self.buffer[..MD5_BLOCK].try_into().unwrap();
+            self.buffer.drain(..MD5_BLOCK);
+            self.process_block(&block);
+        }
+    }
+
+    /// Finalizes the hash computation and returns the digest.
+    ///
+    /// # Returns
+    ///
+    /// The 16-byte MD5 digest.
+    fn finalize(mut self) -> [u8; MD5_DIGEST] {
+        let bit_len = self.len as u64 * 8;
+        self.buffer.push(0x80);
+        while (self.buffer.len() % MD5_BLOCK) != 56 {
+            self.buffer.push(0);
+        }
+        self.buffer.extend_from_slice(&bit_len.to_le_bytes());
+        self.buffer.extend_from_slice(&((bit_len >> 32) as u32).to_le_bytes());
+
+        while self.buffer.len() >= MD5_BLOCK {
+            let block: [u8; MD5_BLOCK] = self.buffer[..MD5_BLOCK].try_into().unwrap();
+            self.buffer.drain(..MD5_BLOCK);
+            self.process_block(&block);
+        }
+
+        let mut result = [0u8; MD5_DIGEST];
+        result[0..4].copy_from_slice(&self.a.to_le_bytes());
+        result[4..8].copy_from_slice(&self.b.to_le_bytes());
+        result[8..12].copy_from_slice(&self.c.to_le_bytes());
+        result[12..16].copy_from_slice(&self.d.to_le_bytes());
+        result
+    }
+
+    /// Processes a single 64-byte block.
+    ///
+    /// Implements the MD5 compression function.
+    ///
+    /// # Arguments
+    ///
+    /// * `block` - A 64-byte block to process.
+    fn process_block(&mut self, block: &[u8; MD5_BLOCK]) {
+        let mut m = [0u32; 16];
+        for i in 0..16 {
+            m[i] = u32::from_le_bytes(block[i * 4..i * 4 + 4].try_into().unwrap());
+        }
+
+        let (mut a, mut b, mut c, mut d) = (self.a, self.b, self.c, self.d);
+
+        for i in 0..64 {
+            let (f, g) = if i < 16 {
+                ((b & c) | (!b & d), i)
+            } else if i < 32 {
+                ((d & b) | (!d & c), (i * 5 + 1) % 16)
+            } else if i < 48 {
+                (b ^ c ^ d, (i * 3 + 5) % 16)
+            } else {
+                (c ^ (b | !d), (i * 7) % 16)
+            };
+            let f = f.wrapping_add(MD5_K[i]).wrapping_add(m[g]).wrapping_add(a);
+            a = d;
+            d = c;
+            c = b;
+            b = b.wrapping_add(f.rotate_left(MD5_S[i]));
+        }
+
+        self.a = self.a.wrapping_add(a);
+        self.b = self.b.wrapping_add(b);
+        self.c = self.c.wrapping_add(c);
+        self.d = self.d.wrapping_add(d);
+    }
+}
