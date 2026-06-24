@@ -35,3 +35,29 @@ pub fn sha1_file(path: &std::path::Path) -> std::io::Result<String> {
     let mut reader = BufReader::new(file);
     sha1_reader(&mut reader)
 }
+
+/// Computes SHA-1 hash from a reader.
+///
+/// # Arguments
+///
+/// * `reader` - A reader providing the data to hash.
+///
+/// # Returns
+///
+/// The SHA-1 hash as a lowercase hexadecimal string.
+///
+/// # Errors
+///
+/// Returns an IO error if the reader fails.
+pub fn sha1_reader<R: Read>(reader: &mut R) -> std::io::Result<String> {
+    let mut hasher = sha1::Sha1::new();
+    let mut buf = [0u8; 8192];
+    loop {
+        let n = reader.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(hex_encode(hasher.finalize().as_slice()))
+}
