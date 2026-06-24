@@ -63,3 +63,21 @@ impl HstsEntry {
         Utc::now() > self.expires
     }
 }
+
+/// Serde helpers for timestamp serialization.
+mod ts_seconds {
+    use chrono::{DateTime, TimeZone, Utc};
+    use serde::{self, Deserialize, Deserializer, Serializer};
+
+    /// Serializes a DateTime as a Unix timestamp.
+    pub fn serialize<S: Serializer>(dt: &DateTime<Utc>, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_i64(dt.timestamp())
+    }
+
+    /// Deserializes a Unix timestamp to a DateTime.
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<DateTime<Utc>, D::Error> {
+        let ts = i64::deserialize(d)?;
+        Utc.timestamp_opt(ts, 0)
+            .single()
+            .ok_or_else(|| serde::de::Error::custom("invalid timestamp"))
+    }
