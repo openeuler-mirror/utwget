@@ -76,3 +76,17 @@ pub fn current_locale() -> &'static str {
         DEFAULT_LOCALE
     })
 }
+
+pub fn translate(key: &str) -> String {
+    let locale = current_locale();
+    get_translation(locale, key).unwrap_or(key).to_string()
+}
+
+pub fn translate_with_args(key: &str, args: &[(&str, String)]) -> String {
+    let template = translate(key);
+    let mut result = template;
+    for (name, value) in args {
+        result = result.replace(&format!("%{{{}}}", name), value);
+    }
+    result
+}
