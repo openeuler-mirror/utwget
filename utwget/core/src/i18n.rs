@@ -36,3 +36,17 @@ pub fn init_locale() {
     }
     let _ = CURRENT_LOCALE.set(DEFAULT_LOCALE.to_string());
 }
+
+pub fn set_locale(locale: &str) {
+    let locale = if SUPPORTED_LOCALES.contains(&locale) {
+        locale.to_string()
+    } else {
+        let normalized = locale.replace('_', "-");
+        if SUPPORTED_LOCALES.contains(&normalized.as_str()) {
+            normalized
+        } else {
+            DEFAULT_LOCALE.to_string()
+        }
+    };
+    let _ = CURRENT_LOCALE.set(locale);
+}
