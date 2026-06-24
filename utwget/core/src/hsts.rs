@@ -81,3 +81,14 @@ mod ts_seconds {
             .single()
             .ok_or_else(|| serde::de::Error::custom("invalid timestamp"))
     }
+}
+
+/// HSTS cache store.
+///
+/// Maintains a collection of HSTS entries and provides lookup
+/// and persistence functionality.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HstsStore {
+    /// HSTS entries keyed by hostname.
+    entries: HashMap<String, HstsEntry>,
+}
