@@ -202,3 +202,5 @@ struct Md5Computer {
     /// Total length of input data.
     len: u64,
 }
+
+const MD5_BLOCK: usize = 64;
