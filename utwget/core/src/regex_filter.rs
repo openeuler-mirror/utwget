@@ -62,3 +62,9 @@ impl UrlFilter for CompositeFilter {
         self.filters.iter().all(|f| f.is_accepted(url, filename))
     }
 }
+
+impl Default for CompositeFilter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
