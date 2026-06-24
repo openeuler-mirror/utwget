@@ -171,3 +171,16 @@ pub fn md5_reader<R: Read>(reader: &mut R) -> std::io::Result<String> {
     }
     Ok(hex_encode(&hasher.finalize()))
 }
+
+/// Converts bytes to lowercase hexadecimal string.
+///
+/// # Arguments
+///
+/// * `bytes` - The bytes to encode.
+///
+/// # Returns
+///
+/// A string of two hex digits per byte.
+fn hex_encode(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{:02x}", b)).collect()
+}
