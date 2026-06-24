@@ -50,3 +50,29 @@ pub fn set_locale(locale: &str) {
     };
     let _ = CURRENT_LOCALE.set(locale);
 }
+
+pub fn current_locale() -> &'static str {
+    CURRENT_LOCALE.get().map(|s| s.as_str()).unwrap_or_else(|| {
+        if let Ok(lang) = std::env::var("LANG") {
+            let lang = lang.split('.').next().unwrap_or("en");
+            let normalized = lang.replace('_', "-");
+            if SUPPORTED_LOCALES.contains(&normalized.as_str()) {
+                return CURRENT_LOCALE.get_or_init(|| normalized);
+            }
+            if let Some(lang_part) = normalized.split('-').next() {
+                if SUPPORTED_LOCALES.contains(&lang_part) {
+                    return CURRENT_LOCALE.get_or_init(|| lang_part.to_string());
+                }
+            }
+        }
+        if let Ok(lang) = std::env::var("LANGUAGE") {
+            if let Some(first) = lang.split(':').next() {
+                let normalized = first.replace('_', "-");
+                if SUPPORTED_LOCALES.contains(&normalized.as_str()) {
+                    return CURRENT_LOCALE.get_or_init(|| normalized);
+                }
+            }
+        }
+        DEFAULT_LOCALE
+    })
+}
