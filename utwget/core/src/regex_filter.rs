@@ -34,3 +34,25 @@ pub struct CompositeFilter {
     /// The filters to apply.
     filters: Vec<Box<dyn UrlFilter>>,
 }
+
+impl CompositeFilter {
+    /// Creates a new empty composite filter.
+    ///
+    /// # Returns
+    ///
+    /// A new `CompositeFilter` with no filters.
+    pub fn new() -> Self {
+        CompositeFilter {
+            filters: Vec::new(),
+        }
+    }
+
+    /// Adds a filter to the composite.
+    ///
+    /// # Arguments
+    ///
+    /// * `filter` - The filter to add.
+    pub fn add<F: UrlFilter + 'static>(&mut self, filter: F) {
+        self.filters.push(Box::new(filter));
+    }
+}
