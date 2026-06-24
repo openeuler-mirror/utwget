@@ -243,3 +243,50 @@ impl Default for NetrcDb {
         Self::new()
     }
 }
+
+/// Tokenizes .netrc content into a vector of tokens.
+///
+/// Handles quoted strings and ignores comment lines.
+///
+/// # Arguments
+///
+/// * `content` - The .netrc file content.
+///
+/// # Returns
+///
+/// A vector of whitespace-separated tokens.
+fn tokenize(content: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut in_single_quote = false;
+
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        let mut current = String::new();
+        for ch in line.chars() {
+            match ch {
+                '\'' => {
+                    in_single_quote = !in_single_quote;
+                }
+                ' ' | '\t' if !in_single_quote => {
+                    if !current.is_empty() {
+                        tokens.push(current.clone());
+                        current.clear();
+                    }
+                }
+                _ => {
+                    current.push(ch);
+                }
+            }
+        }
+        if !current.is_empty() {
+            tokens.push(current);
+        }
+        in_single_quote = false;
+    }
+
+    tokens
+}
