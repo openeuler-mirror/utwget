@@ -531,3 +531,11 @@ fn get_translation(locale: &str, key: &str) -> Option<&'static str> {
     }
     None
 }
+
+pub fn is_locale_supported(locale: &str) -> bool {
+    SUPPORTED_LOCALES.contains(&locale)
+}
+
+pub fn get_supported_locales() -> &'static [&'static str] {
+    SUPPORTED_LOCALES
+}
