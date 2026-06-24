@@ -1,0 +1,37 @@
+//! Cryptographic hash functions for file integrity verification.
+//!
+//! This module provides SHA-1, SHA-256, and MD5 hash computation
+//! for verifying downloaded file integrity.
+
+use sha2::{Digest, Sha256};
+use std::fs::File;
+use std::io::{BufReader, Read};
+
+/// Computes SHA-1 hash of a file.
+///
+/// # Arguments
+///
+/// * `path` - Path to the file to hash.
+///
+/// # Returns
+///
+/// The SHA-1 hash as a lowercase hexadecimal string.
+///
+/// # Errors
+///
+/// Returns an IO error if the file cannot be opened or read.
+///
+/// # Example
+///
+/// ```no_run
+/// use ut_core::hash::sha1_file;
+/// use std::path::Path;
+///
+/// let hash = sha1_file(Path::new("file.txt"))?;
+/// # Ok::<(), std::io::Error>(())
+/// ```
+pub fn sha1_file(path: &std::path::Path) -> std::io::Result<String> {
+    let file = File::open(path)?;
+    let mut reader = BufReader::new(file);
+    sha1_reader(&mut reader)
+}
