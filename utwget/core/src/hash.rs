@@ -116,3 +116,32 @@ pub fn sha256_reader<R: Read>(reader: &mut R) -> std::io::Result<String> {
     }
     Ok(hex_encode(hasher.finalize().as_slice()))
 }
+
+/// Computes MD5 hash of a file.
+///
+/// # Arguments
+///
+/// * `path` - Path to the file to hash.
+///
+/// # Returns
+///
+/// The MD5 hash as a lowercase hexadecimal string.
+///
+/// # Errors
+///
+/// Returns an IO error if the file cannot be opened or read.
+///
+/// # Example
+///
+/// ```no_run
+/// use ut_core::hash::md5_file;
+/// use std::path::Path;
+///
+/// let hash = md5_file(Path::new("file.txt"))?;
+/// # Ok::<(), std::io::Error>(())
+/// ```
+pub fn md5_file(path: &std::path::Path) -> std::io::Result<String> {
+    let file = File::open(path)?;
+    let mut reader = BufReader::new(file);
+    md5_reader(&mut reader)
+}
