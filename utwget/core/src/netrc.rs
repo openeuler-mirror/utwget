@@ -25,3 +25,14 @@ pub struct NetrcEntry {
     /// Macro definitions for FTP.
     pub macros: HashMap<String, String>,
 }
+
+/// Database of .netrc entries.
+///
+/// Provides credential lookup for hosts, with fallback to a default entry.
+#[derive(Debug, Clone)]
+pub struct NetrcDb {
+    /// Machine-specific entries.
+    entries: Vec<NetrcEntry>,
+    /// Default entry for unmatched hosts.
+    default: Option<NetrcEntry>,
+}
