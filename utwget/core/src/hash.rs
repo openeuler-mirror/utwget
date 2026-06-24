@@ -204,3 +204,4 @@ struct Md5Computer {
 }
 
 const MD5_BLOCK: usize = 64;
+const MD5_DIGEST: usize = 16;
