@@ -56,3 +56,9 @@ impl CompositeFilter {
         self.filters.push(Box::new(filter));
     }
 }
+
+impl UrlFilter for CompositeFilter {
+    fn is_accepted(&self, url: &str, filename: &str) -> bool {
+        self.filters.iter().all(|f| f.is_accepted(url, filename))
+    }
+}
