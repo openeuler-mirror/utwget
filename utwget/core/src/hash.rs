@@ -145,3 +145,29 @@ pub fn md5_file(path: &std::path::Path) -> std::io::Result<String> {
     let mut reader = BufReader::new(file);
     md5_reader(&mut reader)
 }
+
+/// Computes MD5 hash from a reader.
+///
+/// # Arguments
+///
+/// * `reader` - A reader providing the data to hash.
+///
+/// # Returns
+///
+/// The MD5 hash as a lowercase hexadecimal string.
+///
+/// # Errors
+///
+/// Returns an IO error if the reader fails.
+pub fn md5_reader<R: Read>(reader: &mut R) -> std::io::Result<String> {
+    let mut hasher = Md5Computer::new();
+    let mut buf = [0u8; 8192];
+    loop {
+        let n = reader.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(hex_encode(&hasher.finalize()))
+}
