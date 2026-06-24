@@ -30,3 +30,36 @@ pub struct HstsEntry {
     #[serde(with = "ts_seconds")]
     pub expires: DateTime<Utc>,
 }
+
+impl HstsEntry {
+    /// Creates a new HSTS entry.
+    ///
+    /// # Arguments
+    ///
+    /// * `host` - The hostname.
+    /// * `include_subdomains` - Whether to include subdomains.
+    /// * `max_age` - The max-age in seconds.
+    ///
+    /// # Returns
+    ///
+    /// A new `HstsEntry` with calculated expiration time.
+    pub fn new(host: String, include_subdomains: bool, max_age: u64) -> Self {
+        let now = Utc::now();
+        HstsEntry {
+            host,
+            include_subdomains,
+            max_age,
+            created: now,
+            expires: now + chrono::Duration::seconds(max_age as i64),
+        }
+    }
+
+    /// Checks if the entry has expired.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the current time is past the expiration time.
+    pub fn is_expired(&self) -> bool {
+        Utc::now() > self.expires
+    }
+}
