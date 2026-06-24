@@ -26,3 +26,11 @@ pub trait UrlFilter: Send + Sync {
     /// `true` if the URL should be accepted, `false` to reject it.
     fn is_accepted(&self, url: &str, filename: &str) -> bool;
 }
+
+/// A composite filter that combines multiple filters.
+///
+/// A URL is accepted only if all contained filters accept it.
+pub struct CompositeFilter {
+    /// The filters to apply.
+    filters: Vec<Box<dyn UrlFilter>>,
+}
