@@ -237,3 +237,9 @@ impl NetrcDb {
         self.entries.is_empty() && self.default.is_none()
     }
 }
+
+impl Default for NetrcDb {
+    fn default() -> Self {
+        Self::new()
+    }
+}
