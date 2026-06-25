@@ -497,3 +497,19 @@ fn url_to_host(url: &str) -> Option<String> {
 fn url_to_scheme(url: &str) -> Option<Scheme> {
     ParsedUrl::parse(url).ok().map(|u| u.scheme)
 }
+
+/// Matches a string against a glob pattern (case-insensitive).
+///
+/// # Arguments
+///
+/// * `s` - The string to match.
+/// * `pattern` - The glob pattern (supports * and ?).
+///
+/// # Returns
+///
+/// `true` if the string matches the pattern.
+fn match_glob(s: &str, pattern: &str) -> bool {
+    let pat_lc = pattern.to_ascii_lowercase();
+    let s_lc = s.to_ascii_lowercase();
+    glob_match(&s_lc, &pat_lc)
+}
