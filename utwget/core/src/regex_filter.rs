@@ -277,3 +277,28 @@ impl ParentFilter {
         }
     }
 }
+
+impl UrlFilter for ParentFilter {
+    fn is_accepted(&self, url: &str, _filename: &str) -> bool {
+        if !self.no_parent {
+            return true;
+        }
+        let start = match &self.start_url {
+            Some(u) => u,
+            None => return true,
+        };
+        let target = match ParsedUrl::parse(url) {
+            Ok(u) => u,
+            Err(_) => return true,
+        };
+        if target.host.to_ascii_lowercase() != start.host.to_ascii_lowercase() {
+            return true;
+        }
+        let target_dir = target.dir.trim_end_matches('/');
+        let start_dir = start.dir.trim_end_matches('/');
+        if start_dir.is_empty() {
+            return true;
+        }
+        target_dir.starts_with(start_dir)
+    }
+}
