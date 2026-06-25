@@ -200,3 +200,14 @@ impl UrlFilter for RegexRejectFilter {
         }
     }
 }
+
+/// Domain restriction filter.
+///
+/// URLs are accepted only if their host is in the allowed domains list
+/// and not in the excluded domains list.
+pub struct DomainFilter {
+    /// Allowed domains.
+    domains: Vec<String>,
+    /// Excluded domains.
+    exclude: Vec<String>,
+}
