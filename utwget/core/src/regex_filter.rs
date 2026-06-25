@@ -211,3 +211,15 @@ pub struct DomainFilter {
     /// Excluded domains.
     exclude: Vec<String>,
 }
+
+impl DomainFilter {
+    /// Creates a new domain filter.
+    ///
+    /// # Arguments
+    ///
+    /// * `domains` - Domains to allow (empty means all allowed).
+    /// * `exclude` - Domains to exclude.
+    pub fn new(domains: Vec<String>, exclude: Vec<String>) -> Self {
+        DomainFilter { domains, exclude }
+    }
+}
