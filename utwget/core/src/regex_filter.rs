@@ -124,3 +124,11 @@ impl UrlFilter for PatternRejectFilter {
         !self.patterns.iter().any(|p| match_glob(filename, p))
     }
 }
+
+/// Accept filter using regular expressions.
+///
+/// URLs are accepted if their filename matches the regex pattern.
+pub struct RegexAcceptFilter {
+    /// The compiled regex pattern.
+    regex: Option<Regex>,
+}
