@@ -354,3 +354,16 @@ impl SpanHostFilter {
         }
     }
 }
+
+impl UrlFilter for SpanHostFilter {
+    fn is_accepted(&self, url: &str, _filename: &str) -> bool {
+        if self.span {
+            return true;
+        }
+        let host = match url_to_host(url) {
+            Some(h) => h,
+            None => return true,
+        };
+        host.to_ascii_lowercase() == self.start_host
+    }
+}
