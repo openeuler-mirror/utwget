@@ -96,3 +96,11 @@ impl UrlFilter for PatternAcceptFilter {
         self.patterns.iter().any(|p| match_glob(filename, p))
     }
 }
+
+/// Reject filter using glob patterns.
+///
+/// URLs are rejected if their filename matches any of the patterns.
+pub struct PatternRejectFilter {
+    /// Glob patterns to reject.
+    patterns: Vec<String>,
+}
