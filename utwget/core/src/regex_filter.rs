@@ -416,3 +416,11 @@ impl UrlFilter for RelativeOnlyFilter {
         !url.contains("://")
     }
 }
+
+/// Blacklist filter for already-seen URLs.
+///
+/// Prevents revisiting the same URL multiple times.
+pub struct BlacklistFilter {
+    /// Set of URLs that have been seen.
+    seen: HashSet<String>,
+}
