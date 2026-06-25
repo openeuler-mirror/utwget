@@ -115,3 +115,12 @@ impl PatternRejectFilter {
         PatternRejectFilter { patterns }
     }
 }
+
+impl UrlFilter for PatternRejectFilter {
+    fn is_accepted(&self, _url: &str, filename: &str) -> bool {
+        if self.patterns.is_empty() {
+            return true;
+        }
+        !self.patterns.iter().any(|p| match_glob(filename, p))
+    }
+}
