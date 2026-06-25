@@ -471,3 +471,29 @@ impl Default for BlacklistFilter {
         Self::new()
     }
 }
+
+/// Extracts the host from a URL string.
+///
+/// # Arguments
+///
+/// * `url` - The URL string.
+///
+/// # Returns
+///
+/// `Some(host)` if parsing succeeds, `None` otherwise.
+fn url_to_host(url: &str) -> Option<String> {
+    ParsedUrl::parse(url).ok().map(|u| u.host)
+}
+
+/// Extracts the scheme from a URL string.
+///
+/// # Arguments
+///
+/// * `url` - The URL string.
+///
+/// # Returns
+///
+/// `Some(scheme)` if parsing succeeds, `None` otherwise.
+fn url_to_scheme(url: &str) -> Option<Scheme> {
+    ParsedUrl::parse(url).ok().map(|u| u.scheme)
+}
