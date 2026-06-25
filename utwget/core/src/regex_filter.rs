@@ -302,3 +302,12 @@ impl UrlFilter for ParentFilter {
         target_dir.starts_with(start_dir)
     }
 }
+
+/// Robots.txt filter placeholder.
+///
+/// This filter is a placeholder; actual robots.txt checking
+/// is handled by the robots module.
+pub struct RobotsFilter {
+    /// Whether to respect robots.txt.
+    use_robots: bool,
+}
