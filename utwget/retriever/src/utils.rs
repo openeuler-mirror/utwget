@@ -12,7 +12,6 @@ use ut_core::url::ParsedUrl;
 use ut_core::{Config, Scheme, WgetError};
 use ut_http::HeaderMap;
 use ut_http::request::HttpRequest;
-use ut_http::response::HttpResponse;
 
 use crate::types::RetrieveError;
 
@@ -288,39 +287,6 @@ pub(crate) fn url_decode(s: &str) -> String {
         }
     }
     result
-}
-
-/// Parse raw HTTP response data into an HttpResponse.
-pub(crate) fn parse_raw_response(data: &[u8]) -> Option<HttpResponse> {
-    let data_str = std::str::from_utf8(data).ok()?;
-    let mut lines = data_str.split("\r\n");
-
-    let status_line = lines.next()?;
-    let mut parts = status_line.splitn(3, ' ');
-    let _version = parts.next()?;
-    let status_code: u16 = parts.next()?.parse().ok()?;
-    let reason = parts.next().unwrap_or("").to_string();
-
-    let mut headers = HeaderMap::new();
-    for line in lines {
-        if line.is_empty() {
-            break;
-        }
-        if let Some((key, value)) = line.split_once(':') {
-            headers.insert(key.trim().to_string(), value.trim().to_string());
-        }
-    }
-
-    let body_start = data_str.find("\r\n\r\n").map(|i| i + 4).unwrap_or(data.len());
-    let body = data[body_start..].to_vec();
-
-    Some(HttpResponse {
-        version: "1.1".to_string(),
-        status_code,
-        reason,
-        headers,
-        body: Some(body),
-    })
 }
 
 /// Serialize a HeaderMap into raw HTTP header bytes.
