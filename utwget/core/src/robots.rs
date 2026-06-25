@@ -22,3 +22,10 @@ pub struct RobotGroup {
     /// Links to sitemaps declared in this group.
     pub sitemaps: Vec<String>,
 }
+
+/// The complete set of parsed directives from a robots.txt file.
+#[derive(Debug, Clone)]
+pub struct RobotSpecs {
+    /// The groups (User-agent blocks) parsed from the file.
+    pub groups: Vec<RobotGroup>,
+}
