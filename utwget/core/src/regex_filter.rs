@@ -162,3 +162,11 @@ impl UrlFilter for RegexAcceptFilter {
         }
     }
 }
+
+/// Reject filter using regular expressions.
+///
+/// URLs are rejected if their filename matches the regex pattern.
+pub struct RegexRejectFilter {
+    /// The compiled regex pattern.
+    regex: Option<Regex>,
+}
