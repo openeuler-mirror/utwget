@@ -68,3 +68,11 @@ impl Default for CompositeFilter {
         Self::new()
     }
 }
+
+/// Accept filter using glob patterns.
+///
+/// URLs are accepted if their filename matches any of the patterns.
+pub struct PatternAcceptFilter {
+    /// Glob patterns to match.
+    patterns: Vec<String>,
+}
