@@ -251,3 +251,14 @@ impl UrlFilter for DomainFilter {
         })
     }
 }
+
+/// Parent directory filter.
+///
+/// When `no_parent` is enabled, URLs are rejected if they would
+/// ascend above the starting URL's directory.
+pub struct ParentFilter {
+    /// Whether to reject parent directories.
+    no_parent: bool,
+    /// The starting URL for comparison.
+    start_url: Option<ParsedUrl>,
+}
