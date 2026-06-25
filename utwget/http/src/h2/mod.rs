@@ -60,58 +60,55 @@ impl H2Client {
 
     /// Create a new HTTP/2 client connected to the given host and port.
     ///
-    /// Performs TLS handshake with ALPN negotiation for HTTP/2.
+    /// Performs a TLS handshake using the supplied `rustls::ClientConfig`
+    /// (which the caller is expected to have configured with ALPN `h2`,
+    /// `--no-check-certificate`, custom CAs, client certificates, etc.) and
+    /// then the HTTP/2 handshake.
     ///
     /// # Arguments
     ///
     /// * `host` - The target hostname.
     /// * `port` - The target port (typically 443 for HTTPS).
+    /// * `tls_config` - A pre-built rustls client config with ALPN `h2` set.
     ///
     /// # Returns
     ///
     /// A new `H2Client` instance.
-    pub fn connect(host: &str, port: u16) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn connect(
+        host: &str,
+        port: u16,
+        tls_config: ClientConfig,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let runtime = Runtime::new()?;
-        
-        // Build TLS config with ALPN for HTTP/2
-        let mut root_store = rustls::RootCertStore::empty();
-        root_store.extend(TLS_SERVER_ROOTS.iter().cloned());
-        
-        let mut tls_config = ClientConfig::builder()
-            .with_root_certificates(root_store)
-            .with_no_client_auth();
-        
-        // Set ALPN protocol to h2 for HTTP/2 negotiation
-        tls_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
-        
+
         let tls_connector = TlsConnector::from(Arc::new(tls_config));
-        
+
         let tcp = runtime.block_on(TcpStream::connect(format!("{}:{}", host, port)))?;
-        
+
         // Parse server name for TLS
         let server_name = rustls::pki_types::ServerName::try_from(host.to_string())?;
-        
+
         // Perform TLS handshake
         let tls_stream = runtime.block_on(tls_connector.connect(server_name, tcp))?;
-        
+
         // Check if HTTP/2 was negotiated
         let alpn = tls_stream.get_ref().1.alpn_protocol();
         let use_http2 = alpn.map(|p| p == b"h2").unwrap_or(false);
-        
+
         if !use_http2 {
             return Err("Server does not support HTTP/2".into());
         }
-        
+
         // Perform HTTP/2 handshake
         let (sender, conn) = runtime.block_on(client::handshake(tls_stream))?;
-        
+
         // Spawn the connection driver
         runtime.spawn(async move {
             if let Err(e) = conn.await {
                 eprintln!("HTTP/2 connection error: {}", e);
             }
         });
-        
+
         Ok(H2Client { sender, runtime })
     }
 

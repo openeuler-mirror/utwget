@@ -10,6 +10,8 @@ use log::debug;
 use crate::types::RetrieveError;
 use ut_core::{Config, WgetError};
 use ut_core::url::ParsedUrl;
+use ut_http::request::HttpRequest;
+use ut_http::response::{HeaderMap, HttpResponse};
 
 /// HTTP/2 client wrapper that integrates with the retriever.
 pub struct H2Retriever {
@@ -38,20 +40,26 @@ impl H2Retriever {
         let host = url.host.clone();
         let port = url.port;
 
-        let use_proxy = config.proxy.use_proxy && is_url_proxied_for_http2(url, config);
+        // Reuse the same proxy decision as the HTTP/1.1 path so behavior is
+        // consistent (e.g. localhost / no-proxy domains, and only routing via
+        // proxy when a proxy URL is actually configured).
+        let use_proxy = config.proxy.use_proxy && crate::utils::is_url_proxied(url, config);
 
         if use_proxy {
             debug!("attempting HTTP/2 connection via proxy to {}:{}", host, port);
             Self::connect_via_proxy(&host, port, config)
         } else {
             debug!("attempting HTTP/2 connection to {}:{}", host, port);
-            Self::connect_direct(&host, port)
+            Self::connect_direct(&host, port, config)
         }
     }
 
     /// Create a direct HTTP/2 connection (no proxy).
-    fn connect_direct(host: &str, port: u16) -> Result<Self, RetrieveError> {
-        let client = ut_http::h2::H2Client::connect(host, port)
+    fn connect_direct(host: &str, port: u16, config: &Config) -> Result<Self, RetrieveError> {
+        let mut tls_config = build_h2_tls_config(config)?;
+        tls_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+
+        let client = ut_http::h2::H2Client::connect(host, port, tls_config)
             .map_err(|e| RetrieveError::Protocol(WgetError::Other(
                 format!("HTTP/2 connection failed: {}", e)
             )))?;
@@ -147,8 +155,10 @@ impl H2Retriever {
 
         debug!("CONNECT tunnel established, performing TLS handshake");
 
-        // Perform TLS handshake over the tunnel using tokio
-        let tls_config = build_rustls_config()?;
+        // Perform TLS handshake over the tunnel using tokio, reusing the app's
+        // TLS settings (no-check-certificate, custom CAs, client certs, ...).
+        let mut tls_config = build_h2_tls_config(config)?;
+        tls_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
         let tls_connector = tokio_rustls::TlsConnector::from(Arc::new(tls_config));
 
         let server_name = rustls::pki_types::ServerName::try_from(host.to_string())
@@ -196,14 +206,23 @@ impl H2Retriever {
 
     /// Send an HTTP/2 request and receive the response.
     ///
+    /// The request headers built for HTTP/1.1 cannot be forwarded verbatim:
+    /// HTTP/2 forbids uppercase header names and connection-specific headers
+    /// (`Connection`, `Transfer-Encoding`, `Keep-Alive`, `Proxy-Connection`,
+    /// `Upgrade`, `TE` other than `trailers`), and the `Host` header is
+    /// replaced by the `:authority` pseudo-header derived from the URI. This
+    /// method performs that conversion, sends the request, and maps the real
+    /// response (status, headers, body) back into an `HttpResponse` so the
+    /// retriever can handle redirects, auth, decompression, etc. uniformly.
+    ///
     /// # Arguments
     ///
     /// * `request` - The HTTP request to send.
     ///
     /// # Returns
     ///
-    /// The HTTP response body as bytes.
-    pub fn send_request(&mut self, request: &ut_http::request::HttpRequest) -> Result<Vec<u8>, RetrieveError> {
+    /// The full HTTP response (status, headers, body).
+    pub fn send_request(&mut self, request: &HttpRequest) -> Result<HttpResponse, RetrieveError> {
         // Convert ut_http request to http crate request
         let method = match request.method {
             ut_http::request::HttpMethod::Get => http::Method::GET,
@@ -222,10 +241,15 @@ impl H2Retriever {
             .method(method)
             .uri(uri);
 
-        // Add headers
+        // Add headers, converting to HTTP/2-compatible form.
         let mut builder = builder;
         for (key, value) in &request.headers {
-            builder = builder.header(key.as_str(), value.as_str());
+            let lower = key.to_lowercase();
+            if is_h2_forbidden_header(&lower) {
+                continue;
+            }
+            // Header names must be lowercase in HTTP/2; pass the lowercased name.
+            builder = builder.header(lower.as_str(), value.as_str());
         }
 
         let http_request = builder
@@ -236,11 +260,25 @@ impl H2Retriever {
         let (response, _send_stream) = self.client.send_request(http_request)
             .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("HTTP/2 request failed: {}", e))))?;
 
+        // Map the real response status and headers.
+        let status = response.status().as_u16();
+        let reason = response.status().canonical_reason().unwrap_or("").to_string();
+
+        let mut headers = HeaderMap::new();
+        for (name, value) in response.headers().iter() {
+            if let Ok(vs) = value.to_str() {
+                headers.insert(name.as_str().to_string(), vs.to_string());
+            }
+        }
+
         // Read response body
         let body = self.client.read_body(&mut response.into_body())
             .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("HTTP/2 body read failed: {}", e))))?;
 
-        Ok(body.to_vec())
+        let mut resp = HttpResponse::new("2.0".to_string(), status, reason);
+        resp.headers = headers;
+        resp.body = Some(body.to_vec());
+        Ok(resp)
     }
 
     /// Get the target host.
@@ -281,32 +319,35 @@ fn get_proxy_config(config: &Config) -> Result<ProxyConfig, RetrieveError> {
     Ok(ProxyConfig { host, port })
 }
 
-/// Check if a URL should use a proxy for HTTP/2.
-fn is_url_proxied_for_http2(url: &ParsedUrl, config: &Config) -> bool {
-    // Check --no-proxy domains
-    let host = url.host.as_str();
-    for domain in &config.proxy.no_proxy {
-        let domain = domain.trim();
-        if domain == host || (domain.starts_with('.') && host.ends_with(domain)) {
-            return false;
-        }
-    }
-    true
+/// Build a rustls `ClientConfig` for HTTP/2 from the application's TLS settings.
+///
+/// Reuses `RustlsConnector::build_config` so that `--no-check-certificate`,
+/// `--ca-certificate`/`--ca-directory`, `--certificate`/`--private-key` and
+/// `--secure-protocol` are all honored (the previous implementation hardcoded
+/// the webpki root store and always verified, making self-signed / private-CA
+/// HTTP/2 servers unreachable). The caller is expected to set ALPN `h2`.
+fn build_h2_tls_config(config: &Config) -> Result<rustls::ClientConfig, RetrieveError> {
+    let tls_config = ut_net::tls::TlsConfig::from_core(&config.tls);
+    ut_net::RustlsConnector::build_config(&tls_config).map_err(|e| {
+        RetrieveError::Protocol(WgetError::Tls(ut_core::error::TlsError::HandshakeFailed(
+            e.to_string(),
+        )))
+    })
 }
 
-/// Build a rustls ClientConfig for HTTP/2.
-fn build_rustls_config() -> Result<rustls::ClientConfig, RetrieveError> {
-    let mut root_store = rustls::RootCertStore::empty();
-    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-
-    let mut config = rustls::ClientConfig::builder()
-        .with_root_certificates(root_store)
-        .with_no_client_auth();
-
-    // Set ALPN protocol to h2 for HTTP/2 negotiation
-    config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
-
-    Ok(config)
+/// Whether a (lowercased) header name must be dropped when forwarding a
+/// request over HTTP/2.
+///
+/// HTTP/2 forbids connection-specific headers and derives `:authority` from
+/// the URI, so `host` is also dropped.
+fn is_h2_forbidden_header(lower_name: &str) -> bool {
+    match lower_name {
+        "connection" | "transfer-encoding" | "keep-alive" | "proxy-connection"
+        | "upgrade" | "host" => true,
+        // "te" is allowed only as "trailers"; anything else is forbidden.
+        "te" => true,
+        _ => false,
+    }
 }
 
 /// Check if HTTP/2 should be used for a given URL.
@@ -340,11 +381,11 @@ pub fn should_use_http2(url: &ParsedUrl, config: &Config) -> bool {
 ///
 /// # Returns
 ///
-/// The downloaded content as bytes, or an error.
+/// The HTTP response (status, headers, body), or an error.
 pub async fn download_with_http2(
     url: &ParsedUrl,
     config: &Config,
-) -> Result<Vec<u8>, RetrieveError> {
+) -> Result<HttpResponse, RetrieveError> {
     if !should_use_http2(url, config) {
         return Err(RetrieveError::Protocol(WgetError::Other(
             "HTTP/2 not applicable for this URL".into()
@@ -354,7 +395,7 @@ pub async fn download_with_http2(
     let mut retriever = H2Retriever::connect(url, config)?;
 
     // Build a simple GET request
-    let request = ut_http::request::HttpRequest::new(
+    let request = HttpRequest::new(
         ut_http::request::HttpMethod::Get,
         url.full_path(),
         url.host.clone(),
