@@ -223,3 +223,31 @@ impl DomainFilter {
         DomainFilter { domains, exclude }
     }
 }
+
+impl UrlFilter for DomainFilter {
+    fn is_accepted(&self, url: &str, _filename: &str) -> bool {
+        let host = match url_to_host(url) {
+            Some(h) => h,
+            None => return true,
+        };
+        if self.domains.is_empty() {
+            return true;
+        }
+        let host_lc = host.to_ascii_lowercase();
+        let accepted = self.domains.iter().any(|d| {
+            let d_lc = d.to_ascii_lowercase();
+            host_lc == d_lc
+                || host_lc.ends_with(&format!(".{}", d_lc))
+                || d_lc.starts_with('.') && host_lc.ends_with(&d_lc)
+        });
+        if !accepted {
+            return false;
+        }
+        !self.exclude.iter().any(|d| {
+            let d_lc = d.to_ascii_lowercase();
+            host_lc == d_lc
+                || host_lc.ends_with(&format!(".{}", d_lc))
+                || d_lc.starts_with('.') && host_lc.ends_with(&d_lc)
+        })
+    }
+}
