@@ -339,3 +339,18 @@ pub struct SpanHostFilter {
     /// The starting host.
     start_host: String,
 }
+
+impl SpanHostFilter {
+    /// Creates a new span host filter.
+    ///
+    /// # Arguments
+    ///
+    /// * `span` - Whether to allow spanning to other hosts.
+    /// * `start_host` - The starting hostname.
+    pub fn new(span: bool, start_host: &str) -> Self {
+        SpanHostFilter {
+            span,
+            start_host: start_host.to_ascii_lowercase(),
+        }
+    }
+}
