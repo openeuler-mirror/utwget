@@ -389,3 +389,19 @@ impl SchemeFilter {
         SchemeFilter { https_only, follow_ftp }
     }
 }
+
+impl UrlFilter for SchemeFilter {
+    fn is_accepted(&self, url: &str, _filename: &str) -> bool {
+        let scheme = match url_to_scheme(url) {
+            Some(s) => s,
+            None => return true,
+        };
+        if self.https_only && !scheme.is_secure() && scheme != Scheme::Http {
+            return false;
+        }
+        if scheme == Scheme::Ftp && !self.follow_ftp {
+            return false;
+        }
+        true
+    }
+}
