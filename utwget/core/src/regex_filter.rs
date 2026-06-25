@@ -191,3 +191,12 @@ impl RegexRejectFilter {
         })
     }
 }
+
+impl UrlFilter for RegexRejectFilter {
+    fn is_accepted(&self, _url: &str, filename: &str) -> bool {
+        match &self.regex {
+            Some(re) => !re.is_match(filename),
+            None => true,
+        }
+    }
+}
