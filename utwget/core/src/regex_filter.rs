@@ -405,3 +405,14 @@ impl UrlFilter for SchemeFilter {
         true
     }
 }
+
+/// Relative-only URL filter.
+///
+/// Rejects absolute URLs (those containing "://").
+pub struct RelativeOnlyFilter;
+
+impl UrlFilter for RelativeOnlyFilter {
+    fn is_accepted(&self, url: &str, _filename: &str) -> bool {
+        !url.contains("://")
+    }
+}
