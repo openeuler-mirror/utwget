@@ -322,3 +322,9 @@ impl RobotsFilter {
         RobotsFilter { use_robots }
     }
 }
+
+impl UrlFilter for RobotsFilter {
+    fn is_accepted(&self, _url: &str, _filename: &str) -> bool {
+        !self.use_robots
+    }
+}
