@@ -29,3 +29,19 @@ pub struct RobotSpecs {
     /// The groups (User-agent blocks) parsed from the file.
     pub groups: Vec<RobotGroup>,
 }
+
+/// Parses robots.txt content and caches the results per host.
+///
+/// Supports the following directives:
+/// - `User-agent`
+/// - `Disallow`
+/// - `Allow`
+/// - `Crawl-delay`
+/// - `Sitemap`
+#[derive(Debug, Clone, Default)]
+pub struct RobotParser {
+    /// Cache mapping hostnames (lowercased) to their parsed `RobotSpecs`.
+    specs_cache: HashMap<String, RobotSpecs>,
+    /// The user agent string used when matching agent-specific groups.
+    user_agent: String,
+}
