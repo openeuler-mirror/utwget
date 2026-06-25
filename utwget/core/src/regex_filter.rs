@@ -424,3 +424,38 @@ pub struct BlacklistFilter {
     /// Set of URLs that have been seen.
     seen: HashSet<String>,
 }
+
+impl BlacklistFilter {
+    /// Creates a new empty blacklist filter.
+    ///
+    /// # Returns
+    ///
+    /// A new `BlacklistFilter` with no URLs.
+    pub fn new() -> Self {
+        BlacklistFilter {
+            seen: HashSet::new(),
+        }
+    }
+
+    /// Adds a URL to the blacklist.
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - The URL to add.
+    pub fn insert(&mut self, url: &str) {
+        self.seen.insert(url.to_string());
+    }
+
+    /// Checks if a URL is in the blacklist.
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - The URL to check.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the URL has been seen.
+    pub fn contains(&self, url: &str) -> bool {
+        self.seen.contains(url)
+    }
+}
