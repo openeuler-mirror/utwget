@@ -170,3 +170,24 @@ pub struct RegexRejectFilter {
     /// The compiled regex pattern.
     regex: Option<Regex>,
 }
+
+impl RegexRejectFilter {
+    /// Creates a new regex reject filter.
+    ///
+    /// # Arguments
+    ///
+    /// * `pattern` - The regex pattern to match.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(RegexRejectFilter)` if the pattern compiles, or a regex error.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the regex pattern is invalid.
+    pub fn new(pattern: &str) -> std::result::Result<Self, regex::Error> {
+        Ok(RegexRejectFilter {
+            regex: Some(Regex::new(pattern)?),
+        })
+    }
+}
