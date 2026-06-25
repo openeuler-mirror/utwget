@@ -311,3 +311,14 @@ pub struct RobotsFilter {
     /// Whether to respect robots.txt.
     use_robots: bool,
 }
+
+impl RobotsFilter {
+    /// Creates a new robots filter.
+    ///
+    /// # Arguments
+    ///
+    /// * `use_robots` - Whether to respect robots.txt.
+    pub fn new(use_robots: bool) -> Self {
+        RobotsFilter { use_robots }
+    }
+}
