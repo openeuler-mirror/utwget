@@ -104,3 +104,14 @@ pub struct PatternRejectFilter {
     /// Glob patterns to reject.
     patterns: Vec<String>,
 }
+
+impl PatternRejectFilter {
+    /// Creates a new pattern reject filter.
+    ///
+    /// # Arguments
+    ///
+    /// * `patterns` - Glob patterns to reject (e.g., "*.jpg").
+    pub fn new(patterns: Vec<String>) -> Self {
+        PatternRejectFilter { patterns }
+    }
+}
