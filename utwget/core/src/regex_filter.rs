@@ -262,3 +262,18 @@ pub struct ParentFilter {
     /// The starting URL for comparison.
     start_url: Option<ParsedUrl>,
 }
+
+impl ParentFilter {
+    /// Creates a new parent filter.
+    ///
+    /// # Arguments
+    ///
+    /// * `no_parent` - Whether to reject parent directories.
+    /// * `start_url` - The starting URL for comparison.
+    pub fn new(no_parent: bool, start_url: &str) -> Self {
+        ParentFilter {
+            no_parent,
+            start_url: ParsedUrl::parse(start_url).ok(),
+        }
+    }
+}
