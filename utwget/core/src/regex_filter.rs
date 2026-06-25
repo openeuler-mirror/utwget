@@ -367,3 +367,13 @@ impl UrlFilter for SpanHostFilter {
         host.to_ascii_lowercase() == self.start_host
     }
 }
+
+/// URL scheme filter.
+///
+/// Filters URLs based on their scheme (HTTP, HTTPS, FTP).
+pub struct SchemeFilter {
+    /// Only allow HTTPS URLs.
+    https_only: bool,
+    /// Whether to follow FTP URLs.
+    follow_ftp: bool,
+}
