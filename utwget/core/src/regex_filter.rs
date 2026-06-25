@@ -132,3 +132,24 @@ pub struct RegexAcceptFilter {
     /// The compiled regex pattern.
     regex: Option<Regex>,
 }
+
+impl RegexAcceptFilter {
+    /// Creates a new regex accept filter.
+    ///
+    /// # Arguments
+    ///
+    /// * `pattern` - The regex pattern to match.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(RegexAcceptFilter)` if the pattern compiles, or a regex error.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the regex pattern is invalid.
+    pub fn new(pattern: &str) -> std::result::Result<Self, regex::Error> {
+        Ok(RegexAcceptFilter {
+            regex: Some(Regex::new(pattern)?),
+        })
+    }
+}
