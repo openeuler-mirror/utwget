@@ -76,3 +76,14 @@ pub struct PatternAcceptFilter {
     /// Glob patterns to match.
     patterns: Vec<String>,
 }
+
+impl PatternAcceptFilter {
+    /// Creates a new pattern accept filter.
+    ///
+    /// # Arguments
+    ///
+    /// * `patterns` - Glob patterns to accept (e.g., "*.html").
+    pub fn new(patterns: Vec<String>) -> Self {
+        PatternAcceptFilter { patterns }
+    }
+}
