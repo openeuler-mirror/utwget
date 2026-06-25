@@ -377,3 +377,15 @@ pub struct SchemeFilter {
     /// Whether to follow FTP URLs.
     follow_ftp: bool,
 }
+
+impl SchemeFilter {
+    /// Creates a new scheme filter.
+    ///
+    /// # Arguments
+    ///
+    /// * `https_only` - Only allow HTTPS URLs.
+    /// * `follow_ftp` - Whether to follow FTP URLs.
+    pub fn new(https_only: bool, follow_ftp: bool) -> Self {
+        SchemeFilter { https_only, follow_ftp }
+    }
+}
