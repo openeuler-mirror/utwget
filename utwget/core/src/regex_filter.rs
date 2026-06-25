@@ -465,3 +465,9 @@ impl UrlFilter for BlacklistFilter {
         !self.seen.contains(url)
     }
 }
+
+impl Default for BlacklistFilter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
