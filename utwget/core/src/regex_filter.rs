@@ -513,3 +513,47 @@ fn match_glob(s: &str, pattern: &str) -> bool {
     let s_lc = s.to_ascii_lowercase();
     glob_match(&s_lc, &pat_lc)
 }
+
+/// Implements glob pattern matching.
+///
+/// Supports `*` (matches any sequence) and `?` (matches any single character).
+///
+/// # Arguments
+///
+/// * `text` - The text to match.
+/// * `pattern` - The glob pattern.
+///
+/// # Returns
+///
+/// `true` if the text matches the pattern.
+fn glob_match(text: &str, pattern: &str) -> bool {
+    let t: Vec<char> = text.chars().collect();
+    let p: Vec<char> = pattern.chars().collect();
+    let mut ti = 0;
+    let mut pi = 0;
+    let mut star_ti = usize::MAX;
+    let mut star_pi = 0;
+
+    while ti < t.len() {
+        if pi < p.len() && (p[pi] == '?' || p[pi] == t[ti]) {
+            ti += 1;
+            pi += 1;
+        } else if pi < p.len() && p[pi] == '*' {
+            star_ti = ti;
+            star_pi = pi;
+            pi += 1;
+        } else if star_pi < p.len() {
+            star_ti += 1;
+            ti = star_ti;
+            pi = star_pi + 1;
+        } else {
+            return false;
+        }
+    }
+
+    while pi < p.len() && p[pi] == '*' {
+        pi += 1;
+    }
+
+    pi == p.len()
+}
