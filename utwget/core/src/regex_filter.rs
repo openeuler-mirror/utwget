@@ -328,3 +328,14 @@ impl UrlFilter for RobotsFilter {
         !self.use_robots
     }
 }
+
+/// Span hosts filter.
+///
+/// When `span` is disabled, URLs are rejected if they point to
+/// a different host than the starting host.
+pub struct SpanHostFilter {
+    /// Whether to allow spanning to other hosts.
+    span: bool,
+    /// The starting host.
+    start_host: String,
+}
