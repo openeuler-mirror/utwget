@@ -459,3 +459,9 @@ impl BlacklistFilter {
         self.seen.contains(url)
     }
 }
+
+impl UrlFilter for BlacklistFilter {
+    fn is_accepted(&self, url: &str, _filename: &str) -> bool {
+        !self.seen.contains(url)
+    }
+}
