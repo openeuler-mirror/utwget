@@ -226,3 +226,16 @@ pub enum RestrictOs {
     /// Windows-style restrictions.
     Windows,
 }
+
+impl Default for RestrictOs {
+    fn default() -> Self {
+        #[cfg(target_os = "windows")]
+        {
+            RestrictOs::Windows
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            RestrictOs::Unix
+        }
+    }
+}
