@@ -173,3 +173,9 @@ pub enum ProgressStyle {
     /// Verbose output without progress.
     Verbose,
 }
+
+impl Default for ProgressStyle {
+    fn default() -> Self {
+        ProgressStyle::Bar
+    }
+}
