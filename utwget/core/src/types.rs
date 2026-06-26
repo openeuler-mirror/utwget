@@ -145,3 +145,18 @@ impl std::str::FromStr for HttpMethod {
         }
     }
 }
+
+/// Address family preference for DNS resolution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum AddressFamily {
+    /// Use IPv4 only.
+    Ipv4,
+    /// Use IPv6 only.
+    Ipv6,
+    /// Prefer IPv4, fallback to IPv6.
+    PreferIpv4,
+    /// Prefer IPv6, fallback to IPv4.
+    PreferIpv6,
+    /// Use system default.
+    Unspecified,
+}
