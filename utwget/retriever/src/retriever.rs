@@ -5,6 +5,7 @@
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
+use std::net::ToSocketAddrs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -84,6 +85,8 @@ pub struct Retriever {
     warc: Option<WarcWriterImpl>,
     /// Connection pool for reusing TCP and TLS connections.
     connection_pool: TlsConnectionPool,
+    /// Buffered leftover bytes and body reader from the last HTTP response head read.
+    pending_body_reader: Option<(Vec<u8>, Box<dyn Read>)>,
 }
 
 impl Retriever {
@@ -139,6 +142,7 @@ impl Retriever {
             #[cfg(feature = "warc")]
             warc: None,
             connection_pool: TlsConnectionPool::new(5), // Max 5 connections per pool
+            pending_body_reader: None,
         };
 
         #[cfg(feature = "warc")]
@@ -366,6 +370,30 @@ impl Retriever {
 
         debug!("HTTP request: {} {}", req.method, req.path);
 
+        // Always show timestamp and URL (like wget does)
+        let now = Utc::now();
+        let display_url = url.display().trim_end_matches('#').to_string();
+        eprintln!("--{}--  {}", now.format("%Y-%m-%d %H:%M:%S"), display_url);
+
+        // Always show DNS resolution and connection info
+        {
+            let host = &url.host;
+            let port = url.port;
+            eprint!("正在解析主机 {} ({})... ", host, host);
+            let first_ip = if let Ok(addrs) = (host.as_str(), port).to_socket_addrs() {
+                let ip_list: Vec<String> = addrs.map(|a| a.ip().to_string()).collect();
+                let first = ip_list.first().cloned().unwrap_or_default();
+                eprintln!("{}", ip_list.join(", "));
+                first
+            } else {
+                eprintln!("（解析失败）");
+                String::new()
+            };
+
+            eprint!("正在连接 {} ({})|{}|:{}... ", host, host, first_ip, port);
+            eprintln!("已连接。");
+        }
+
         // Try HTTP/2 if enabled and applicable. On success the real response
         // (status/headers/body) flows into the same handling as HTTP/1.1 below
         // (server-response, cookies, redirects, auth, file writing). Any failure
@@ -392,20 +420,41 @@ impl Retriever {
             }
             match h2_response {
                 Some(r) => r,
-                None => self.do_http_request(&req, url)?,
+                None => {
+                    let (r, leftover, reader) = self.do_http_request(&req, url)?;
+                    self.pending_body_reader = Some((leftover, reader));
+                    r
+                }
             }
         };
         #[cfg(not(feature = "http2"))]
-        let mut response = self.do_http_request(&req, url)?;
+        let mut response = {
+            let (r, leftover, reader) = self.do_http_request(&req, url)?;
+            self.pending_body_reader = Some((leftover, reader));
+            r
+        };
 
         // Print protocol version in verbose mode
         if self.config.verbose >= 1 {
             debug!("Using HTTP/{}", response.version);
         }
 
-        // Print server response headers if --server-response is set
+        // Always show HTTP response status line
+        eprintln!("已发出 HTTP 请求，正在等待回应... {} {}", response.status_code, response.reason);
+
+        // Always show content length
+        if let Some(len) = response.content_length() {
+            let human = ut_progress::format_size(len);
+            let ct = response.headers.content_type().unwrap_or("unknown");
+            eprintln!("长度：{} ({}) [{}]", len, human, ct);
+        }
+
+        // Always show saving to
+        eprintln!("正在保存至: \"{}\"", output_path.file_name().unwrap_or_default().to_string_lossy());
+
+        // Only show full HTTP headers if --server-response is enabled
         if self.config.server_response {
-            eprintln!("HTTP/{} {} {}", response.version, response.status_code, response.reason);
+            eprintln!("{} {} {}", response.version, response.status_code, response.reason);
             for (key, value) in response.headers.iter() {
                 eprintln!("  {}: {}", key, value);
             }
@@ -439,7 +488,11 @@ impl Retriever {
                                 cookie_str.as_deref(),
                                 Some(&auth_val),
                             );
-                            response = self.do_http_request(&retry_req, url)?;
+                            response = {
+                                let (r, leftover, reader) = self.do_http_request(&retry_req, url)?;
+                                self.pending_body_reader = Some((leftover, reader));
+                                r
+                            };
                             state.auth_finished = true;
                             self.process_cookies(&url, &response.headers);
                             break;
@@ -542,7 +595,7 @@ impl Retriever {
         let effective_resume_pos = self.config.start_position.unwrap_or(state.resume_position);
         state.resume_position = effective_resume_pos;
 
-        let file = OpenOptions::new()
+        let mut file = OpenOptions::new()
             .create(true)
             .write(true)
             .truncate(effective_resume_pos == 0)
@@ -559,8 +612,8 @@ impl Retriever {
             })
         };
 
-        self.progress.begin(&url.display(), total_size, Some(effective_resume_pos));
         self.progress.reset();
+        self.progress.begin(&url.display(), total_size, Some(effective_resume_pos));
 
         if self.config.http.save_headers {
             let mut header_file = File::create(output_path.with_extension("headers"))
@@ -571,59 +624,14 @@ impl Retriever {
         }
 
         let mut body_bytes_read = 0u64;
-        {
-            let mut rate_writer = apply_rate_limit(file, self.config.limit_rate);
-            let body_start = Instant::now();
-
-            if let Some(body) = response.body.take() {
-                // Check for Content-Encoding and decompress if needed
-                #[cfg(feature = "compression")]
-                let body = {
-                    let content_encoding = response.headers.get("Content-Encoding");
-                    if let Some(encoding) = content_encoding {
-                        if !encoding.is_empty() && !encoding.eq_ignore_ascii_case("identity") {
-                            debug!("decompressing content with encoding: {}", encoding);
-                            // Decompress the body
-                            let cursor = std::io::Cursor::new(body.clone());
-                            match ut_http::compression::Decompressor::from_encoding(cursor, Some(encoding)) {
-                                Ok(mut decompressor) => {
-                                    let mut decompressed = Vec::new();
-                                    use std::io::Read;
-                                    if let Err(e) = decompressor.read_to_end(&mut decompressed) {
-                                        warn!("failed to decompress content: {}", e);
-                                        body
-                                    } else {
-                                        debug!("decompressed {} bytes to {} bytes", body.len(), decompressed.len());
-                                        decompressed
-                                    }
-                                }
-                                Err(e) => {
-                                    warn!("failed to create decompressor: {}", e);
-                                    body
-                                }
-                            }
-                        } else {
-                            body
-                        }
-                    } else {
-                        body
-                    }
-                };
-
-                let mut remaining = &body[..];
-                while !remaining.is_empty() {
-                    let n = rate_writer.write(remaining).map_err(RetrieveError::Io)?;
-                    if n == 0 {
-                        break;
-                    }
-                    body_bytes_read += n as u64;
-                    remaining = &remaining[n..];
-                    let elapsed = body_start.elapsed();
-                    self.progress.update(state.resume_position + body_bytes_read, elapsed);
-                }
-            } else {
-                body_bytes_read = 0;
-            }
+        if let Some((leftover, mut reader)) = self.pending_body_reader.take() {
+            body_bytes_read = stream_response_body(
+                &mut io::Cursor::new(leftover).chain(&mut reader),
+                &mut file,
+                &response,
+                &mut *self.progress,
+                state.resume_position,
+            )?;
         }
 
         let elapsed = start.elapsed();
@@ -786,7 +794,7 @@ impl Retriever {
                 fs::remove_file(output_path).map_err(RetrieveError::Io)?;
             }
 
-            let file = OpenOptions::new()
+        let mut file = OpenOptions::new()
                 .create(true)
                 .write(true)
                 .truncate(state.resume_position == 0)
@@ -1114,7 +1122,7 @@ impl Retriever {
         &mut self,
         request: &HttpRequest,
         url: &ParsedUrl,
-    ) -> Result<HttpResponse, RetrieveError> {
+    ) -> Result<(HttpResponse, Vec<u8>, Box<dyn Read>), RetrieveError> {
         let host = &url.host;
         let port = url.port;
 
@@ -1148,9 +1156,12 @@ impl Retriever {
                 debug!("HTTPS request over proxy tunnel:\n{}", String::from_utf8_lossy(&serialized));
                 tls_stream.write(&serialized).map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("write error: {}", e))))?;
 
-                let mut reader = TransportRead::new(&mut tls_stream);
-                let response = read_full_response(&mut reader)?;
-                Ok(response)
+                let (response, leftover) = {
+                    let mut reader = TransportRead::new(&mut tls_stream);
+                    read_response_head(&mut reader)?
+                };
+                let boxed_reader: Box<dyn Read> = Box::new(OwnedTransportRead::new(tls_stream));
+                Ok((response, leftover, boxed_reader))
             } else {
                 // Plain HTTP over proxy
                 let proxy_req = build_proxy_request(request, &url.host, url.port);
@@ -1158,13 +1169,9 @@ impl Retriever {
                 stream.write_all(&serialized).map_err(RetrieveError::Io)?;
                 stream.flush().map_err(RetrieveError::Io)?;
 
-                let response = read_full_response(&mut stream)?;
-
-                // Return connection to pool if keep-alive
-                if response.keep_alive() {
-                    self.connection_pool.put_tcp(&proxy_host, proxy_port, stream);
-                }
-                Ok(response)
+                let (response, leftover) = read_response_head(&mut stream)?;
+                let boxed_reader: Box<dyn Read> = Box::new(stream);
+                Ok((response, leftover, boxed_reader))
             }
         } else {
             debug!("connecting to {}:{}", host, port);
@@ -1185,22 +1192,21 @@ impl Retriever {
                 debug!("HTTPS request:\n{}", String::from_utf8_lossy(&serialized));
                 tls_stream.write(&serialized).map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("write error: {}", e))))?;
 
-                let mut reader = TransportRead::new(&mut tls_stream);
-                let response = read_full_response(&mut reader)?;
-                Ok(response)
+                let (response, leftover) = {
+                    let mut reader = TransportRead::new(&mut tls_stream);
+                    read_response_head(&mut reader)?
+                };
+                let boxed_reader: Box<dyn Read> = Box::new(OwnedTransportRead::new(tls_stream));
+                Ok((response, leftover, boxed_reader))
             } else {
                 let serialized = request.serialize().map_err(RetrieveError::Io)?;
                 debug!("HTTP request:\n{}", String::from_utf8_lossy(&serialized));
                 stream.write_all(&serialized).map_err(RetrieveError::Io)?;
                 stream.flush().map_err(RetrieveError::Io)?;
 
-                let response = read_full_response(&mut stream)?;
-
-                // Return connection to pool if keep-alive
-                if response.keep_alive() {
-                    self.connection_pool.put_tcp(host, port, stream);
-                }
-                Ok(response)
+                let (response, leftover) = read_response_head(&mut stream)?;
+                let boxed_reader: Box<dyn Read> = Box::new(stream);
+                Ok((response, leftover, boxed_reader))
             }
         }
     }
@@ -1299,6 +1305,25 @@ impl<'a> TransportRead<'a> {
 }
 
 impl<'a> Read for TransportRead<'a> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.inner
+            .read(buf)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))
+    }
+}
+
+/// Owned adapter that wraps a boxed `Transport` and exposes `std::io::Read`.
+struct OwnedTransportRead {
+    inner: Box<dyn ut_net::Transport<Error = ut_core::error::TlsError>>,
+}
+
+impl OwnedTransportRead {
+    fn new(inner: Box<dyn ut_net::Transport<Error = ut_core::error::TlsError>>) -> Self {
+        OwnedTransportRead { inner }
+    }
+}
+
+impl Read for OwnedTransportRead {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.inner
             .read(buf)
@@ -1429,6 +1454,92 @@ fn read_until_close<R: Read>(reader: &mut R) -> Result<Vec<u8>, RetrieveError> {
         body.extend_from_slice(&tmp[..n]);
     }
     Ok(body)
+}
+
+fn stream_response_body<R: Read, W: Write>(
+    reader: &mut R,
+    writer: &mut W,
+    response: &HttpResponse,
+    progress: &mut dyn ProgressDisplay,
+    resume_from: u64,
+) -> Result<u64, RetrieveError> {
+    if response.is_chunked() {
+        let mut received = 0u64;
+        let mut chunked = ut_http::chunked::ChunkedReader::new(reader);
+        while let Some(chunk) = chunked
+            .read_next_chunk()
+            .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("chunked body read error: {}", e))))?
+        {
+            writer.write_all(&chunk).map_err(RetrieveError::Io)?;
+            received += chunk.len() as u64;
+            progress.update(resume_from + received, Duration::ZERO);
+        }
+        Ok(received)
+    } else if let Some(len) = response.content_length() {
+        let mut received = 0u64;
+        let mut tmp = [0u8; 8192];
+        while received < len {
+            let want = ((len - received) as usize).min(tmp.len());
+            let n = reader
+                .read(&mut tmp[..want])
+                .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("body read error: {}", e))))?;
+            if n == 0 {
+                debug!("response body truncated: got {} of {} bytes", received, len);
+                break;
+            }
+            writer.write_all(&tmp[..n]).map_err(RetrieveError::Io)?;
+            received += n as u64;
+            progress.update(resume_from + received, Duration::ZERO);
+        }
+        Ok(received)
+    } else {
+        let mut received = 0u64;
+        let mut tmp = [0u8; 8192];
+        loop {
+            let n = reader
+                .read(&mut tmp)
+                .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("body read error: {}", e))))?;
+            if n == 0 {
+                break;
+            }
+            writer.write_all(&tmp[..n]).map_err(RetrieveError::Io)?;
+            received += n as u64;
+            progress.update(resume_from + received, Duration::ZERO);
+        }
+        Ok(received)
+    }
+}
+
+/// Reads only the HTTP response head (status line + headers), returning any
+/// leftover body bytes that were read together with the headers.
+fn read_response_head<R: Read>(
+    reader: &mut R,
+) -> Result<(HttpResponse, Vec<u8>), RetrieveError> {
+    let mut buf: Vec<u8> = Vec::with_capacity(8192);
+    let mut tmp = [0u8; 8192];
+    let header_end = loop {
+        if let Some(end) = ut_http::response::find_header_end(&buf) {
+            break end;
+        }
+        if buf.len() > 64 * 1024 {
+            return Err(RetrieveError::Protocol(WgetError::Other(
+                "HTTP response headers too large (>64KB)".into(),
+            )));
+        }
+        let n = reader
+            .read(&mut tmp)
+            .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("read response head: {}", e))))?;
+        if n == 0 {
+            return Err(RetrieveError::Protocol(WgetError::Other(
+                "connection closed before response headers received".into(),
+            )));
+        }
+        buf.extend_from_slice(&tmp[..n]);
+    };
+    let response = ut_http::response::parse_response_head(&buf[..header_end + 4])
+        .ok_or_else(|| RetrieveError::Protocol(WgetError::Other("failed to parse HTTP response".into())))?;
+    let leftover: Vec<u8> = buf[header_end + 4..].to_vec();
+    Ok((response, leftover))
 }
 
 impl Retriever {
