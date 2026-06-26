@@ -250,3 +250,9 @@ pub enum CaseRestriction {
     /// Force uppercase.
     Uppercase,
 }
+
+impl Default for CaseRestriction {
+    fn default() -> Self {
+        CaseRestriction::None
+    }
+}
