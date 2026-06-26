@@ -267,3 +267,9 @@ pub enum CompressionMode {
     /// Disable compression.
     None,
 }
+
+impl Default for CompressionMode {
+    fn default() -> Self {
+        CompressionMode::Auto
+    }
+}
