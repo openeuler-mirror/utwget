@@ -160,3 +160,16 @@ pub enum AddressFamily {
     /// Use system default.
     Unspecified,
 }
+
+/// Progress display style.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ProgressStyle {
+    /// Bar-style progress indicator.
+    Bar,
+    /// Dot-style progress indicator.
+    Dot { bytes_per_dot: usize, dots_per_line: usize, spacing: usize },
+    /// No progress output.
+    Silent,
+    /// Verbose output without progress.
+    Verbose,
+}
