@@ -128,3 +128,20 @@ impl fmt::Display for HttpMethod {
         f.write_str(self.as_str())
     }
 }
+
+impl std::str::FromStr for HttpMethod {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s.to_ascii_uppercase().as_str() {
+            "GET" => Ok(HttpMethod::Get),
+            "POST" => Ok(HttpMethod::Post),
+            "PUT" => Ok(HttpMethod::Put),
+            "DELETE" => Ok(HttpMethod::Delete),
+            "HEAD" => Ok(HttpMethod::Head),
+            "OPTIONS" => Ok(HttpMethod::Options),
+            "PATCH" => Ok(HttpMethod::Patch),
+            other => Err(format!("unsupported HTTP method: {}", other)),
+        }
+    }
+}
