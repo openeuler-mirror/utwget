@@ -205,3 +205,15 @@ pub enum CheckCertMode {
     /// Verify certificates but suppress output.
     Quiet,
 }
+
+/// Key/certificate file format.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+pub enum KeyFileType {
+    /// PEM format (base64 encoded).
+    #[default]
+    Pem,
+    /// ASN.1 format.
+    Asn1,
+    /// DER format (binary).
+    Der,
+}
