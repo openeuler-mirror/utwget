@@ -256,3 +256,14 @@ impl Default for CaseRestriction {
         CaseRestriction::None
     }
 }
+
+/// Compression mode for downloads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum CompressionMode {
+    /// Automatically handle compression based on Content-Encoding.
+    Auto,
+    /// Request and handle gzip compression.
+    Gzip,
+    /// Disable compression.
+    None,
+}
