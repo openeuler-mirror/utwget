@@ -103,3 +103,22 @@ pub enum HttpMethod {
     /// PATCH method.
     Patch,
 }
+
+impl HttpMethod {
+    /// Returns the method as an uppercase string.
+    ///
+    /// # Returns
+    ///
+    /// The HTTP method name ("GET", "POST", etc.).
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            HttpMethod::Get => "GET",
+            HttpMethod::Post => "POST",
+            HttpMethod::Put => "PUT",
+            HttpMethod::Delete => "DELETE",
+            HttpMethod::Head => "HEAD",
+            HttpMethod::Options => "OPTIONS",
+            HttpMethod::Patch => "PATCH",
+        }
+    }
+}
