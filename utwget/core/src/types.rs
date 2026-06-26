@@ -193,3 +193,15 @@ pub enum SecureProtocol {
     /// Perfect Forward Secrecy ciphers only.
     Pfs,
 }
+
+/// Certificate verification mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+pub enum CheckCertMode {
+    /// Do not verify certificates.
+    Off,
+    /// Verify certificates and report errors.
+    #[default]
+    On,
+    /// Verify certificates but suppress output.
+    Quiet,
+}
