@@ -285,3 +285,30 @@ impl RobotParser {
         result
     }
 }
+
+/// Checks whether a URL path matches a robots.txt path pattern.
+///
+/// An empty pattern matches everything. The `*` pattern also matches everything.
+/// If the pattern ends with `/`, it matches any path that starts with that prefix.
+/// Otherwise, the pattern matches only if it is a prefix of the path and the
+/// remainder of the path is empty, starts with `/`, or starts with `?`.
+fn path_matches_rule(path: &str, pattern: &str) -> bool {
+    if pattern.is_empty() {
+        return true;
+    }
+    if pattern == "*" {
+        return true;
+    }
+    if path == pattern {
+        return true;
+    }
+    if pattern.ends_with('/') && path.starts_with(pattern) {
+        return true;
+    }
+    if let Some(rest) = path.strip_prefix(pattern) {
+        if rest.is_empty() || rest.starts_with('/') || rest.starts_with('?') {
+            return true;
+        }
+    }
+    false
+}
