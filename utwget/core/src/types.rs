@@ -83,3 +83,23 @@ impl fmt::Display for Scheme {
         f.write_str(self.as_str())
     }
 }
+
+/// HTTP request method enumeration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum HttpMethod {
+    /// GET method.
+    Get,
+    /// POST method.
+    Post,
+    /// PUT method.
+    Put,
+    /// DELETE method.
+    Delete,
+    /// HEAD method.
+    Head,
+    /// OPTIONS method.
+    Options,
+    /// PATCH method.
+    Patch,
+}
