@@ -239,3 +239,14 @@ impl Default for RestrictOs {
         }
     }
 }
+
+/// Case restriction for filenames.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum CaseRestriction {
+    /// No case restriction.
+    None,
+    /// Force lowercase.
+    Lowercase,
+    /// Force uppercase.
+    Uppercase,
+}
