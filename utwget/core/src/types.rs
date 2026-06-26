@@ -179,3 +179,17 @@ impl Default for ProgressStyle {
         ProgressStyle::Bar
     }
 }
+
+/// TLS protocol version selection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+pub enum SecureProtocol {
+    /// Automatically negotiate the best version.
+    #[default]
+    Auto,
+    /// TLS 1.2 only.
+    TlsV1_2,
+    /// TLS 1.3 only.
+    TlsV1_3,
+    /// Perfect Forward Secrecy ciphers only.
+    Pfs,
+}
