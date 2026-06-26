@@ -217,3 +217,12 @@ pub enum KeyFileType {
     /// DER format (binary).
     Der,
 }
+
+/// Operating system for filename restrictions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum RestrictOs {
+    /// Unix-style restrictions.
+    Unix,
+    /// Windows-style restrictions.
+    Windows,
+}
