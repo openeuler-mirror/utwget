@@ -26,3 +26,9 @@ use crate::transport::{Interest, Transport};
 
 /// Default TTL for DNS cache entries (5 minutes).
 const DNS_CACHE_TTL: Duration = Duration::from_secs(300);
+
+/// Maximum number of idle connections per connection key.
+const MAX_IDLE_PER_KEY: usize = 5;
+
+/// Maximum age of an idle connection before it's considered expired (2 minutes).
+const MAX_IDLE_AGE: Duration = Duration::from_secs(120);
