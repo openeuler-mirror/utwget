@@ -212,6 +212,20 @@ impl ProgressDisplay for BarProgress {
         self.flush_line();
     }
 
+    fn begin_with_output_path(&mut self, url: &str, output_path: &str, total_size: Option<u64>, resume_from: Option<u64>) {
+        self.url = url.to_string();
+        self.filename = output_path.to_string();
+        self.total_size = total_size;
+        self.resume_from = resume_from.unwrap_or(0);
+        self.downloaded = 0;
+        self.start_time = Instant::now();
+        self.last_update = Instant::now();
+        self.tick_count = 0;
+        self.finished = false;
+
+        self.flush_line();
+    }
+
     /// Updates the progress bar with the current download status.
     ///
     /// Renders and displays the progress bar showing percentage, downloaded/total
@@ -324,8 +338,21 @@ impl ProgressDisplay for BarProgress {
                 ]));
             }
             FinishStatus::Error(ref err) => {
+                let now = std::time::SystemTime::now();
+                let timestamp = now.duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| {
+                        let secs = d.as_secs();
+                        let days = secs / 86400;
+                        let time_of_day = secs % 86400;
+                        let hours = time_of_day / 3600;
+                        let minutes = (time_of_day % 3600) / 60;
+                        let seconds = time_of_day % 60;
+                        let (year, month, day) = days_to_ymd(days);
+                        format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", year, month, day, hours, minutes, seconds)
+                    })
+                    .unwrap_or_default();
                 eprintln!();
-                eprintln!("{}", ut_core::i18n::translate_with_args("utwget.error", &[("reason", err.to_string())]));
+                eprintln!("{} {}", timestamp, err);
             }
             FinishStatus::AlreadyExists => {
                 eprintln!();

@@ -560,7 +560,21 @@ impl Retriever {
             return Ok(RetrieveOutcome::NotModified);
         }
 
-        if response.is_client_error() || response.is_server_error() {
+        // For 4xx errors (except 416 Range Not Satisfiable), never save the body
+        // to match wget behavior: error responses are not written to disk.
+        if response.is_client_error() && response.status_code != 416 {
+            self.progress.finish(ut_progress::FinishStatus::Error(format!(
+                "错误 {}：{}。",
+                response.status_code,
+                response.reason
+            )));
+            return Err(RetrieveError::Response(WgetError::Http {
+                status: response.status_code,
+                message: response.reason.clone(),
+            }));
+        }
+
+        if response.is_server_error() {
             if !opts.content_on_error {
                 return Err(RetrieveError::Response(WgetError::Http {
                     status: response.status_code,
@@ -647,7 +661,7 @@ impl Retriever {
         };
 
         self.progress.reset();
-        self.progress.begin(&url.display(), total_size, Some(effective_resume_pos));
+        self.progress.begin_with_output_path(&url.display(), &output_path.to_string_lossy(), total_size, Some(effective_resume_pos));
 
         if self.config.http.save_headers {
             let mut header_file = File::create(output_path.with_extension("headers"))

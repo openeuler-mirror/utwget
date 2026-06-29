@@ -162,7 +162,7 @@ fn main() -> ExitCode {
     };
 
     if args.version {
-        println!("GNU Wget 1.21.4 built on linux-gnu.\n");
+        println!("{}\n", ut_core::i18n::translate("utwget.version"));
         println!("+cares +digest +gpgme +https +ipv6 +iri +large-file +metalink +nls\n+ntlm +opie +psl +ssl/openssl");
         println!();
         println!("Wgetrc:\n    /etc/wgetrc (system)\n");

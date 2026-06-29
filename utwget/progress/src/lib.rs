@@ -9,6 +9,9 @@ use std::time::Duration;
 
 pub trait ProgressDisplay: Send {
     fn begin(&mut self, url: &str, total_size: Option<u64>, resume_from: Option<u64>);
+    fn begin_with_output_path(&mut self, url: &str, _output_path: &str, total_size: Option<u64>, resume_from: Option<u64>) {
+        self.begin(url, total_size, resume_from);
+    }
     fn update(&mut self, downloaded: u64, elapsed: Duration);
     fn finish(&mut self, status: FinishStatus);
     fn set_redirected(&mut self, new_url: &str);
