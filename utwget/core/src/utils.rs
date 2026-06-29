@@ -143,3 +143,53 @@ pub fn format_timestamp(epoch_secs: i64) -> String {
         .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
         .unwrap_or_else(|| epoch_secs.to_string())
 }
+
+/// Parses a size string with optional suffix.
+///
+/// Supports suffixes: K/k (kilobytes), M/m (megabytes), G/g (gigabytes),
+/// T/t (terabytes). Values can be decimal.
+///
+/// # Arguments
+///
+/// * `s` - The size string (e.g., "10M", "1.5G").
+///
+/// # Returns
+///
+/// `Some(bytes)` if parsing succeeds, `None` otherwise.
+///
+/// # Example
+///
+/// ```
+/// use ut_core::utils::parse_size_string;
+///
+/// assert_eq!(parse_size_string("1K"), Some(1024));
+/// assert_eq!(parse_size_string("1.5M"), Some(1572864));
+/// ```
+pub fn parse_size_string(s: &str) -> Option<u64> {
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
+    }
+
+    let (num_str, multiplier) = if let Some(suffix) = s.strip_suffix('K') {
+        (suffix, 1024u64)
+    } else if let Some(suffix) = s.strip_suffix('k') {
+        (suffix, 1024u64)
+    } else if let Some(suffix) = s.strip_suffix('M') {
+        (suffix, 1024 * 1024)
+    } else if let Some(suffix) = s.strip_suffix('m') {
+        (suffix, 1024 * 1024)
+    } else if let Some(suffix) = s.strip_suffix('G') {
+        (suffix, 1024 * 1024 * 1024)
+    } else if let Some(suffix) = s.strip_suffix('g') {
+        (suffix, 1024 * 1024 * 1024)
+    } else if let Some(suffix) = s.strip_suffix('T') {
+        (suffix, 1024 * 1024 * 1024 * 1024)
+    } else if let Some(suffix) = s.strip_suffix('t') {
+        (suffix, 1024 * 1024 * 1024 * 1024)
+    } else {
+        (s, 1u64)
+    };
+
+    num_str.trim().parse::<f64>().ok().map(|n| (n * multiplier as f64) as u64)
+}
