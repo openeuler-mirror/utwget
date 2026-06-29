@@ -479,17 +479,57 @@ impl RecursiveRetriever {
             return allowed;
         }
 
-        let _robots_url = format!("http://{}/robots.txt", host_lc);
-        let allowed = match std::fs::read_to_string(format!("/tmp/.wget-robots-{}", host_lc)) {
-            Ok(content) => {
+        // Fetch robots.txt from the network, cache to /tmp, and load into parser
+        let allowed = match self.fetch_robots(&host_lc, robot_parser) {
+            Some(content) => {
                 robot_parser.load(&host_lc, &content);
                 robot_parser.is_allowed(&host_lc, url).unwrap_or(true)
             }
-            Err(_) => true,
+            None => true, // If fetch fails, allow the URL
         };
 
         self.robots_cache.insert(host_lc, allowed);
         allowed
+    }
+
+    /// Fetch robots.txt for a host from the network and cache it locally.
+    ///
+    /// Downloads `http://{host}/robots.txt` via the retriever, stores
+    /// the result in `/tmp/.wget-robots-{host}` for local caching.
+    /// Falls back to cached file if network fetch fails.
+    ///
+    /// # Arguments
+    ///
+    /// * `host` - The host to fetch robots.txt for (lowercase).
+    /// * `robot_parser` - The robots.txt parser instance (unused here, kept for API consistency).
+    ///
+    /// # Returns
+    ///
+    /// `Some(content)` if robots.txt was successfully fetched or read from cache,
+    /// `None` if unavailable.
+    fn fetch_robots(&mut self, host: &str, _robot_parser: &mut RobotParser) -> Option<String> {
+        let robots_url = format!("http://{}/robots.txt", host);
+
+        // Try fetching from the network via the retriever
+        let content = match self.retriever.retrieve(&robots_url) {
+            Ok(RetrieveOutcome::Success(body)) => {
+                if let Some(ref path) = body.local_file {
+                    std::fs::read_to_string(path).ok()
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+
+        if let Some(ref c) = content {
+            // Cache to /tmp for future use
+            let _ = std::fs::write(format!("/tmp/.wget-robots-{}", host), c);
+            return Some(c.clone());
+        }
+
+        // Fallback: read from cached file
+        std::fs::read_to_string(format!("/tmp/.wget-robots-{}", host)).ok()
     }
 
     /// Get a reference to the underlying retriever.
