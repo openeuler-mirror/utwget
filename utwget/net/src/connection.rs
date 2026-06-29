@@ -97,3 +97,13 @@ pub struct ConnectionKey {
     /// Whether TLS/SSL is enabled for this connection.
     pub use_tls: bool,
 }
+
+/// Internal DNS cache for storing resolved addresses.
+///
+/// Maps hostnames to a list of socket addresses and the time they were cached.
+struct DnsCache {
+    /// Cached DNS entries: hostname -> (addresses, timestamp).
+    entries: HashMap<String, (Vec<std::net::SocketAddr>, Instant)>,
+    /// Time-to-live for cache entries.
+    ttl: Duration,
+}
