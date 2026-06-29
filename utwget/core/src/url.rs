@@ -380,3 +380,16 @@ pub fn decode_iri(url: &str) -> String {
     // Try to decode as UTF-8
     String::from_utf8_lossy(result.as_bytes()).to_string()
 }
+
+fn find_unescaped_slash(s: &str) -> usize {
+    let mut bracket_depth = 0i32;
+    for (i, ch) in s.char_indices() {
+        match ch {
+            '[' => bracket_depth += 1,
+            ']' => bracket_depth -= 1,
+            '/' if bracket_depth == 0 => return i,
+            _ => {}
+        }
+    }
+    usize::MAX
+}
