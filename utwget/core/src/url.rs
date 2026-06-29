@@ -454,3 +454,43 @@ fn parse_host_port(host_port: &str, scheme: Scheme) -> Result<(String, u16)> {
 
     Ok((host, port))
 }
+
+fn parse_path_query_fragment(input: &str) -> (String, Option<String>, Option<String>) {
+    let question_idx = input.find('?').unwrap_or(usize::MAX);
+    let hash_idx = input.find('#').unwrap_or(usize::MAX);
+    let split_idx = question_idx.min(hash_idx);
+
+    let (path_part, rest) = if split_idx == usize::MAX {
+        (input, "")
+    } else {
+        (&input[..split_idx], &input[split_idx + 1..])
+    };
+
+    let path = if path_part.is_empty() {
+        "/".to_string()
+    } else {
+        path_part.to_string()
+    };
+
+    let (query, fragment) = if question_idx < hash_idx && split_idx == question_idx {
+        let after_q = rest;
+        let frag_in_q = after_q.find('#').unwrap_or(usize::MAX);
+        if frag_in_q < after_q.len() {
+            (Some(after_q[..frag_in_q].to_string()), Some(after_q[frag_in_q + 1..].to_string()))
+        } else {
+            (Some(after_q.to_string()), None)
+        }
+    } else if split_idx == hash_idx {
+        let after_h = rest;
+        let q_in_h = after_h.find('?').unwrap_or(usize::MAX);
+        if q_in_h < after_h.len() {
+            (Some(after_h[..q_in_h].to_string()), Some(after_h[q_in_h + 1..].to_string()))
+        } else {
+            (None, Some(after_h.to_string()))
+        }
+    } else {
+        (None, None)
+    };
+
+    (path, query, fragment)
+}
