@@ -340,3 +340,43 @@ pub fn encode_iri(url: &str) -> String {
     }
     result
 }
+
+/// Decode percent-encoded characters in URL for IRI support.
+///
+/// Converts percent-encoded sequences back to their original characters.
+/// This is useful for displaying URLs with international characters.
+///
+/// # Arguments
+///
+/// * `url` - The URL string with percent-encoded sequences.
+///
+/// # Returns
+///
+/// A new string with percent-encoded sequences decoded.
+///
+/// # Example
+///
+/// ```
+/// let decoded = decode_iri("https://example.com/%E6%96%87%E6%A1%A3");
+/// ```
+pub fn decode_iri(url: &str) -> String {
+    let mut result = String::with_capacity(url.len());
+    let mut chars = url.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '%' {
+            let hex: String = chars.by_ref().take(2).collect();
+            if let Ok(byte) = u8::from_str_radix(&hex, 16) {
+                result.push(byte as char);
+            } else {
+                result.push('%');
+                result.push_str(&hex);
+            }
+        } else {
+            result.push(ch);
+        }
+    }
+
+    // Try to decode as UTF-8
+    String::from_utf8_lossy(result.as_bytes()).to_string()
+}
