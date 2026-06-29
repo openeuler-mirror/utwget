@@ -516,3 +516,11 @@ fn extract_dir(path: &str) -> String {
         None => "/".to_string(),
     }
 }
+
+fn extract_file(path: &str) -> String {
+    let trimmed = path.trim_end_matches('/');
+    match trimmed.rfind('/') {
+        Some(idx) => trimmed[idx + 1..].to_string(),
+        None => trimmed.to_string(),
+    }
+}
