@@ -276,3 +276,32 @@ impl ParsedUrl {
         self.to_string()
     }
 }
+
+impl fmt::Display for ParsedUrl {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}://", self.scheme)?;
+        if let Some(ref user) = self.user {
+            write!(f, "{}", user)?;
+            if let Some(ref pass) = self.password {
+                write!(f, ":{}", pass)?;
+            }
+            write!(f, "@")?;
+        }
+        write!(f, "{}", self.host)?;
+        let default_port = self.scheme.default_port();
+        if self.port != default_port {
+            write!(f, ":{}", self.port)?;
+        }
+        write!(f, "{}", self.path)?;
+        if let Some(ref p) = self.params {
+            write!(f, ";{}", p)?;
+        }
+        if let Some(ref q) = self.query {
+            write!(f, "?{}", q)?;
+        }
+        if let Some(ref fr) = self.fragment {
+            write!(f, "#{}", fr)?;
+        }
+        Ok(())
+    }
+}
