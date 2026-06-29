@@ -502,3 +502,110 @@ impl<R: DnsResolver, T: TlsConnector> ConnectionManager<R, T> {
         None
     }
 }
+
+impl ManagedConnection {
+    /// Returns the connection key for this connection.
+    ///
+    /// The key identifies the scheme, host, port, and TLS status.
+    pub fn key(&self) -> &ConnectionKey {
+        &self.key
+    }
+
+    /// Returns whether this connection can be reused.
+    ///
+    /// A connection may be marked non-reusable if an error occurred
+    /// or if the server indicated it should be closed.
+    pub fn is_reusable(&self) -> bool {
+        self.reusable
+    }
+
+    /// Sets whether this connection can be reused.
+    ///
+    /// # Arguments
+    ///
+    /// * `reusable` - Whether the connection can be returned to the idle pool.
+    pub fn set_reusable(&mut self, reusable: bool) {
+        self.reusable = reusable;
+    }
+
+    /// Returns the underlying TCP transport, if this is a plain TCP connection.
+    ///
+    /// Returns `None` if this is a TLS connection.
+    pub fn as_tcp_transport(&self) -> Option<&dyn Transport<Error = io::Error>> {
+        match &self.transport {
+            ManagedTransport::Tcp(t) => Some(t.as_ref()),
+            _ => None,
+        }
+    }
+
+    /// Returns a mutable reference to the underlying TCP transport.
+    ///
+    /// Returns `None` if this is a TLS connection.
+    pub fn as_tcp_transport_mut(&mut self) -> Option<&mut dyn Transport<Error = io::Error>> {
+        match &mut self.transport {
+            ManagedTransport::Tcp(t) => Some(t.as_mut()),
+            _ => None,
+        }
+    }
+
+    /// Consumes this connection and returns the underlying TCP transport.
+    ///
+    /// Returns `None` if this is a TLS connection.
+    pub fn into_tcp_transport(self) -> Option<Box<dyn Transport<Error = io::Error>>> {
+        match self.transport {
+            ManagedTransport::Tcp(t) => Some(t),
+            _ => None,
+        }
+    }
+
+    /// Polls the connection for readiness.
+    ///
+    /// Checks whether the connection is ready for reading or writing
+    /// within the specified timeout.
+    ///
+    /// # Arguments
+    ///
+    /// * `interest` - What operations to check for (readable/writable).
+    /// * `timeout` - Maximum time to wait for readiness.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(true)` if ready, `Ok(false)` if timeout expired, or an error.
+    pub fn poll_ready(&mut self, interest: Interest, timeout: Duration) -> io::Result<bool> {
+        match &mut self.transport {
+            ManagedTransport::Tcp(t) => t.poll_ready(interest, timeout),
+            ManagedTransport::Tls(t) => t
+                .poll_ready(interest, timeout)
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string())),
+        }
+    }
+
+    /// Closes the connection.
+    ///
+    /// Marks the connection as non-reusable and shuts down the underlying
+    /// transport.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the shutdown operation fails.
+    pub fn close(&mut self) -> io::Result<()> {
+        self.reusable = false;
+        match &mut self.transport {
+            ManagedTransport::Tcp(t) => t.close(),
+            ManagedTransport::Tls(t) => t
+                .close()
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string())),
+        }
+    }
+
+    /// Checks whether the connection is still alive.
+    ///
+    /// This performs a non-blocking peek to check if the connection
+    /// has been closed by the peer.
+    pub fn is_alive(&self) -> bool {
+        match &self.transport {
+            ManagedTransport::Tcp(t) => t.is_alive(),
+            ManagedTransport::Tls(t) => t.is_alive(),
+        }
+    }
+}
