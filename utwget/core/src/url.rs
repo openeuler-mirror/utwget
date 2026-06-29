@@ -53,3 +53,226 @@ pub struct ParsedUrl {
     /// Optional password for authentication.
     pub password: Option<String>,
 }
+
+impl ParsedUrl {
+    /// Parse a URL string into its components.
+    ///
+    /// This function handles IRI (Internationalized Resource Identifiers) by
+    /// automatically encoding non-ASCII characters to percent-encoded form.
+    ///
+    /// # Arguments
+    ///
+    /// * `input` - The URL string to parse.
+    ///
+    /// # Returns
+    ///
+    /// A `ParsedUrl` struct containing all URL components, or an error if
+    /// parsing fails.
+    ///
+    /// # Errors
+    ///
+    /// Returns `WgetError::UrlParse` if the URL is malformed.
+    /// Returns `WgetError::UnsupportedScheme` if the scheme is not recognized.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let url = ParsedUrl::parse("https://example.com/path")?;
+    /// ```
+    pub fn parse(input: &str) -> Result<Self> {
+        let input = input.trim();
+
+        // Encode IRI (non-ASCII characters) to percent-encoded form
+        let input = encode_iri(input);
+
+        let (scheme_str, rest) = input
+            .split_once("://")
+            .ok_or_else(|| WgetError::UrlParse(format!("missing scheme in URL: {}", input)))?;
+
+        let scheme = Scheme::from_str(scheme_str)
+            .ok_or_else(|| WgetError::UnsupportedScheme(scheme_str.to_string()))?;
+
+        let slash_idx = find_unescaped_slash(rest);
+        let (authority, after_slash) = if slash_idx == usize::MAX {
+            (rest, "")
+        } else {
+            (&rest[..slash_idx], &rest[slash_idx..])
+        };
+
+        let (user, password, host_port) = parse_authority(authority)?;
+        let (host, port) = parse_host_port(&host_port, scheme)?;
+
+        let (path, query, fragment) = parse_path_query_fragment(after_slash);
+        let (path_only, params) = split_params(&path);
+        let path_only = if path_only.is_empty() { "/".to_string() } else { path_only };
+        let dir = extract_dir(&path_only);
+        let file = extract_file(&path_only);
+
+        Ok(ParsedUrl {
+            original: input.to_string(),
+            scheme,
+            host,
+            port,
+            path: path_only,
+            params,
+            query,
+            fragment,
+            dir,
+            file,
+            user,
+            password,
+        })
+    }
+
+    /// Merge a relative URL with this URL.
+    ///
+    /// This implements RFC 3986 URL resolution. The relative URL can be:
+    /// - An absolute URL (returned as-is)
+    /// - A scheme-relative URL (//host/path)
+    /// - An absolute path (/path)
+    /// - A query string (?query)
+    /// - A fragment (#fragment)
+    /// - A relative path (path)
+    ///
+    /// # Arguments
+    ///
+    /// * `relative` - The relative URL to merge.
+    ///
+    /// # Returns
+    ///
+    /// A new `ParsedUrl` representing the merged URL.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let base = ParsedUrl::parse("https://example.com/page")?;
+    /// let merged = base.merge("/other")?;
+    /// assert_eq!(merged.path, "/other");
+    /// ```
+    pub fn merge(&self, relative: &str) -> Result<Self> {
+        let relative = relative.trim();
+
+        if relative.contains("://") {
+            return ParsedUrl::parse(relative);
+        }
+
+        if relative.starts_with("//") {
+            let full = format!("{}:{}", self.scheme, relative);
+            return ParsedUrl::parse(&full);
+        }
+
+        if relative.starts_with('/') {
+            let full = format!("{}://{}:{}{}", self.scheme, self.host, self.port, relative);
+            return ParsedUrl::parse(&full);
+        }
+
+        if let Some(query) = relative.strip_prefix('?') {
+            let mut merged = self.clone();
+            merged.query = Some(query.to_string());
+            merged.params = None;
+            merged.fragment = None;
+            merged.original = merged.to_string();
+            return Ok(merged);
+        }
+
+        if let Some(fragment) = relative.strip_prefix('#') {
+            let mut merged = self.clone();
+            merged.fragment = Some(fragment.to_string());
+            merged.original = merged.to_string();
+            return Ok(merged);
+        }
+
+        let base_dir = if self.path.ends_with('/') {
+            &self.path
+        } else {
+            &self.dir
+        };
+        let separator = if base_dir.ends_with('/') || relative.starts_with('/') {
+            ""
+        } else {
+            "/"
+        };
+        let new_path = format!("{}{}{}", base_dir, separator, relative);
+        let full = format!("{}://{}:{}{}", self.scheme, self.host, self.port, new_path);
+        ParsedUrl::parse(&full)
+    }
+
+    /// Get the full path including params and query string.
+    ///
+    /// Returns the path component with optional params (semicolon syntax)
+    /// and query string (question mark syntax). Fragment is not included
+    /// as it's client-side only.
+    ///
+    /// # Returns
+    ///
+    /// A string like "/path;params?query".
+    pub fn full_path(&self) -> String {
+        let mut result = self.path.clone();
+        if let Some(ref p) = self.params {
+            result.push(';');
+            result.push_str(p);
+        }
+        if let Some(ref q) = self.query {
+            result.push('?');
+            result.push_str(q);
+        }
+        // Note: fragment (#) is NOT included as it's client-side only
+        // and should not be sent to the server
+        result
+    }
+
+    /// Convert URL to a local filename.
+    ///
+    /// Uses the file component of the URL path, or "index.html" if empty.
+    /// The filename is sanitized to remove unsafe characters.
+    ///
+    /// # Arguments
+    ///
+    /// * `no_host_directories` - If true, don't include host in path.
+    ///
+    /// # Returns
+    ///
+    /// A `PathBuf` suitable for saving the downloaded file.
+    pub fn to_filename(&self, _no_host_directories: bool) -> PathBuf {
+        // Default wget behavior: download directly to current directory with just the filename
+        // Only create directory structure when -x (no_host_directories=false) is NOT the default
+        // Actually, wget default is to just use the filename, not create directories
+        // The directory structure is created only with -x or -r options
+        let name = if self.file.is_empty() { "index.html" } else { &self.file };
+        PathBuf::from(safe_filename(name))
+    }
+
+    /// Convert URL to filename with OS-specific restrictions applied.
+    ///
+    /// Similar to `to_filename` but applies additional restrictions for
+    /// cross-platform compatibility (e.g., removing characters invalid on Windows).
+    ///
+    /// # Arguments
+    ///
+    /// * `no_host_directories` - If true, don't include host in path.
+    /// * `restrictions` - Filename restriction settings.
+    ///
+    /// # Returns
+    ///
+    /// A `PathBuf` with restrictions applied.
+    pub fn to_filename_with_restrictions(&self, _no_host_directories: bool, restrictions: &FilenameRestrictions) -> PathBuf {
+        let name = if self.file.is_empty() { "index.html" } else { &self.file };
+        let safe_name = crate::utils::safe_filename_with_restrictions(
+            name,
+            restrictions.restrict_os,
+            restrictions.restrict_ctrl_chars,
+            restrictions.restrict_nonascii,
+            restrictions.case_restriction,
+        );
+        PathBuf::from(safe_name)
+    }
+
+    /// Get a displayable string representation of the URL.
+    ///
+    /// # Returns
+    ///
+    /// A string representation suitable for display.
+    pub fn display(&self) -> String {
+        self.to_string()
+    }
+}
