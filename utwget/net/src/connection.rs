@@ -130,3 +130,11 @@ pub struct ManagedConnection {
     /// Whether this connection can be returned to the idle pool.
     reusable: bool,
 }
+
+/// Internal enum for holding either a TCP or TLS transport.
+enum ManagedTransport {
+    /// Plain TCP transport.
+    Tcp(Box<dyn Transport<Error = io::Error>>),
+    /// TLS transport.
+    Tls(Box<dyn Transport<Error = TlsError>>),
+}
