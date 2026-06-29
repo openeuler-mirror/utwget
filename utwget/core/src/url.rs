@@ -413,3 +413,44 @@ fn parse_authority(authority: &str) -> Result<(Option<String>, Option<String>, S
     };
     Ok((user, pass, hp.to_string()))
 }
+
+fn parse_host_port(host_port: &str, scheme: Scheme) -> Result<(String, u16)> {
+    if host_port.is_empty() {
+        return Err(WgetError::UrlParse("empty host".to_string()));
+    }
+
+    let (host_str, port_str) = if host_port.starts_with('[') {
+        let end_bracket = host_port
+            .find(']')
+            .ok_or_else(|| WgetError::UrlParse("unclosed IPv6 bracket".to_string()))?;
+        let host = &host_port[1..end_bracket];
+        let rest = &host_port[end_bracket + 1..];
+        let port = if rest.starts_with(':') { Some(&rest[1..]) } else { None };
+        (host, port)
+    } else {
+        match host_port.rfind(':') {
+            Some(ci) => {
+                let h = &host_port[..ci];
+                if h.is_empty() {
+                    return Err(WgetError::UrlParse("empty host".to_string()));
+                }
+                (h, Some(&host_port[ci + 1..]))
+            }
+            None => (host_port, None),
+        }
+    };
+
+    let port = match port_str {
+        Some(p) => p
+            .parse::<u16>()
+            .map_err(|_| WgetError::UrlParse(format!("invalid port: {}", p)))?,
+        None => scheme.default_port(),
+    };
+
+    let host = host_str.to_string();
+    if host.is_empty() {
+        return Err(WgetError::UrlParse("empty host".to_string()));
+    }
+
+    Ok((host, port))
+}
