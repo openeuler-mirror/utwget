@@ -108,3 +108,14 @@ pub fn safe_filename_with_restrictions(name: &str, os: RestrictOs, ctrl: bool, n
         result
     }
 }
+
+/// Checks if a character is a control character.
+fn is_control_char(ch: char) -> bool {
+    ch.is_ascii_control()
+}
+
+/// Checks if a character is forbidden in Windows filenames.
+fn is_windows_forbidden(ch: char) -> bool {
+    matches!(ch, '<' | '>' | ':' | '"' | '|' | '?' | '*')
+        || (ch as u8) < 32
+}
