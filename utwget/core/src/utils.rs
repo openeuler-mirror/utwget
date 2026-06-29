@@ -193,3 +193,17 @@ pub fn parse_size_string(s: &str) -> Option<u64> {
 
     num_str.trim().parse::<f64>().ok().map(|n| (n * multiplier as f64) as u64)
 }
+
+/// Token bucket rate limiter for download speed control.
+///
+/// Implements a token bucket algorithm to limit the rate of data transfer.
+pub struct RateLimiter {
+    /// Maximum bytes per second.
+    bytes_per_second: u64,
+    /// Current tokens in the bucket.
+    bucket: u64,
+    /// Maximum bucket capacity.
+    max_bucket: u64,
+    /// Time of last token refill.
+    last_refill: Instant,
+}
