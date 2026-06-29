@@ -53,9 +53,9 @@ impl H2Client {
     /// # Returns
     ///
     /// A new `H2Client` instance.
-    pub fn from_sender(sender: SendRequest<Bytes>) -> Self {
-        let runtime = Runtime::new().expect("failed to create tokio runtime");
-        H2Client { sender, runtime }
+    pub fn from_sender(sender: SendRequest<Bytes>) -> Result<Self, Box<dyn std::error::Error>> {
+        let runtime = Runtime::new().map_err(|e| format!("failed to create tokio runtime: {}", e))?;
+        Ok(H2Client { sender, runtime })
     }
 
     /// Create a new HTTP/2 client connected to the given host and port.

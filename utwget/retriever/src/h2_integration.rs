@@ -195,7 +195,8 @@ impl H2Retriever {
             }
         });
 
-        let client = ut_http::h2::H2Client::from_sender(sender);
+        let client = ut_http::h2::H2Client::from_sender(sender)
+            .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("H2 client creation failed: {}", e))))?;
 
         Ok(H2Retriever {
             client,
