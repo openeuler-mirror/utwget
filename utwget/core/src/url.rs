@@ -501,3 +501,18 @@ fn split_params(path: &str) -> (String, Option<String>) {
         None => (path.to_string(), None),
     }
 }
+
+fn extract_dir(path: &str) -> String {
+    let trimmed = path.trim_end_matches('/');
+    match trimmed.rfind('/') {
+        Some(0) => "/".to_string(),
+        Some(idx) => {
+            let mut dir = trimmed[..idx + 1].to_string();
+            if !dir.ends_with('/') {
+                dir.push('/');
+            }
+            dir
+        }
+        None => "/".to_string(),
+    }
+}
