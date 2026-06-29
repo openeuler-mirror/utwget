@@ -80,3 +80,20 @@ pub struct ConnectionManager<R: DnsResolver, T: TlsConnector> {
     /// Address family preference (IPv4, IPv6, or unspecified).
     address_family: AddressFamily,
 }
+
+/// Key for identifying and caching connections.
+///
+/// Connections are identified by their scheme (http/https), host, port,
+/// and whether TLS is used. This allows connection reuse for identical
+/// connection parameters.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ConnectionKey {
+    /// The URL scheme (e.g., "http" or "https").
+    pub scheme: String,
+    /// The hostname or IP address.
+    pub host: String,
+    /// The port number.
+    pub port: u16,
+    /// Whether TLS/SSL is enabled for this connection.
+    pub use_tls: bool,
+}
