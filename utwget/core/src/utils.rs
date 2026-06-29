@@ -49,3 +49,62 @@ pub fn safe_filename(name: &str) -> String {
 
     result
 }
+
+/// Creates a safe filename with custom restrictions.
+///
+/// Applies OS-specific, control character, non-ASCII, and case restrictions
+/// according to the provided parameters.
+///
+/// # Arguments
+///
+/// * `name` - The original filename.
+/// * `os` - Operating system restrictions to apply.
+/// * `ctrl` - Whether to escape control characters.
+/// * `nonascii` - Whether to escape non-ASCII characters.
+/// * `case` - Case restriction to apply.
+///
+/// # Returns
+///
+/// A sanitized filename with all restrictions applied.
+pub fn safe_filename_with_restrictions(name: &str, os: RestrictOs, ctrl: bool, nonascii: bool, case: CaseRestriction) -> String {
+    let mut result = String::with_capacity(name.len());
+
+    for ch in name.chars() {
+        if ch == '/' || ch == '\\' {
+            result.push('_');
+            continue;
+        }
+        if ctrl && is_control_char(ch) {
+            result.push_str(&format!("\\x{:02X}", ch as u8));
+            continue;
+        }
+        if nonascii && !ch.is_ascii() {
+            result.push_str(&format!("\\x{{{:04X}}}", ch as u32));
+            continue;
+        }
+        match os {
+            RestrictOs::Windows => {
+                if is_windows_forbidden(ch) {
+                    result.push('_');
+                } else {
+                    result.push(ch);
+                }
+            }
+            RestrictOs::Unix => {
+                result.push(ch);
+            }
+        }
+    }
+
+    let result = match case {
+        CaseRestriction::Lowercase => result.to_ascii_lowercase(),
+        CaseRestriction::Uppercase => result.to_ascii_uppercase(),
+        CaseRestriction::None => result,
+    };
+
+    if result.is_empty() {
+        "_".to_string()
+    } else {
+        result
+    }
+}
