@@ -207,3 +207,57 @@ pub struct RateLimiter {
     /// Time of last token refill.
     last_refill: Instant,
 }
+
+impl RateLimiter {
+    /// Creates a new rate limiter.
+    ///
+    /// # Arguments
+    ///
+    /// * `bytes_per_second` - Maximum transfer rate in bytes per second.
+    ///   A value of 0 disables rate limiting.
+    ///
+    /// # Returns
+    ///
+    /// A new `RateLimiter` instance with a full bucket.
+    pub fn new(bytes_per_second: u64) -> Self {
+        RateLimiter {
+            bytes_per_second,
+            bucket: bytes_per_second,
+            max_bucket: bytes_per_second,
+            last_refill: Instant::now(),
+        }
+    }
+
+    /// Waits until the requested bytes can be transferred.
+    ///
+    /// This method will block until enough tokens are available in the bucket.
+    /// If rate limiting is disabled (bytes_per_second = 0), returns immediately.
+    ///
+    /// # Arguments
+    ///
+    /// * `bytes` - Number of bytes to transfer.
+    pub fn limit(&mut self, bytes: usize) {
+        if self.bytes_per_second == 0 {
+            return;
+        }
+
+        self.refill();
+
+        while self.bucket < bytes as u64 {
+            std::thread::sleep(Duration::from_millis(10));
+            self.refill();
+        }
+
+        self.bucket = self.bucket.saturating_sub(bytes as u64);
+    }
+
+    /// Refills the token bucket based on elapsed time.
+    fn refill(&mut self) {
+        let now = Instant::now();
+        let elapsed = now.duration_since(self.last_refill);
+        self.last_refill = now;
+
+        let refill_amount = (elapsed.as_secs_f64() * self.bytes_per_second as f64) as u64;
+        self.bucket = (self.bucket + refill_amount).min(self.max_bucket);
+    }
+}
