@@ -293,7 +293,7 @@ impl ProgressDisplay for BarProgress {
                 }
 
                 if self.force_noscroll {
-                    eprint!("\r{:>50}  \n", "");
+                    eprint!("\r{:>80}  \n", "");
                 } else {
                     eprintln!();
                 }
