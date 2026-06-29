@@ -64,7 +64,7 @@ impl HttpResponse {
     ///
     /// `true` if the status code is in the 100-199 range.
     pub fn is_informational(&self) -> bool {
-        (200..600).contains(&self.status_code) && self.status_code < 200
+        (100..200).contains(&self.status_code)
     }
 
     /// Returns whether the response indicates success (2xx).
