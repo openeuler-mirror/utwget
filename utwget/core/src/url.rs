@@ -305,3 +305,38 @@ impl fmt::Display for ParsedUrl {
         Ok(())
     }
 }
+
+/// Encode non-ASCII characters in URL for IRI support.
+///
+/// Converts Unicode characters to their percent-encoded UTF-8 representation.
+/// This allows URLs with international characters to be properly transmitted.
+///
+/// # Arguments
+///
+/// * `url` - The URL string possibly containing non-ASCII characters.
+///
+/// # Returns
+///
+/// A new string with all non-ASCII characters percent-encoded.
+///
+/// # Example
+///
+/// ```
+/// let encoded = encode_iri("https://example.com/文档");
+/// assert!(encoded.contains("%"));
+/// ```
+pub fn encode_iri(url: &str) -> String {
+    let mut result = String::with_capacity(url.len());
+    for ch in url.chars() {
+        if ch.is_ascii() {
+            result.push(ch);
+        } else {
+            // Percent-encode non-ASCII characters as UTF-8 bytes
+            let mut buf = [0u8; 4];
+            for byte in ch.encode_utf8(&mut buf).as_bytes() {
+                result.push_str(&format!("%{:02X}", byte));
+            }
+        }
+    }
+    result
+}
