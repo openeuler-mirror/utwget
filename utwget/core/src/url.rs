@@ -494,3 +494,10 @@ fn parse_path_query_fragment(input: &str) -> (String, Option<String>, Option<Str
 
     (path, query, fragment)
 }
+
+fn split_params(path: &str) -> (String, Option<String>) {
+    match path.find(';') {
+        Some(si) => (path[..si].to_string(), Some(path[si + 1..].to_string())),
+        None => (path.to_string(), None),
+    }
+}
