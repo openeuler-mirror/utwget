@@ -117,3 +117,16 @@ struct IdleConnection {
     /// Time when this connection was created/idled.
     created: Instant,
 }
+
+/// A managed connection returned by the connection manager.
+///
+/// This wraps a transport (TCP or TLS) and tracks whether it can be reused
+/// and returned to the idle pool.
+pub struct ManagedConnection {
+    /// The connection key identifying this connection.
+    key: ConnectionKey,
+    /// The underlying transport (TCP or TLS).
+    transport: ManagedTransport,
+    /// Whether this connection can be returned to the idle pool.
+    reusable: bool,
+}
