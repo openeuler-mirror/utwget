@@ -273,3 +273,12 @@ impl Default for CompressionMode {
         CompressionMode::Auto
     }
 }
+
+/// Username and password credentials.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Credentials {
+    /// The username.
+    pub username: String,
+    /// The password.
+    pub password: String,
+}
