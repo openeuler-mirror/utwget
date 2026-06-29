@@ -119,3 +119,27 @@ fn is_windows_forbidden(ch: char) -> bool {
     matches!(ch, '<' | '>' | ':' | '"' | '|' | '?' | '*')
         || (ch as u8) < 32
 }
+
+/// Formats a Unix timestamp as a human-readable string.
+///
+/// # Arguments
+///
+/// * `epoch_secs` - Unix timestamp in seconds.
+///
+/// # Returns
+///
+/// A string in "YYYY-MM-DD HH:MM:SS" format, or the raw number
+/// if the timestamp is invalid.
+///
+/// # Example
+///
+/// ```
+/// use ut_core::utils::format_timestamp;
+///
+/// assert_eq!(format_timestamp(0), "1970-01-01 00:00:00");
+/// ```
+pub fn format_timestamp(epoch_secs: i64) -> String {
+    chrono::DateTime::from_timestamp(epoch_secs, 0)
+        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+        .unwrap_or_else(|| epoch_secs.to_string())
+}
