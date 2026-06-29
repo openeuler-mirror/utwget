@@ -107,3 +107,13 @@ struct DnsCache {
     /// Time-to-live for cache entries.
     ttl: Duration,
 }
+
+/// An idle connection waiting to be reused.
+///
+/// Stores the transport and the time it was created for expiration tracking.
+struct IdleConnection {
+    /// The underlying transport.
+    transport: Box<dyn Transport<Error = io::Error>>,
+    /// Time when this connection was created/idled.
+    created: Instant,
+}
