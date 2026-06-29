@@ -393,3 +393,23 @@ fn find_unescaped_slash(s: &str) -> usize {
     }
     usize::MAX
 }
+
+fn parse_authority(authority: &str) -> Result<(Option<String>, Option<String>, String)> {
+    let authority = authority.trim();
+    if authority.is_empty() {
+        return Ok((None, None, String::new()));
+    }
+
+    let at_idx = match authority.rfind('@') {
+        Some(idx) => idx,
+        None => return Ok((None, None, authority.to_string())),
+    };
+
+    let ui = &authority[..at_idx];
+    let hp = &authority[at_idx + 1..];
+    let (user, pass) = match ui.find(':') {
+        Some(ci) => (Some(ui[..ci].to_string()), Some(ui[ci + 1..].to_string())),
+        None => (Some(ui.to_string()), None),
+    };
+    Ok((user, pass, hp.to_string()))
+}
