@@ -499,13 +499,8 @@ fn parse_path_query_fragment(input: &str) -> (String, Option<String>, Option<Str
             (Some(after_q.to_string()), None)
         }
     } else if split_idx == hash_idx {
-        let after_h = rest;
-        let q_in_h = after_h.find('?').unwrap_or(usize::MAX);
-        if q_in_h < after_h.len() {
-            (Some(after_h[..q_in_h].to_string()), Some(after_h[q_in_h + 1..].to_string()))
-        } else {
-            (None, Some(after_h.to_string()))
-        }
+        // RFC 3986: everything after # is fragment, ? inside fragment is literal
+        (None, Some(rest.to_string()))
     } else {
         (None, None)
     };
