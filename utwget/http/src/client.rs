@@ -453,9 +453,7 @@ impl HttpClient {
     ///
     /// A new `HttpClient` instance.
     pub fn new(config: Arc<Config>) -> Self {
-        let mut auth_dispatch = AuthDispatcher::new();
-        if config.auth_without_challenge {
-        }
+        let auth_dispatch = AuthDispatcher::new();
         HttpClient {
             config,
             auth_dispatch,
