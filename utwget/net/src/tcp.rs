@@ -203,3 +203,22 @@ fn connect_single(
     stream.set_write_timeout(Some(timeout))?;
     Ok(stream)
 }
+
+/// Error type for TCP connection operations.
+#[derive(Debug, thiserror::Error)]
+pub enum ConnectError {
+    /// DNS resolution failed.
+    #[error("DNS resolution failed: {0}")]
+    DnsFailed(#[from] DnsError),
+
+    /// All resolved addresses failed to connect.
+    #[error("all {tried} addresses failed for {host}: {last_error}")]
+    AllAddressesFailed {
+        /// The hostname that was being connected to.
+        host: String,
+        /// Number of addresses that were tried.
+        tried: usize,
+        /// The last error encountered.
+        last_error: io::Error,
+    },
+}
