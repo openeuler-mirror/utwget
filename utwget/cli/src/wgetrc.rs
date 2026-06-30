@@ -430,6 +430,10 @@ impl WgetrcParser {
             "ignore_tags" | "ignore-tags" => {
                 config.recursive.ignore_tags = value.split(',').map(String::from).collect();
             }
+            "reject_tags" | "reject-tags" => {
+                let reject: Vec<String> = value.split(',').map(String::from).collect();
+                config.recursive.ignore_tags.extend(reject);
+            }
             "load_cookies" | "load-cookies" => {
                 config.cookie.input_file = Some(value.parse::<std::path::PathBuf>().map_err(|_| ConfigError::InvalidValue {
                     option: key.to_string(),

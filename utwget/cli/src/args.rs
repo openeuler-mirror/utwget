@@ -363,6 +363,10 @@ pub struct Args {
     #[arg(long = "ignore-tags")]
     pub ignore_tags: Option<String>,
 
+    /// Comma-separated list of HTML tags to reject when recursing (synonym for --ignore-tags).
+    #[arg(long = "reject-tags")]
+    pub reject_tags: Option<String>,
+
     /// Comma-separated list of accepted file extensions/patterns.
     #[arg(short = 'A', long = "accept")]
     pub accept: Option<String>,

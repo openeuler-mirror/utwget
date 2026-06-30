@@ -281,7 +281,6 @@ impl WgetError {
             WgetError::ConnectionRefused
                 | WgetError::ConnectionTimeout(_)
                 | WgetError::SocketError(_)
-                | WgetError::Tls(TlsError::HandshakeFailed(_))
                 | WgetError::Http { status: 500..=599, .. }
                 | WgetError::Ftp(FtpError::UnexpectedResponse { .. })
                 | WgetError::Ftp(FtpError::ConnectionLost)
