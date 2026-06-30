@@ -158,3 +158,22 @@ impl Interest {
     /// Interest in both readable and writable operations.
     pub const BOTH: Interest = Interest { readable: true, writable: true };
 }
+
+/// TCP transport implementation.
+///
+/// Wraps a `TcpStream` and implements the `Transport` trait for
+/// plain TCP connections.
+///
+/// # Example
+///
+/// ```ignore
+/// use std::net::TcpStream;
+/// use utwget_net::transport::TcpTransport;
+///
+/// let stream = TcpStream::connect("example.com:80")?;
+/// let transport = TcpTransport::new(stream);
+/// ```
+pub struct TcpTransport {
+    /// The underlying TCP stream, or `None` if taken/closed.
+    stream: Option<TcpStream>,
+}
