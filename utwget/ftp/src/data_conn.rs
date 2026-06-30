@@ -341,7 +341,7 @@ fn parse_epsv_response(text: &str) -> Result<SocketAddr, FtpCommandError> {
     })?;
 
     match proto {
-        "1" => {
+        "1" | "" => {
             let ip: Ipv4Addr = addr_str.parse().map_err(|_| {
                 FtpCommandError::MalformedResponse(format!("EPSV: invalid IPv4: {}", addr_str))
             })?;
