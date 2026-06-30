@@ -609,3 +609,40 @@ impl ManagedConnection {
         }
     }
 }
+
+impl DnsCache {
+    /// Creates a new DNS cache with the specified TTL.
+    ///
+    /// # Arguments
+    ///
+    /// * `ttl` - Time-to-live for cache entries.
+    fn new(ttl: Duration) -> Self {
+        Self {
+            entries: HashMap::new(),
+            ttl,
+        }
+    }
+
+    /// Returns the TTL for cache entries.
+    fn ttl(&self) -> Duration {
+        self.ttl
+    }
+
+    /// Gets a cached DNS entry.
+    ///
+    /// Returns the addresses and the time they were cached, or `None`
+    /// if not in the cache.
+    fn get(&self, host: &str) -> Option<&(Vec<std::net::SocketAddr>, Instant)> {
+        self.entries.get(host)
+    }
+
+    /// Adds an entry to the DNS cache.
+    ///
+    /// # Arguments
+    ///
+    /// * `host` - The hostname.
+    /// * `addrs` - The resolved addresses.
+    fn put(&mut self, host: String, addrs: Vec<std::net::SocketAddr>) {
+        self.entries.insert(host, (addrs, Instant::now()));
+    }
+}
