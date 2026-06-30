@@ -23,6 +23,9 @@ pub trait Transport {
 
     /// Flush any buffered data to the transport.
     fn flush(&mut self) -> Result<(), Self::Error>;
+
+    /// Return the remote peer address, if available.
+    fn peer_addr(&self) -> Result<std::net::SocketAddr, Self::Error>;
 }
 
 /// Trait for transports that can be converted back to TcpStream.
@@ -48,6 +51,7 @@ impl Transport for std::net::TcpStream {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> { std::io::Read::read(self, buf) }
     fn write_all(&mut self, buf: &[u8]) -> Result<(), Self::Error> { std::io::Write::write_all(self, buf) }
     fn flush(&mut self) -> Result<(), Self::Error> { std::io::Write::flush(self) }
+    fn peer_addr(&self) -> Result<std::net::SocketAddr, Self::Error> { std::net::TcpStream::peer_addr(self) }
 }
 
 /// FTP command sender.
