@@ -157,3 +157,49 @@ fn matches_family(addr: &SocketAddr, family: AddressFamily) -> bool {
         (_, AddressFamily::Unspecified) => true,
     }
 }
+
+/// Establishes a TCP connection to a single address.
+///
+/// If a bind address is specified and compatible with the target address,
+/// the connection will be made from that local address.
+///
+/// # Arguments
+///
+/// * `addr` - The socket address to connect to.
+/// * `timeout` - Connection timeout.
+/// * `bind_address` - Optional local address to bind.
+///
+/// # Returns
+///
+/// A `TcpStream` on success, or an I/O error on failure.
+fn connect_single(
+    addr: &SocketAddr,
+    timeout: Duration,
+    bind_address: Option<std::net::IpAddr>,
+) -> io::Result<TcpStream> {
+    if let Some(bind) = bind_address {
+        let bind_compatible = match (bind, addr) {
+            (std::net::IpAddr::V4(_), SocketAddr::V4(_)) => Some(bind),
+            (std::net::IpAddr::V6(_), SocketAddr::V6(_)) => Some(bind),
+            _ => None,
+        };
+
+        if let Some(bind_addr) = bind_compatible {
+            let bind_socket = match bind_addr {
+                std::net::IpAddr::V4(v4) => std::net::TcpListener::bind((v4, 0))?,
+                std::net::IpAddr::V6(v6) => std::net::TcpListener::bind((v6, 0))?,
+            };
+            let _local_addr = bind_socket.local_addr()?;
+            drop(bind_socket);
+            let stream = TcpStream::connect_timeout(addr, timeout)?;
+            stream.set_read_timeout(Some(timeout))?;
+            stream.set_write_timeout(Some(timeout))?;
+            return Ok(stream);
+        }
+    }
+
+    let stream = TcpStream::connect_timeout(addr, timeout)?;
+    stream.set_read_timeout(Some(timeout))?;
+    stream.set_write_timeout(Some(timeout))?;
+    Ok(stream)
+}
