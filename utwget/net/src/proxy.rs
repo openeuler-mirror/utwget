@@ -216,3 +216,76 @@ fn parse_proxy_status(line: &str) -> Result<u16, ProxyError> {
 
     Ok(status)
 }
+
+/// Calculates the length of a base64-encoded string.
+///
+/// # Arguments
+///
+/// * `input_len` - The length of the input bytes.
+///
+/// # Returns
+///
+/// The required length of the output buffer for base64 encoding.
+fn base64_encode_len(input_len: usize) -> usize {
+    ((input_len + 2) / 3) * 4
+}
+
+/// Performs a simple base64 encoding.
+///
+/// This is a minimal implementation that does not require external dependencies.
+///
+/// # Arguments
+///
+/// * `input` - The bytes to encode.
+/// * `output` - The output buffer (must be at least `base64_encode_len(input.len())` bytes).
+///
+/// # Returns
+///
+/// The number of bytes written to the output buffer.
+fn simple_base64_encode(input: &[u8], output: &mut [u8]) -> usize {
+    const ENTABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+    let mut out_idx = 0;
+    let chunks = input.chunks(3);
+
+    for chunk in chunks {
+        let b0 = chunk[0] as u32;
+        let b1 = if chunk.len() > 1 {
+            chunk[1] as u32
+        } else {
+            0
+        };
+        let b2 = if chunk.len() > 2 {
+            chunk[2] as u32
+        } else {
+            0
+        };
+
+        let triple = (b0 << 16) | (b1 << 8) | b2;
+
+        output[out_idx] = ENTABLE[((triple >> 18) & 0x3F) as usize];
+        output[out_idx + 1] = ENTABLE[((triple >> 12) & 0x3F) as usize];
+        out_idx += 2;
+
+        if chunk.len() > 1 {
+            output[out_idx] = ENTABLE[((triple >> 6) & 0x3F) as usize];
+            out_idx += 1;
+        }
+        if chunk.len() > 2 {
+            output[out_idx] = ENTABLE[(triple & 0x3F) as usize];
+            out_idx += 1;
+        }
+    }
+
+    let rem = input.len() % 3;
+    if rem == 1 {
+        output[out_idx] = b'=';
+        output[out_idx + 1] = b'=';
+        out_idx += 2;
+    } else if rem == 2 {
+        output[out_idx] = b'=';
+        out_idx += 1;
+    }
+
+    out_idx
+}
