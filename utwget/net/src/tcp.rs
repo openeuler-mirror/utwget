@@ -88,3 +88,47 @@ pub fn connect_to_host(
         }),
     })
 }
+
+/// Resolves a hostname to socket addresses with address family filtering.
+///
+/// # Arguments
+///
+/// * `host` - The hostname to resolve.
+/// * `port` - The port number to associate with addresses.
+/// * `family` - The address family to filter by.
+///
+/// # Returns
+///
+/// A vector of `SocketAddr` values matching the address family.
+///
+/// # Errors
+///
+/// Returns a `ConnectError` if resolution fails or returns no matching addresses.
+fn resolve_addresses(
+    host: &str,
+    port: u16,
+    family: AddressFamily,
+) -> Result<Vec<SocketAddr>, ConnectError> {
+    let addr = format!("{}:{}", host, port);
+    let addrs: Vec<SocketAddr> = (addr.as_str(), 0u16)
+        .to_socket_addrs()
+        .map_err(|e| ConnectError::DnsFailed(DnsError::ResolveFailed {
+            host: host.to_string(),
+            detail: e.to_string(),
+        }))?
+        .filter(|a| matches_family(a, family))
+        .map(|mut a| {
+            a.set_port(port);
+            a
+        })
+        .collect();
+
+    if addrs.is_empty() {
+        return Err(ConnectError::DnsFailed(DnsError::NoAddresses {
+            host: host.to_string(),
+            port,
+        }));
+    }
+
+    Ok(addrs)
+}
