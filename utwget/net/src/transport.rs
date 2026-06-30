@@ -147,3 +147,14 @@ pub struct Interest {
     /// Wait for the transport to be writable.
     pub writable: bool,
 }
+
+impl Interest {
+    /// Interest in readable operations only.
+    pub const READABLE: Interest = Interest { readable: true, writable: false };
+
+    /// Interest in writable operations only.
+    pub const WRITABLE: Interest = Interest { readable: false, writable: true };
+
+    /// Interest in both readable and writable operations.
+    pub const BOTH: Interest = Interest { readable: true, writable: true };
+}
