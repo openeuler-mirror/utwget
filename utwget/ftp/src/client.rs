@@ -1073,11 +1073,14 @@ impl FtpClient {
     /// Uses passive mode (PASV/EPSV) or active mode (PORT/EPRT) depending
     /// on the client configuration.
     fn open_data_connection(&mut self) -> Result<DataConnection, FtpError> {
+        let ctrl = self.ctrl.as_deref_mut().ok_or_else(|| {
+            FtpError::DataConnectFailed("no control connection".into())
+        })?;
         if self.passive {
-            data_conn::enter_passive_mode(self.ctrl.as_deref_mut().unwrap(), self.is_ipv6)
+            data_conn::enter_passive_mode(ctrl, self.is_ipv6)
                 .map_err(|e| FtpError::DataConnectFailed(e.to_string()))
         } else {
-            data_conn::enter_active_mode(self.ctrl.as_deref_mut().unwrap(), self.is_ipv6)
+            data_conn::enter_active_mode(ctrl, self.is_ipv6)
                 .map_err(|e| FtpError::DataConnectFailed(e.to_string()))?;
             Err(FtpError::DataConnectFailed(
                 "active mode data connection must be accepted externally".into(),
