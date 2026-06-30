@@ -272,3 +272,125 @@ impl TcpTransport {
         self.stream_mut()?.set_nonblocking(nonblocking)
     }
 }
+
+impl Transport for TcpTransport {
+    type Error = io::Error;
+
+    /// Reads data from the TCP stream.
+    ///
+    /// # Arguments
+    ///
+    /// * `buf` - The buffer to read data into.
+    ///
+    /// # Returns
+    ///
+    /// The number of bytes read on success, or an I/O error on failure.
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.stream_mut()?.read(buf)
+    }
+
+    /// Writes all data to the TCP stream.
+    ///
+    /// This method writes all data in the buffer, blocking if necessary.
+    ///
+    /// # Arguments
+    ///
+    /// * `buf` - The data to write.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` on success, or an I/O error on failure.
+    fn write(&mut self, buf: &[u8]) -> io::Result<()> {
+        let stream = self.stream_mut()?;
+        stream.write_all(buf)?;
+        stream.flush()?;
+        Ok(())
+    }
+
+    /// Polls the TCP stream for readiness using `poll(2)`.
+    ///
+    /// # Arguments
+    ///
+    /// * `interest` - What operations to check for.
+    /// * `timeout` - Maximum time to wait.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(true)` if ready, `Ok(false)` if timeout, or an I/O error.
+    fn poll_ready(&mut self, interest: Interest, timeout: Duration) -> io::Result<bool> {
+        let stream = self.stream_mut()?;
+        let fd = stream.as_raw_fd();
+        stream.set_nonblocking(true)?;
+
+        let result = poll_fd(fd, interest, timeout);
+
+        let _ = stream.set_nonblocking(false);
+        result
+    }
+
+    /// Peeks data from the TCP stream without consuming it.
+    ///
+    /// # Arguments
+    ///
+    /// * `buf` - The buffer to peek data into.
+    ///
+    /// # Returns
+    ///
+    /// The number of bytes peeked on success, or an I/O error on failure.
+    fn peek(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.stream_mut()?.peek(buf)
+    }
+
+    /// Closes the TCP stream.
+    ///
+    /// Shuts down both read and write sides of the connection.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` on success, or an I/O error on failure.
+    fn close(&mut self) -> io::Result<()> {
+        if let Some(stream) = self.stream.take() {
+            stream.shutdown(std::net::Shutdown::Both)?;
+        }
+        Ok(())
+    }
+
+    /// Checks if the TCP stream is still alive.
+    ///
+    /// This performs a non-blocking peek to check if the connection
+    /// has been closed by the peer.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the connection is alive, `false` otherwise.
+    fn is_alive(&self) -> bool {
+        self.stream.as_ref().map_or(false, |s| {
+            s.set_nonblocking(true).is_ok()
+                && match s.peek(&mut [0u8]) {
+                    Ok(n) if n > 0 => {
+                        let _ = s.set_nonblocking(false);
+                        true
+                    }
+                    Ok(_) => {
+                        let _ = s.set_nonblocking(false);
+                        true
+                    }
+                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        let _ = s.set_nonblocking(false);
+                        true
+                    }
+                    Err(_) => false,
+                }
+        })
+    }
+
+    /// Returns a reference to the transport as `Any`.
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    /// Returns a mutable reference to the transport as `Any`.
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
