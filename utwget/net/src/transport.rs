@@ -177,3 +177,98 @@ pub struct TcpTransport {
     /// The underlying TCP stream, or `None` if taken/closed.
     stream: Option<TcpStream>,
 }
+
+impl TcpTransport {
+    /// Creates a new TCP transport from a `TcpStream`.
+    ///
+    /// # Arguments
+    ///
+    /// * `stream` - The TCP stream to wrap.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use std::net::TcpStream;
+    /// use utwget_net::transport::TcpTransport;
+    ///
+    /// let stream = TcpStream::connect("example.com:80")?;
+    /// let transport = TcpTransport::new(stream);
+    /// ```
+    pub fn new(stream: TcpStream) -> Self {
+        Self { stream: Some(stream) }
+    }
+
+    /// Takes the underlying `TcpStream` out of the transport.
+    ///
+    /// After calling this method, the transport is no longer usable.
+    ///
+    /// # Returns
+    ///
+    /// The `TcpStream` on success, or an error if the stream was already taken.
+    pub fn take_stream(&mut self) -> io::Result<TcpStream> {
+        self.stream
+            .take()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::BrokenPipe, "stream already taken"))
+    }
+
+    /// Returns a reference to the underlying `TcpStream`.
+    ///
+    /// # Returns
+    ///
+    /// A reference to the stream, or an error if the stream was taken.
+    pub fn stream_ref(&self) -> io::Result<&TcpStream> {
+        self.stream
+            .as_ref()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::BrokenPipe, "stream already taken"))
+    }
+
+    /// Returns a mutable reference to the underlying `TcpStream`.
+    ///
+    /// # Returns
+    ///
+    /// A mutable reference to the stream, or an error if the stream was taken.
+    pub fn stream_mut(&mut self) -> io::Result<&mut TcpStream> {
+        self.stream
+            .as_mut()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::BrokenPipe, "stream already taken"))
+    }
+
+    /// Sets the read timeout for the underlying stream.
+    ///
+    /// # Arguments
+    ///
+    /// * `timeout` - The read timeout, or `None` to disable.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` on success, or an error if the stream was taken.
+    pub fn set_read_timeout(&mut self, timeout: Option<Duration>) -> io::Result<()> {
+        self.stream_mut()?.set_read_timeout(timeout)
+    }
+
+    /// Sets the write timeout for the underlying stream.
+    ///
+    /// # Arguments
+    ///
+    /// * `timeout` - The write timeout, or `None` to disable.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` on success, or an error if the stream was taken.
+    pub fn set_write_timeout(&mut self, timeout: Option<Duration>) -> io::Result<()> {
+        self.stream_mut()?.set_write_timeout(timeout)
+    }
+
+    /// Sets the non-blocking mode for the underlying stream.
+    ///
+    /// # Arguments
+    ///
+    /// * `nonblocking` - `true` for non-blocking, `false` for blocking.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` on success, or an error if the stream was taken.
+    pub fn set_nonblocking(&mut self, nonblocking: bool) -> io::Result<()> {
+        self.stream_mut()?.set_nonblocking(nonblocking)
+    }
+}
