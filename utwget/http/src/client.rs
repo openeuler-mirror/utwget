@@ -421,22 +421,23 @@ fn make_body_reader(
 ) -> BodyReaderEnum {
     let encoding = response.headers.content_encoding();
 
-    if response.is_chunked() {
-        BodyReaderEnum::Chunked {
-            transport,
-            decompressor: wrap_with_decompressor(transport, encoding),
-        }
-    } else if let Some(len) = response.content_length() {
-        BodyReaderEnum::ContentLength {
-            remaining: len,
-            transport,
-            decompressor: wrap_with_decompressor(transport, encoding),
-        }
+    let needs_decomp = encoding.map_or(false, |e| {
+        let e = e.trim();
+        e.eq_ignore_ascii_case("gzip") || e.eq_ignore_ascii_case("x-gzip") || e.eq_ignore_ascii_case("deflate")
+    });
+
+    let (transport, decompressor) = if needs_decomp {
+        (Box::new(DummyRead) as Box<dyn Read + Send>, wrap_with_decompressor(transport, encoding))
     } else {
-        BodyReaderEnum::ReadToEnd {
-            transport,
-            decompressor: wrap_with_decompressor(transport, encoding),
-        }
+        (transport, None)
+    };
+
+    if response.is_chunked() {
+        BodyReaderEnum::Chunked { transport, decompressor }
+    } else if let Some(len) = response.content_length() {
+        BodyReaderEnum::ContentLength { remaining: len, transport, decompressor }
+    } else {
+        BodyReaderEnum::ReadToEnd { transport, decompressor }
     }
 }
 
