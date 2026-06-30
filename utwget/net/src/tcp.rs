@@ -222,3 +222,30 @@ pub enum ConnectError {
         last_error: io::Error,
     },
 }
+
+/// Establishes a TCP connection and returns a `TcpTransport`.
+///
+/// This is a convenience function that wraps [`connect_to_host`] and
+/// creates a `TcpTransport` from the resulting stream.
+///
+/// # Arguments
+///
+/// * `host` - The hostname to connect to.
+/// * `port` - The port number to connect to.
+/// * `family` - The address family preference.
+/// * `timeout` - Connection timeout.
+/// * `bind_address` - Optional local address to bind.
+///
+/// # Returns
+///
+/// A `TcpTransport` on success, or a `ConnectError` on failure.
+pub fn connect_to_host_transport(
+    host: &str,
+    port: u16,
+    family: AddressFamily,
+    timeout: Duration,
+    bind_address: Option<std::net::IpAddr>,
+) -> Result<TcpTransport, ConnectError> {
+    let stream = connect_to_host(host, port, family, timeout, bind_address)?;
+    Ok(TcpTransport::new(stream))
+}
