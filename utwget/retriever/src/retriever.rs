@@ -1199,14 +1199,14 @@ impl Retriever {
 
             if url.scheme.is_secure() {
                 // Use HTTP CONNECT method to establish tunnel for HTTPS
-                stream = self.establish_connect_tunnel(&mut stream, host, port)?;
-                debug!("CONNECT tunnel established for {}:{}", host, port);
+                let (tunneled_stream, leftover) = self.establish_connect_tunnel(&mut stream, host, port)?;
+                debug!("CONNECT tunnel established for {}:{} ({} leftover bytes)", host, port, leftover.len());
 
-                // Now wrap with TLS
+                // Now wrap with TLS, injecting leftover bytes so the TLS layer sees them first
                 let tls_config = ut_net::tls::TlsConfig::from_core(&self.config.tls);
                 let tls_connector = ut_net::tls::RustlsConnector::new();
                 let mut tls_stream = tls_connector.connect(
-                    Box::new(ut_net::transport::TcpTransport::new(stream)),
+                    Box::new(ut_net::transport::TcpTransport::with_prefix(tunneled_stream, leftover)),
                     host,
                     port,
                     &tls_config,
@@ -1295,7 +1295,7 @@ impl Retriever {
         stream: &mut std::net::TcpStream,
         host: &str,
         port: u16,
-    ) -> Result<std::net::TcpStream, RetrieveError> {
+    ) -> Result<(std::net::TcpStream, Vec<u8>), RetrieveError> {
         // Send CONNECT request
         let connect_req = format!(
             "CONNECT {}:{} HTTP/1.1\r\nHost: {}:{}\r\n\r\n",
@@ -1305,32 +1305,13 @@ impl Retriever {
         stream.write_all(connect_req.as_bytes()).map_err(RetrieveError::Io)?;
         stream.flush().map_err(RetrieveError::Io)?;
 
-        // Read CONNECT response
-        let mut response_line = String::new();
-        let mut buf = [0u8; 1024];
-        loop {
-            let n = stream.read(&mut buf).map_err(RetrieveError::Io)?;
-            if n == 0 {
-                return Err(RetrieveError::Protocol(WgetError::Other(
-                    "proxy connection closed".into(),
-                )));
-            }
-            response_line.push_str(&String::from_utf8_lossy(&buf[..n]));
-            if response_line.ends_with("\r\n\r\n") {
-                break;
-            }
-        }
-
-        // Parse response status line
-        let status_line = response_line.lines().next().unwrap_or("");
+        // Use read_response_head to properly parse the CONNECT response and
+        // preserve any leftover bytes read beyond the header boundary.
+        let (response, leftover) = read_response_head(stream)?;
+        let status_line = format!("{} {} {}", response.version, response.status_code, response.reason);
         debug!("CONNECT response: {}", status_line);
 
-        // Parse the numeric status code properly
-        let status_ok = status_line
-            .split_whitespace()
-            .nth(1)
-            .and_then(|s| s.parse::<u16>().ok())
-            .map_or(false, |code| code == 200);
+        let status_ok = response.status_code == 200;
 
         if !status_ok {
             return Err(RetrieveError::Protocol(WgetError::Other(format!(
@@ -1339,8 +1320,9 @@ impl Retriever {
             ))));
         }
 
-        // Return the stream for TLS wrapping
-        Ok(stream.try_clone().map_err(RetrieveError::Io)?)
+        // Return the stream and any leftover bytes for TLS wrapping
+        let cloned = stream.try_clone().map_err(RetrieveError::Io)?;
+        Ok((cloned, leftover))
     }
 }
 
@@ -1795,7 +1777,12 @@ impl Retriever {
         if let Some(ref mut warc) = self.warc {
             let date = Utc::now();
             let header_bytes = serialize_headers(&response.headers);
-            let body_bytes = response.body.as_deref().unwrap_or(&[]);
+            // NOTE: The response body is streamed via pending_body_reader and
+            // never stored in HttpResponse.body.  We record an empty payload so
+            // that WARC headers (URL, status, Content-Type) are preserved.  A
+            // future enhancement can tee the body stream into a buffer for
+            // full-content WARC records.
+            let body_bytes: &[u8] = &[];
             let ct = meta.content_type.as_deref().unwrap_or("application/octet-stream");
             let _ = warc.write_response(url, response.status_code, &header_bytes, body_bytes, ct, date);
         }
