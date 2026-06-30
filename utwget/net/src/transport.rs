@@ -176,6 +176,9 @@ impl Interest {
 pub struct TcpTransport {
     /// The underlying TCP stream, or `None` if taken/closed.
     stream: Option<TcpStream>,
+    /// Leftover bytes from a previous read (e.g. beyond a CONNECT response header).
+    /// Drained first on every `read` call so the caller sees them before live socket data.
+    prefix: Vec<u8>,
 }
 
 impl TcpTransport {
@@ -195,7 +198,14 @@ impl TcpTransport {
     /// let transport = TcpTransport::new(stream);
     /// ```
     pub fn new(stream: TcpStream) -> Self {
-        Self { stream: Some(stream) }
+        Self { stream: Some(stream), prefix: Vec::new() }
+    }
+
+    /// Prepend leftover bytes that were read from the socket before this
+    /// transport was created (e.g. data beyond a CONNECT response header).
+    /// These bytes are drained first on every `read` call.
+    pub fn with_prefix(stream: TcpStream, prefix: Vec<u8>) -> Self {
+        Self { stream: Some(stream), prefix }
     }
 
     /// Takes the underlying `TcpStream` out of the transport.
@@ -286,6 +296,12 @@ impl Transport for TcpTransport {
     ///
     /// The number of bytes read on success, or an I/O error on failure.
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if !self.prefix.is_empty() {
+            let n = buf.len().min(self.prefix.len());
+            buf[..n].copy_from_slice(&self.prefix[..n]);
+            self.prefix.drain(..n);
+            return Ok(n);
+        }
         self.stream_mut()?.read(buf)
     }
 
