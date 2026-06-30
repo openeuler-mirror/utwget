@@ -1037,27 +1037,26 @@ impl Retriever {
         // Resolve addresses with optional DNS timeout
         let addresses: Vec<std::net::SocketAddr> = {
             let addrs = if let Some(dns_timeout) = self.config.dns_timeout.or(self.config.timeout) {
-                // Use a thread with timeout for DNS resolution
+                // Use a background thread with channel-based timeout for DNS resolution
                 let host_owned = host.to_string();
-                let result = std::thread::scope(|s| {
-                    let handle = s.spawn(move || {
-                        (host_owned.as_str(), port).to_socket_addrs()
-                    });
-                    // Wait with timeout
-                    let start = Instant::now();
-                    loop {
-                        if handle.is_finished() {
-                            break handle.join().unwrap();
-                        }
-                        if start.elapsed() > dns_timeout {
-                            return Err(io::Error::new(io::ErrorKind::TimedOut, "DNS resolution timeout"));
-                        }
-                        std::thread::sleep(Duration::from_millis(10));
-                    }
+                let (tx, rx) = std::sync::mpsc::channel();
+                std::thread::spawn(move || {
+                    let result = (host_owned.as_str(), port).to_socket_addrs();
+                    let _ = tx.send(result);
                 });
-                result.map_err(|e| RetrieveError::Protocol(WgetError::Other(
-                    format!("DNS resolution error: {}", e)
-                )))?
+                match rx.recv_timeout(dns_timeout) {
+                    Ok(Ok(addrs)) => addrs,
+                    Ok(Err(e)) => {
+                        return Err(RetrieveError::Protocol(WgetError::Other(
+                            format!("DNS resolution error: {}", e)
+                        )));
+                    }
+                    Err(_) => {
+                        return Err(RetrieveError::Protocol(WgetError::Other(
+                            "DNS resolution timeout".to_string()
+                        )));
+                    }
+                }
             } else {
                 (host, port).to_socket_addrs()
                     .map_err(|e| RetrieveError::Protocol(WgetError::Other(

@@ -1072,6 +1072,10 @@ impl FtpClient {
     ///
     /// Uses passive mode (PASV/EPSV) or active mode (PORT/EPRT) depending
     /// on the client configuration.
+    ///
+    /// In passive mode, the server provides an address to connect to.
+    /// In active mode, the client binds a local listener, tells the server
+    /// the address via PORT/EPRT, and accepts the server's incoming connection.
     fn open_data_connection(&mut self) -> Result<DataConnection, FtpError> {
         let ctrl = self.ctrl.as_deref_mut().ok_or_else(|| {
             FtpError::DataConnectFailed("no control connection".into())
@@ -1080,11 +1084,53 @@ impl FtpClient {
             data_conn::enter_passive_mode(ctrl, self.is_ipv6)
                 .map_err(|e| FtpError::DataConnectFailed(e.to_string()))
         } else {
-            data_conn::enter_active_mode(ctrl, self.is_ipv6)
-                .map_err(|e| FtpError::DataConnectFailed(e.to_string()))?;
-            Err(FtpError::DataConnectFailed(
-                "active mode data connection must be accepted externally".into(),
-            ))
+            // Active mode: bind a local listener, send PORT/EPRT, then accept
+            let listener = std::net::TcpListener::bind("0.0.0.0:0")
+                .or_else(|_| std::net::TcpListener::bind("[::]:0"))
+                .map_err(|e| FtpError::DataConnectFailed(format!("failed to bind listener: {}", e)))?;
+            listener.set_nonblocking(false).ok();
+            let local_addr = listener.local_addr()
+                .map_err(|e| FtpError::DataConnectFailed(format!("failed to get local addr: {}", e)))?;
+
+            // Send PORT or EPRT command
+            match local_addr {
+                std::net::SocketAddr::V4(v4) => {
+                    let octets = v4.ip().octets();
+                    let port_hi = v4.port() / 256;
+                    let port_lo = v4.port() % 256;
+                    let cmd = format!(
+                        "PORT {},{},{},{},{},{}",
+                        octets[0], octets[1], octets[2], octets[3], port_hi, port_lo
+                    );
+                    self.send_cmd(&cmd)?;
+                    let resp = self.read_response()?;
+                    if !resp.is_positive_completion {
+                        return Err(FtpError::DataConnectFailed(format!(
+                            "PORT command failed: {} {}", resp.code, resp.text
+                        )));
+                    }
+                    log::debug!("FTP active mode PORT {}", cmd);
+                }
+                std::net::SocketAddr::V6(v6) => {
+                    let cmd = format!("EPRT |2|{}|{}|", v6.ip(), v6.port());
+                    self.send_cmd(&cmd)?;
+                    let resp = self.read_response()?;
+                    if !resp.is_positive_completion {
+                        return Err(FtpError::DataConnectFailed(format!(
+                            "EPRT command failed: {} {}", resp.code, resp.text
+                        )));
+                    }
+                    log::debug!("FTP active mode EPRT {}", cmd);
+                }
+            }
+
+            // Accept the incoming data connection from the server
+            let (stream, _addr) = listener.accept()
+                .map_err(|e| FtpError::DataConnectFailed(format!("failed to accept data connection: {}", e)))?;
+            stream.set_nonblocking(false).ok();
+            log::debug!("FTP active mode data connection accepted from {}", _addr);
+
+            Ok(DataConnection::new(Box::new(stream)))
         }
     }
 
