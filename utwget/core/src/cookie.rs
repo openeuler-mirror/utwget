@@ -452,13 +452,14 @@ impl CookieJar {
             let httponly = if c.httponly { "TRUE" } else { "FALSE" };
             writeln!(
                 writer,
-                "{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
                 domain,
                 "TRUE",
                 c.path,
                 secure,
                 expires,
                 c.name,
+                c.value,
                 httponly
             )?;
         }
