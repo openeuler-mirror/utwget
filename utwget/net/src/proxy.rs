@@ -190,3 +190,29 @@ fn connect_with_timeout(addr: &str, timeout: Duration) -> Result<TcpStream, Prox
         last_err.unwrap_or_else(|| io::Error::new(io::ErrorKind::Other, "no proxy addresses")),
     ))
 }
+
+/// Parses the HTTP status code from a proxy response line.
+///
+/// # Arguments
+///
+/// * `line` - The HTTP response line (e.g., "HTTP/1.0 200 Connection Established").
+///
+/// # Returns
+///
+/// The HTTP status code (e.g., 200) on success.
+///
+/// # Errors
+///
+/// Returns `ProxyError::InvalidResponse` if the line cannot be parsed.
+fn parse_proxy_status(line: &str) -> Result<u16, ProxyError> {
+    let parts: Vec<&str> = line.trim().splitn(3, ' ').collect();
+    if parts.len() < 2 {
+        return Err(ProxyError::InvalidResponse(line.trim().to_string()));
+    }
+
+    let status = parts[1]
+        .parse::<u16>()
+        .map_err(|_| ProxyError::InvalidResponse(line.trim().to_string()))?;
+
+    Ok(status)
+}
