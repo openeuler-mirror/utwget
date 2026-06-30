@@ -646,3 +646,30 @@ impl DnsCache {
         self.entries.insert(host, (addrs, Instant::now()));
     }
 }
+
+/// Error type for connection operations.
+///
+/// This enum wraps all possible errors that can occur during
+/// connection establishment.
+#[derive(Debug, thiserror::Error)]
+pub enum ConnectionError {
+    /// DNS resolution error.
+    #[error("DNS error: {0}")]
+    Dns(#[from] DnsError),
+
+    /// TCP connection error.
+    #[error("connect error: {0}")]
+    Connect(#[from] tcp::ConnectError),
+
+    /// TLS handshake or operation error.
+    #[error("TLS error: {0}")]
+    Tls(#[from] TlsError),
+
+    /// Proxy connection error.
+    #[error("proxy error: {0}")]
+    Proxy(#[from] proxy::ProxyError),
+
+    /// General I/O error.
+    #[error("I/O error: {0}")]
+    Io(#[from] io::Error),
+}
