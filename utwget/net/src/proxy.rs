@@ -289,3 +289,40 @@ fn simple_base64_encode(input: &[u8], output: &mut [u8]) -> usize {
 
     out_idx
 }
+
+/// Error type for proxy connection operations.
+///
+/// This enum covers all possible failure modes when connecting
+/// through an HTTP proxy.
+#[derive(Debug, thiserror::Error)]
+pub enum ProxyError {
+    /// DNS resolution of the proxy hostname failed.
+    #[error("proxy DNS resolution failed: {0}")]
+    DnsFailed(String),
+
+    /// Failed to establish a TCP connection to the proxy.
+    #[error("failed to connect to proxy: {0}")]
+    ConnectFailed(#[source] io::Error),
+
+    /// I/O error during proxy communication.
+    #[error("proxy I/O error: {0}")]
+    Io(#[source] io::Error),
+
+    /// The proxy returned an invalid or malformed response.
+    #[error("invalid proxy response: {0}")]
+    InvalidResponse(String),
+
+    /// The proxy rejected the CONNECT request.
+    ///
+    /// This typically occurs when authentication fails or the
+    /// target host is not allowed by proxy policy.
+    #[error("proxy rejected CONNECT (HTTP {status}): {response}")]
+    ProxyRejected {
+        /// The HTTP status code returned by the proxy.
+        status: u16,
+        /// The response line from the proxy.
+        response: String,
+        /// The response body (if any).
+        body: String,
+    },
+}
