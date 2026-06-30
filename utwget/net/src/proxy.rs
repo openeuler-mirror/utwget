@@ -144,3 +144,49 @@ pub fn connect_via_proxy(
 
     Ok(stream)
 }
+
+/// Connects to a proxy server with a timeout.
+///
+/// # Arguments
+///
+/// * `addr` - The proxy address string (e.g., "proxy.example.com:8080").
+/// * `timeout` - Connection timeout.
+///
+/// # Returns
+///
+/// A `TcpStream` connected to the proxy on success.
+///
+/// # Errors
+///
+/// Returns a `ProxyError` if DNS resolution or connection fails.
+fn connect_with_timeout(addr: &str, timeout: Duration) -> Result<TcpStream, ProxyError> {
+    let socket_addrs: Vec<_> = addr
+        .to_socket_addrs()
+        .map_err(|e| ProxyError::DnsFailed(e.to_string()))?
+        .collect();
+
+    if socket_addrs.is_empty() {
+        return Err(ProxyError::DnsFailed(format!("no addresses for {}", addr)));
+    }
+
+    let mut last_err = None;
+    for sa in &socket_addrs {
+        match TcpStream::connect_timeout(sa, timeout) {
+            Ok(s) => {
+                s.set_read_timeout(Some(timeout))
+                    .map_err(ProxyError::Io)?;
+                s.set_write_timeout(Some(timeout))
+                    .map_err(ProxyError::Io)?;
+                return Ok(s);
+            }
+            Err(e) => {
+                log::debug!("proxy connect to {} failed: {}", sa, e);
+                last_err = Some(e);
+            }
+        }
+    }
+
+    Err(ProxyError::ConnectFailed(
+        last_err.unwrap_or_else(|| io::Error::new(io::ErrorKind::Other, "no proxy addresses")),
+    ))
+}
