@@ -150,17 +150,12 @@ impl NetrcDb {
                             i += 1;
                             let macro_name = tokens[i].clone();
                             i += 1;
-                            let mut macro_body = String::new();
-                            while i < tokens.len() && !tokens[i].is_empty() {
-                                if macro_body.is_empty() {
-                                    macro_body.push_str(&tokens[i]);
-                                } else {
-                                    macro_body.push(' ');
-                                    macro_body.push_str(&tokens[i]);
-                                }
+                            let mut macro_body = Vec::new();
+                            while i < tokens.len() {
+                                macro_body.push(tokens[i].as_str());
                                 i += 1;
                             }
-                            entry.macros.insert(macro_name, macro_body);
+                            entry.macros.insert(macro_name, macro_body.join(" "));
                             continue;
                         }
                     }
@@ -260,13 +255,17 @@ fn tokenize(content: &str) -> Vec<String> {
     let mut in_single_quote = false;
 
     for line in content.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            tokens.push(String::new());
+            continue;
+        }
+        if trimmed.starts_with('#') {
             continue;
         }
 
         let mut current = String::new();
-        for ch in line.chars() {
+        for ch in trimmed.chars() {
             match ch {
                 '\'' => {
                     in_single_quote = !in_single_quote;
