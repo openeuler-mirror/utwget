@@ -135,3 +135,15 @@ pub trait Transport {
     /// This enables downcasting to concrete transport types.
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
 }
+
+/// Specifies what operations to poll for.
+///
+/// This is used with [`Transport::poll_ready`] to specify
+/// which operations (readable, writable, or both) to wait for.
+#[derive(Debug, Clone, Copy)]
+pub struct Interest {
+    /// Wait for the transport to be readable.
+    pub readable: bool,
+    /// Wait for the transport to be writable.
+    pub writable: bool,
+}
