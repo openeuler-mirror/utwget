@@ -394,3 +394,92 @@ impl Transport for TcpTransport {
         self
     }
 }
+
+/// Polls a file descriptor for readiness using `poll(2)`.
+///
+/// This is a Unix-specific implementation that uses the `poll` system call
+/// to wait for the file descriptor to become ready for reading or writing.
+///
+/// # Arguments
+///
+/// * `fd` - The file descriptor to poll.
+/// * `interest` - What operations to check for.
+/// * `timeout` - Maximum time to wait. `Duration::MAX` means infinite wait.
+///
+/// # Returns
+///
+/// - `Ok(true)` - The file descriptor is ready.
+/// - `Ok(false)` - The timeout expired.
+/// - `Err(_)` - An error occurred during polling.
+#[cfg(unix)]
+pub(crate) fn poll_fd(fd: i32, interest: Interest, timeout: Duration) -> io::Result<bool> {
+    let mut pfd = libc::pollfd {
+        fd,
+        events: 0,
+        revents: 0,
+    };
+
+    if interest.readable {
+        pfd.events |= libc::POLLIN;
+    }
+    if interest.writable {
+        pfd.events |= libc::POLLOUT;
+    }
+
+    if pfd.events == 0 {
+        return Ok(true);
+    }
+
+    let timeout_ms = if timeout == Duration::MAX {
+        -1
+    } else {
+        timeout.as_millis().min(i32::MAX as u128) as i32
+    };
+
+    let ret = unsafe { libc::poll(&mut pfd, 1, timeout_ms) };
+
+    match ret {
+        -1 => Err(io::Error::last_os_error()),
+        0 => Ok(false),
+        _ => Ok((pfd.revents & (libc::POLLIN | libc::POLLOUT | libc::POLLHUP | libc::POLLERR)) != 0),
+    }
+}
+
+/// Polls a file descriptor for readiness (non-Unix fallback).
+///
+/// This is a simple fallback implementation for non-Unix platforms
+/// that uses busy-waiting with sleep.
+///
+/// # Arguments
+///
+/// * `_fd` - The file descriptor (ignored).
+/// * `interest` - What operations to check for.
+/// * `timeout` - Maximum time to wait.
+///
+/// # Returns
+///
+/// `Ok(true)` if interested in readable/writable, `Ok(false)` on timeout.
+#[cfg(not(unix))]
+pub(crate) fn poll_fd(_fd: i32, interest: Interest, timeout: Duration) -> io::Result<bool> {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        if interest.readable {
+            return Ok(true);
+        }
+        if interest.writable {
+            return Ok(true);
+        }
+        if std::time::Instant::now() >= deadline {
+            return Ok(false);
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+impl std::fmt::Debug for TcpTransport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TcpTransport")
+            .field("alive", &self.stream.is_some())
+            .finish()
+    }
+}
