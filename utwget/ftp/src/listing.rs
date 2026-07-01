@@ -492,13 +492,12 @@ fn parse_vms_date(s: &str) -> Option<DateTime<Utc>> {
 
     for (i, token) in tokens.iter().enumerate() {
         let date_opt = parse_vms_date_token(token);
-        if date_opt.is_some() {
+        if let Some((year, month, day)) = date_opt {
             let time_opt = if i + 1 < tokens.len() {
                 parse_vms_time_token(tokens[i + 1])
             } else {
                 None
             };
-            let (year, month, day) = date_opt.unwrap();
             let (hour, minute) = time_opt.unwrap_or((0, 0));
             return Utc.with_ymd_and_hms(year, month, day, hour, minute, 0).single();
         }
