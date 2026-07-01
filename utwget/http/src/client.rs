@@ -377,9 +377,21 @@ fn parse_chunk_size(line: &[u8]) -> io::Result<usize> {
     let s = std::str::from_utf8(line)
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "chunk size not utf8"))?;
     let hex = s.split(';').next().unwrap_or("").trim();
-    usize::from_str_radix(hex, 16).map_err(|_| {
+    let size = usize::from_str_radix(hex, 16).map_err(|_| {
         io::Error::new(io::ErrorKind::InvalidData, format!("invalid chunk size: {}", hex))
-    })
+    })?;
+
+    // Limit chunk size to prevent memory exhaustion attacks
+    // Maximum 1GB per chunk (still very generous)
+    const MAX_CHUNK_SIZE: usize = 1024 * 1024 * 1024;
+    if size > MAX_CHUNK_SIZE {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("chunk size too large: {} bytes (max {})", size, MAX_CHUNK_SIZE),
+        ));
+    }
+
+    Ok(size)
 }
 
 /// Creates a body reader based on the response headers.
