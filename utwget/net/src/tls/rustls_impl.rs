@@ -161,3 +161,70 @@ impl RustlsConnector {
         }
     }
 }
+
+impl TlsConnector for RustlsConnector {
+    /// Establishes a TLS connection over an existing TCP transport.
+    ///
+    /// This method:
+    /// 1. Extracts the underlying `TcpStream` from the transport
+    /// 2. Builds a rustls client configuration
+    /// 3. Creates a TLS connection with SNI
+    /// 4. Performs the TLS handshake
+    ///
+    /// # Arguments
+    ///
+    /// * `tcp` - The TCP transport to upgrade to TLS.
+    /// * `host` - The hostname for SNI (Server Name Indication).
+    /// * `_port` - The port number (currently unused, for future use).
+    /// * `config` - TLS configuration options.
+    ///
+    /// # Returns
+    ///
+    /// A TLS transport on success, or a `TlsError` on failure.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The transport is not a `TcpTransport`
+    /// - The TLS configuration is invalid
+    /// - The hostname is not valid for SNI
+    /// - The TLS handshake fails
+    fn connect(
+        &self,
+        mut tcp: Box<dyn Transport<Error = io::Error>>,
+        host: &str,
+        _port: u16,
+        config: &TlsConfig,
+    ) -> Result<Box<dyn Transport<Error = TlsError>>, TlsError> {
+        let tcp_transport = tcp
+            .as_any_mut()
+            .downcast_mut::<TcpTransport>()
+            .ok_or_else(|| {
+                TlsError::HandshakeFailed("expected TcpTransport for TLS upgrade".into())
+            })?;
+
+        let stream = tcp_transport
+            .take_stream()
+            .map_err(TlsError::Io)?;
+
+        let client_config = Self::build_config(config)?;
+
+        let server_name = ServerName::try_from(host)
+            .map_err(|e| TlsError::HandshakeFailed(format!("invalid server name '{}': {}", host, e)))?
+            .to_owned();
+
+        let conn = ClientConnection::new(client_config, server_name)
+            .map_err(|e| TlsError::HandshakeFailed(e.to_string()))?;
+
+        let mut tls = TlsTransport {
+            stream: Some(stream),
+            conn: Some(conn),
+            peek_buf: Vec::new(),
+            alive: true,
+        };
+
+        tls.complete_handshake()?;
+
+        Ok(Box::new(tls))
+    }
+}
