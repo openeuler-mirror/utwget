@@ -205,8 +205,8 @@ fn read_exact(
             break;
         }
         output.write_all(&buf[..n])?;
-        total += n as u64;
-        remaining -= n as u64;
+        total = total.saturating_add(n as u64);
+        remaining = remaining.saturating_sub(n as u64);
     }
 
     Ok(total)
@@ -259,7 +259,7 @@ fn read_chunked(
             read_so_far += n;
         }
 
-        total += size as u64;
+        total = total.saturating_add(size as u64);
     }
 
     Ok(total)
@@ -286,7 +286,7 @@ fn read_chunked(
         }
 
         io::copy(&mut reader.by_ref().take(size as u64), output)?;
-        total += size as u64;
+        total = total.saturating_add(size as u64);
     }
 
     Ok(total)

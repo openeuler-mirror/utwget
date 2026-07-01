@@ -251,7 +251,7 @@ impl<'a, T: Read> ChunkedReader<'a, T> {
         let mut total = 0u64;
         while let Some(chunk) = self.read_next_chunk()? {
             output.write_all(&chunk)?;
-            total += chunk.len() as u64;
+            total = total.saturating_add(chunk.len() as u64);
         }
         Ok(total)
     }
