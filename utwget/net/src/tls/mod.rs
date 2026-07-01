@@ -111,3 +111,23 @@ pub struct TlsConfig {
     /// The format is implementation-specific.
     pub ciphers: Option<String>,
 }
+
+impl Default for TlsConfig {
+    /// Creates a default TLS configuration.
+    ///
+    /// Default settings:
+    /// - Certificate verification: enabled
+    /// - Protocol: auto (TLS 1.2 and 1.3)
+    /// - No custom CA, client cert, or cipher suites
+    fn default() -> Self {
+        Self {
+            check_certificate: CheckCertMode::On,
+            ca_cert: None,
+            cert_file: None,
+            private_key: None,
+            ca_directory: None,
+            secure_protocol: SecureProtocol::Auto,
+            ciphers: None,
+        }
+    }
+}
