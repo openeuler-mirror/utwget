@@ -204,7 +204,7 @@ fn test_warc_format_date() {
 #[test]
 fn test_warc_format_record_id() {
     use ut_warc::format_record_id;
-    let id = format_record_id();
+    let id = format_record_id().unwrap();
     assert!(id.starts_with("<urn:uuid:"));
     assert!(id.ends_with(">"));
     // UUID format: <urn:uuid:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx>

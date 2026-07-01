@@ -329,7 +329,7 @@ fn test_format_date_now() {
 #[test]
 fn test_format_record_id_format() {
     // Record ID 格式验证
-    let id = format_record_id();
+    let id = format_record_id().unwrap();
 
     // 格式: <urn:uuid:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx>
     assert!(id.starts_with("<urn:uuid:"));
@@ -339,7 +339,7 @@ fn test_format_record_id_format() {
 #[test]
 fn test_format_record_id_length() {
     // Record ID 长度验证
-    let id = format_record_id();
+    let id = format_record_id().unwrap();
 
     // <urn:uuid:> = 10 字符
     // UUID = 36 字符 (8-4-4-4-12 格式)
@@ -351,7 +351,7 @@ fn test_format_record_id_length() {
 #[test]
 fn test_format_record_id_uuid_format() {
     // UUID 格式验证
-    let id = format_record_id();
+    let id = format_record_id().unwrap();
 
     // 提取 UUID 部分
     let uuid = &id[10..46]; // 跳过 "<urn:uuid:" 和 ">"
@@ -366,8 +366,8 @@ fn test_format_record_id_uuid_format() {
 #[test]
 fn test_format_record_id_unique() {
     // 每次生成应产生不同的 ID
-    let id1 = format_record_id();
-    let id2 = format_record_id();
+    let id1 = format_record_id().unwrap();
+    let id2 = format_record_id().unwrap();
 
     // 由于使用随机 UUID，两次调用应产生不同结果
     // 注意：极小概率可能相同，但测试中可以忽略
@@ -377,7 +377,7 @@ fn test_format_record_id_unique() {
 #[test]
 fn test_format_record_id_hex_digits() {
     // UUID 应只包含十六进制字符
-    let id = format_record_id();
+    let id = format_record_id().unwrap();
     let uuid = &id[10..46];
 
     // 移除连字符
