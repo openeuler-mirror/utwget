@@ -47,3 +47,10 @@ impl StdResolver {
         StdResolver
     }
 }
+
+impl Default for StdResolver {
+    /// Creates a default `StdResolver`.
+    fn default() -> Self {
+        Self::new()
+    }
+}
