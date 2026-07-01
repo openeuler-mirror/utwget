@@ -193,3 +193,11 @@ impl std::error::Error for TlsTransportError {
         }
     }
 }
+
+impl From<TlsError> for TlsTransportError {
+    fn from(e: TlsError) -> Self { TlsTransportError::Tls(e) }
+}
+
+impl From<std::io::Error> for TlsTransportError {
+    fn from(e: std::io::Error) -> Self { TlsTransportError::Io(e) }
+}
