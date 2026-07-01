@@ -70,7 +70,7 @@ impl ConfigReloader {
                         Ok(metadata) => {
                             if let Ok(modified) = metadata.modified() {
                                 let prev = last_modified[i];
-                                if prev.is_none() || prev.unwrap() != modified {
+                                if prev.map_or(true, |p| p != modified) {
                                     log::info!("config file changed: {}", path.display());
                                     last_modified[i] = Some(modified);
                                     changed = true;
