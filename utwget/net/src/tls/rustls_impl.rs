@@ -587,9 +587,16 @@ fn load_certs_from_dir(dir: &std::path::Path, root_store: &mut RootCertStore) ->
             continue;
         }
 
-        if let Ok(certs) = load_certs_from_file(&path) {
-            for cert in certs {
-                let _ = root_store.add(cert);
+        match load_certs_from_file(&path) {
+            Ok(certs) => {
+                for cert in certs {
+                    if let Err(e) = root_store.add(cert) {
+                        log::warn!("Failed to add certificate from {}: {}", path.display(), e);
+                    }
+                }
+            }
+            Err(e) => {
+                log::warn!("Failed to load certificates from {}: {}", path.display(), e);
             }
         }
     }
