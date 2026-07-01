@@ -157,3 +157,19 @@ impl TlsConfig {
         }
     }
 }
+
+/// Error type for TLS transport operations.
+///
+/// This enum wraps the various errors that can occur during
+/// TLS operations.
+#[derive(Debug)]
+pub enum TlsTransportError {
+    /// A TLS-specific error (handshake, certificate, etc.).
+    Tls(TlsError),
+
+    /// An I/O error during read/write operations.
+    Io(std::io::Error),
+
+    /// A general transport error.
+    Transport(String),
+}
