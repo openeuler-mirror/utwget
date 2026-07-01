@@ -1040,18 +1040,35 @@ impl Retriever {
                 // Use a background thread with channel-based timeout for DNS resolution
                 let host_owned = host.to_string();
                 let (tx, rx) = std::sync::mpsc::channel();
-                std::thread::spawn(move || {
-                    let result = (host_owned.as_str(), port).to_socket_addrs();
-                    let _ = tx.send(result);
-                });
+
+                // Spawn thread and track handle for cleanup
+                let handle = std::thread::Builder::new()
+                    .name(format!("dns-resolve-{}", host))
+                    .spawn(move || {
+                        let result = (host_owned.as_str(), port).to_socket_addrs();
+                        let _ = tx.send(result);
+                    })
+                    .map_err(|e| RetrieveError::Protocol(WgetError::Other(
+                        format!("failed to spawn DNS thread: {}", e)
+                    )))?;
+
                 match rx.recv_timeout(dns_timeout) {
-                    Ok(Ok(addrs)) => addrs,
+                    Ok(Ok(addrs)) => {
+                        // DNS resolved successfully, thread will exit naturally
+                        let _ = handle.join(); // Wait for thread to clean up
+                        addrs
+                    }
                     Ok(Err(e)) => {
+                        let _ = handle.join(); // Wait for thread to clean up
                         return Err(RetrieveError::Protocol(WgetError::Other(
                             format!("DNS resolution error: {}", e)
                         )));
                     }
                     Err(_) => {
+                        // Timeout: thread may still be running
+                        // We cannot force-terminate it, so we detach it
+                        // It will complete on its own and clean up
+                        log::warn!("DNS resolution timeout for {}, detaching resolver thread", host);
                         return Err(RetrieveError::Protocol(WgetError::Other(
                             "DNS resolution timeout".to_string()
                         )));
