@@ -76,6 +76,7 @@ utwget:
   error_network: "网络错误: %{reason}"
   error_ssl: "SSL 错误: %{reason}"
   error_auth_failed: "认证失败"
+  error_too_many_redirects: "重定向次数过多"
 
   # ===============
   # 警告信息
