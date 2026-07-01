@@ -186,7 +186,12 @@ impl FtpClient {
         stream.set_nonblocking(false).ok();
         stream.set_read_timeout(Some(std::time::Duration::from_secs(30))).ok();
 
-        if host.contains(':') || host.starts_with('[') {
+        // Correctly detect IPv6 address:
+        // - Starts with '[' (bracketed notation like [::1])
+        // - Parses as IPv6 address (like ::1 or 2001:db8::1)
+        // Note: host.contains(':') is WRONG because "example.com:21" contains ':'
+        // but is not an IPv6 address.
+        if host.starts_with('[') || host.parse::<std::net::Ipv6Addr>().is_ok() {
             self.is_ipv6 = true;
         }
 
