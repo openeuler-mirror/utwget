@@ -62,3 +62,52 @@ pub trait TlsConnector: Send + Sync {
         config: &TlsConfig,
     ) -> Result<Box<dyn crate::transport::Transport<Error = TlsError>>, TlsError>;
 }
+
+/// Configuration options for TLS connections.
+///
+/// This struct controls various aspects of TLS behavior including
+/// certificate verification, protocol versions, and client authentication.
+#[derive(Debug, Clone)]
+pub struct TlsConfig {
+    /// Certificate verification mode.
+    ///
+    /// - `CheckCertMode::On` - Verify certificates (default)
+    /// - `CheckCertMode::Off` - Skip verification (insecure)
+    pub check_certificate: CheckCertMode,
+
+    /// Path to a custom CA certificate file.
+    ///
+    /// If set, this CA certificate will be used to verify server certificates
+    /// instead of the system's default CA store.
+    pub ca_cert: Option<PathBuf>,
+
+    /// Path to the client certificate file.
+    ///
+    /// Required for mutual TLS (mTLS) authentication.
+    pub cert_file: Option<PathBuf>,
+
+    /// Path to the client private key file.
+    ///
+    /// Required for mutual TLS (mTLS) authentication.
+    pub private_key: Option<PathBuf>,
+
+    /// Path to a directory containing CA certificates.
+    ///
+    /// All `.pem`, `.crt`, and `.cer` files in this directory will be loaded
+    /// as trusted CA certificates.
+    pub ca_directory: Option<PathBuf>,
+
+    /// Minimum/maximum TLS protocol version.
+    ///
+    /// - `SecureProtocol::Auto` - Use default (TLS 1.2 and 1.3)
+    /// - `SecureProtocol::TlsV1_2` - Use only TLS 1.2
+    /// - `SecureProtocol::TlsV1_3` - Use only TLS 1.3
+    /// - `SecureProtocol::Pfs` - Use protocols with perfect forward secrecy
+    pub secure_protocol: SecureProtocol,
+
+    /// Custom cipher suite specification.
+    ///
+    /// If set, restricts the cipher suites used for the connection.
+    /// The format is implementation-specific.
+    pub ciphers: Option<String>,
+}
