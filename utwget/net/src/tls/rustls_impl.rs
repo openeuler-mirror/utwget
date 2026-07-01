@@ -228,3 +228,18 @@ impl TlsConnector for RustlsConnector {
         Ok(Box::new(tls))
     }
 }
+
+/// Internal TLS transport implementation.
+///
+/// Wraps a TCP stream and rustls connection to provide a `Transport`
+/// implementation for TLS connections.
+struct TlsTransport {
+    /// The underlying TCP stream.
+    stream: Option<TcpStream>,
+    /// The rustls client connection state.
+    conn: Option<ClientConnection>,
+    /// Buffer for peeked data.
+    peek_buf: Vec<u8>,
+    /// Whether the connection is still alive.
+    alive: bool,
+}
