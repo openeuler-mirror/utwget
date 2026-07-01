@@ -117,7 +117,8 @@ fn rearrange_args() -> Vec<String> {
             }
         } else if arg.starts_with('-') && arg.len() > 1 {
             // Short option
-            let opt_char = arg.chars().nth(1).unwrap();
+            // Safe because we checked arg.len() > 1
+            let opt_char = arg.chars().nth(1).unwrap_or('-');
             options.push(arg.clone());
 
             // Check if this option takes a value
