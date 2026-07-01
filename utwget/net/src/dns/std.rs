@@ -54,3 +54,59 @@ impl Default for StdResolver {
         Self::new()
     }
 }
+
+impl DnsResolver for StdResolver {
+    /// Resolves a hostname to socket addresses.
+    ///
+    /// This method formats the host and port as `host:port`, delegates to
+    /// the standard library's `to_socket_addrs` for resolution, and filters
+    /// the results based on the requested address family.
+    ///
+    /// # Arguments
+    ///
+    /// * `host` - The hostname to resolve (e.g., "example.com").
+    /// * `port` - The port number to associate with resolved addresses.
+    /// * `family` - The address family preference for filtering results.
+    /// * `timeout` - Timeout for the DNS query (ignored by this resolver).
+    ///
+    /// # Returns
+    ///
+    /// A vector of `SocketAddr` values matching the address family filter.
+    ///
+    /// # Errors
+    ///
+    /// * `DnsError::HostNotFound` - If the hostname does not exist.
+    /// * `DnsError::ResolveFailed` - If the OS resolution fails.
+    fn resolve(
+        &self,
+        host: &str,
+        port: u16,
+        family: AddressFamily,
+        timeout: Duration,
+    ) -> Result<Vec<SocketAddr>, DnsError> {
+        let addr_str = format!("{}:{}", host, port);
+
+        let socket_addrs = (addr_str.as_str(), 0u16).to_socket_addrs().map_err(|e| {
+            DnsError::ResolveFailed {
+                host: host.to_string(),
+                detail: e.to_string(),
+            }
+        })?;
+
+        let mut addrs: Vec<SocketAddr> = socket_addrs
+            .filter(|a| address_matches_family(a, family))
+            .map(|mut a| {
+                a.set_port(port);
+                a
+            })
+            .collect();
+
+        if addrs.is_empty() {
+            return Err(DnsError::HostNotFound(host.to_string()));
+        }
+
+        let _ = timeout;
+
+        Ok(addrs)
+    }
+}
