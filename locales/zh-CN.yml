@@ -5,7 +5,7 @@ utwget:
   # ===================
   # 版本信息
   # ===================
-  version: "GNU Wget 1.21.4 在 linux-gnu 上编译。"
+  version: "utwget 0.1.0 - Rust 重构版 GNU Wget 1.21.4"
   version_features: |
     -cares +digest -gpgme +https +ipv6 +iri +large-file -metalink +nls
     +ntlm +opie +psl +ssl/gnutls
@@ -15,7 +15,7 @@ utwget:
   # ===============
   # 帮助信息
   # ===============
-  help_usage: "用法： wget [选项]... [URL]..."
+  help_usage: "用法： utwget [选项]... [URL]..."
   help_mandatory: "长选项所必须的参数在使用短选项时也是必须的。"
 
   # 启动选项

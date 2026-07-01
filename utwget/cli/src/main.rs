@@ -184,13 +184,37 @@ fn main() -> ExitCode {
     };
 
     if args.version {
-        println!("{}\n", ut_core::i18n::translate("utwget.version"));
-        println!("+cares +digest +gpgme +https +ipv6 +iri +large-file +metalink +nls\n+ntlm +opie +psl +ssl/openssl");
+        println!("utwget {}", env!("CARGO_PKG_VERSION"));
+        println!("Rust 重构版 GNU Wget 1.21.4");
         println!();
-        println!("Wgetrc:\n    /etc/wgetrc (system)\n");
-        println!("Locale:\n    /usr/share/locale\n");
-        println!("Compile:\n    gcc -DHAVE_CONFIG_H -DSYSTEM_WGETRC=\\\"/etc/wgetrc\\\"\n    -DLOCALEDIR=\\\"/usr/share/locale\\\" -I. -I../lib -I../lib\n    -DHAVE_LIBSSL -DNDEBUG -g -O2\n");
-        println!("Link:\n    gcc -g -O2 -o wget ftp.o css.o html-parse.o ...\n    -lssl -lcrypto -lz -lidn2 -lpsl\n    -lnghttp2 -lssh2 -lmetalink -lexpat\n");
+        println!("特性支持:");
+        println!("    +http +https +ftp +ftps");
+        println!("    +cookies +auth-basic +auth-digest");
+
+        // 动态显示可选特性
+        let mut optional_features = Vec::new();
+        #[cfg(feature = "hsts")]
+        optional_features.push("+hsts");
+        #[cfg(feature = "compression")]
+        optional_features.push("+compression");
+        #[cfg(feature = "metalink")]
+        optional_features.push("+metalink");
+        #[cfg(feature = "http2")]
+        optional_features.push("+http2");
+        #[cfg(feature = "auth-ntlm")]
+        optional_features.push("+auth-ntlm");
+        #[cfg(feature = "async")]
+        optional_features.push("+async");
+
+        if !optional_features.is_empty() {
+            println!("    {}", optional_features.join(" "));
+        }
+
+        // WARC 总是可用
+        println!("    +warc +iri +ipv6");
+        println!();
+        println!("编译信息:");
+        println!("    rustc {} (target: {})", env!("RUSTC_VERSION"), env!("TARGET"));
         return ExitCode::SUCCESS;
     }
 

@@ -23,7 +23,7 @@ utwget:
   # ===================
   # Version Information
   # ===================
-  version: "GNU Wget 1.21.4 built on linux-gnu."
+  version: "utwget 0.1.0 - Rust rewrite of GNU Wget 1.21.4"
   version_features: |
     +cares +digest +gpgme +https +ipv6 +iri +large-file +metalink +nls
     +ntlm +opie +psl +ssl/openssl
