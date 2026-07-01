@@ -236,7 +236,7 @@ impl ContentExtractor for HtmlExtractor {
                                 if name.eq_ignore_ascii_case("robots") {
                                     if let Some(content) = el.get_attribute("content") {
                                         if content.to_ascii_lowercase().contains("nofollow") {
-                                            *nofollow_clone.lock().unwrap() = true;
+                                            *nofollow_clone.lock().unwrap_or_else(|e| e.into_inner()) = true;
                                         }
                                     }
                                 }
@@ -246,14 +246,14 @@ impl ContentExtractor for HtmlExtractor {
                                 if equiv.eq_ignore_ascii_case("refresh") {
                                     if let Some(content) = el.get_attribute("content") {
                                         if let Some(refresh_url) = parse_meta_refresh_url(&content) {
-                                            results_clone.lock().unwrap().push(UrlPosition {
+                                            results_clone.lock().unwrap_or_else(|e| e.into_inner()).push(UrlPosition {
                                                 url: refresh_url,
                                                 link_type: LinkType::RefreshRedirect,
                                                 inline: false,
                                                 attr_name: Some("content".to_string()),
                                                 expect_html: true,
                                                 expect_css: false,
-                                                meta_disallow_follow: *nofollow_clone.lock().unwrap(),
+                                                meta_disallow_follow: *nofollow_clone.lock().unwrap_or_else(|e| e.into_inner()),
                                             });
                                         }
                                     }
@@ -332,12 +332,12 @@ impl ContentExtractor for HtmlExtractor {
 
         let mut final_results = match Arc::try_unwrap(results) {
             Ok(mutex) => mutex.into_inner().unwrap_or_else(|e| e.into_inner()),
-            Err(arc) => arc.lock().unwrap().clone(),
+            Err(arc) => arc.lock().unwrap_or_else(|e| e.into_inner()).clone(),
         };
 
         let nofollow = match Arc::try_unwrap(nofollow_flag) {
             Ok(mutex) => mutex.into_inner().unwrap_or(false),
-            Err(arc) => *arc.lock().unwrap(),
+            Err(arc) => *arc.lock().unwrap_or_else(|e| e.into_inner()),
         };
 
         if nofollow {
