@@ -488,15 +488,21 @@ impl Transport for TlsTransport {
     /// `Ok(())` on success, or a `TlsError` on failure.
     fn close(&mut self) -> Result<(), TlsError> {
         if let Some(mut conn) = self.conn.take() {
-            let _ = conn.send_close_notify();
+            conn.send_close_notify();
             if conn.wants_write() {
                 if let Some(stream) = self.stream.as_mut() {
-                    let _ = conn.write_tls(&mut *stream);
-                    let _ = stream.shutdown(std::net::Shutdown::Both);
+                    if let Err(e) = conn.write_tls(&mut *stream) {
+                        log::debug!("TLS write_tls during close failed: {}", e);
+                    }
+                    if let Err(e) = stream.shutdown(std::net::Shutdown::Both) {
+                        log::debug!("TLS stream shutdown failed: {}", e);
+                    }
                 }
             }
         } else if let Some(stream) = self.stream.take() {
-            let _ = stream.shutdown(std::net::Shutdown::Both);
+            if let Err(e) = stream.shutdown(std::net::Shutdown::Both) {
+                log::debug!("TLS stream shutdown failed: {}", e);
+            }
         }
         self.alive = false;
         Ok(())
