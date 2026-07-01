@@ -183,3 +183,13 @@ impl std::fmt::Display for TlsTransportError {
         }
     }
 }
+
+impl std::error::Error for TlsTransportError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            TlsTransportError::Tls(e) => Some(e),
+            TlsTransportError::Io(e) => Some(e),
+            TlsTransportError::Transport(_) => None,
+        }
+    }
+}
