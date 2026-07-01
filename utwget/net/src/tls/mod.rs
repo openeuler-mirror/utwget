@@ -131,3 +131,29 @@ impl Default for TlsConfig {
         }
     }
 }
+
+impl TlsConfig {
+    /// Creates a `TlsConfig` from the core configuration.
+    ///
+    /// This converts the core library's TLS configuration to the
+    /// net module's configuration format.
+    ///
+    /// # Arguments
+    ///
+    /// * `core` - The core TLS configuration.
+    ///
+    /// # Returns
+    ///
+    /// A new `TlsConfig` with the same settings.
+    pub fn from_core(core: &ut_core::config::TlsConfig) -> Self {
+        Self {
+            check_certificate: core.check_certificate,
+            ca_cert: core.ca_cert.clone(),
+            cert_file: core.cert_file.clone(),
+            private_key: core.private_key.clone(),
+            ca_directory: core.ca_directory.clone(),
+            secure_protocol: core.secure_protocol,
+            ciphers: core.ciphers.clone(),
+        }
+    }
+}
