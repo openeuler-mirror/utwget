@@ -53,7 +53,7 @@ impl AsyncRetriever {
     ///
     /// A `RetrieveOutcome` on success.
     pub async fn retrieve(&self, url: &str) -> Result<RetrieveOutcome, RetrieveError> {
-        let _permit = self.acquire_permit().await;
+        let _permit = self.acquire_permit().await?;
         let config = self.config.clone();
         let url = url.to_string();
 
@@ -81,7 +81,7 @@ impl AsyncRetriever {
         url: &str,
         progress: Box<dyn ProgressDisplay>,
     ) -> Result<RetrieveOutcome, RetrieveError> {
-        let _permit = self.acquire_permit().await;
+        let _permit = self.acquire_permit().await?;
         let config = self.config.clone();
         let url = url.to_string();
 
@@ -147,12 +147,12 @@ impl AsyncRetriever {
     }
 
     /// Acquire a permit from the concurrency semaphore.
-    async fn acquire_permit(&self) -> OwnedSemaphorePermit {
+    async fn acquire_permit(&self) -> Result<OwnedSemaphorePermit, RetrieveError> {
         self.semaphore
             .clone()
             .acquire_owned()
             .await
-            .expect("semaphore closed")
+            .map_err(|_| RetrieveError::Protocol(WgetError::Other("semaphore closed".into())))
     }
 
     /// Get the shared configuration.
