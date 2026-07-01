@@ -80,3 +80,43 @@ pub trait DnsResolver: Send + Sync {
         timeout: Duration,
     ) -> Result<Vec<SocketAddr>, DnsError>;
 }
+
+/// Error type for DNS resolution operations.
+///
+/// This enum covers all possible failure modes for DNS resolution.
+#[derive(Debug, thiserror::Error)]
+pub enum DnsError {
+    /// The hostname could not be found.
+    ///
+    /// This typically indicates that the hostname does not exist
+    /// in the DNS system (NXDOMAIN).
+    #[error("host not found: {0}")]
+    HostNotFound(String),
+
+    /// No addresses were found for the hostname and port.
+    ///
+    /// The hostname may exist but has no addresses matching
+    /// the requested address family.
+    #[error("no addresses found for {host}:{port}")]
+    NoAddresses { host: String, port: u16 },
+
+    /// DNS resolution failed for a specific reason.
+    ///
+    /// This is a general error that includes the hostname and
+    /// a detail message describing the failure.
+    #[error("DNS resolution failed for {host}: {detail}")]
+    ResolveFailed { host: String, detail: String },
+
+    /// DNS query timed out.
+    ///
+    /// The resolution did not complete within the specified timeout.
+    #[error("DNS query timed out for {host} after {timeout:?}")]
+    Timeout { host: String, timeout: Duration },
+
+    /// I/O error during DNS resolution.
+    ///
+    /// This wraps underlying system I/O errors that may occur
+    /// during resolution.
+    #[error("DNS I/O error: {0}")]
+    Io(#[from] io::Error),
+}
