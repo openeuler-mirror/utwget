@@ -110,3 +110,28 @@ impl DnsResolver for StdResolver {
         Ok(addrs)
     }
 }
+
+/// Checks if a socket address matches the requested address family.
+///
+/// # Arguments
+///
+/// * `addr` - The socket address to check.
+/// * `family` - The address family to match against.
+///
+/// # Returns
+///
+/// `true` if the address matches the family filter, `false` otherwise.
+fn address_matches_family(addr: &SocketAddr, family: AddressFamily) -> bool {
+    use std::net::IpAddr::{V4, V6};
+    match (addr.ip(), family) {
+        (V4(_), AddressFamily::Ipv4) => true,
+        (V6(_), AddressFamily::Ipv6) => true,
+        (V4(_), AddressFamily::Ipv6) => false,
+        (V6(_), AddressFamily::Ipv4) => false,
+        (V4(_), AddressFamily::PreferIpv6) => false,
+        (V6(_), AddressFamily::PreferIpv4) => false,
+        (_, AddressFamily::PreferIpv4) => matches!(addr.ip(), V4(_)),
+        (_, AddressFamily::PreferIpv6) => matches!(addr.ip(), V6(_)),
+        (_, AddressFamily::Unspecified) => true,
+    }
+}
