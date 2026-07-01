@@ -504,7 +504,14 @@ impl App {
 
             // Wait for all tasks to complete
             for handle in handles {
-                let _ = handle.await;
+                if let Err(e) = handle.await {
+                    // Task panicked or was cancelled
+                    log::error!("Download task failed: {}", e);
+                    let mut worst = worst_status.lock().unwrap_or_else(|e| e.into_inner());
+                    if ExitStatus::NetworkFail > *worst {
+                        *worst = ExitStatus::NetworkFail;
+                    }
+                }
             }
         });
 
