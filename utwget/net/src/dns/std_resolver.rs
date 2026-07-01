@@ -54,3 +54,58 @@ impl Default for StdResolver {
         Self::new()
     }
 }
+
+impl DnsResolver for StdResolver {
+    /// Resolves a hostname and port into a list of socket addresses.
+    ///
+    /// This method formats the host and port as `host:port`, delegates to the
+    /// standard library's `to_socket_addrs` for resolution, and collects all
+    /// returned addresses. The `family` and `timeout` parameters are respected
+    /// by the trait interface but are not used by this resolver, which relies
+    /// entirely on the OS-level resolution behavior.
+    ///
+    /// # Arguments
+    ///
+    /// * `host` - The hostname to resolve (e.g., `"example.com"`).
+    /// * `port` - The port number to associate with the resolved addresses.
+    /// * `_family` - The desired address family (IPv4 or IPv6). Ignored by this
+    ///   resolver; the OS determines which addresses are returned.
+    /// * `_timeout` - An optional timeout for the DNS query. Ignored by this
+    ///   resolver; the OS controls resolution timeout.
+    ///
+    /// # Returns
+    ///
+    /// A vector of `SocketAddr` values for the resolved hostname and port.
+    ///
+    /// # Errors
+    ///
+    /// * `DnsError::ResolveFailed` - If the OS-level resolution fails
+    ///   (e.g., the hostname does not exist or a network error occurs).
+    /// * `DnsError::NoAddresses` - If resolution succeeds but returns
+    ///   no addresses for the given hostname and port.
+    fn resolve(
+        &self,
+        host: &str,
+        port: u16,
+        _family: AddressFamily,
+        _timeout: Duration,
+    ) -> Result<Vec<SocketAddr>, DnsError> {
+        let addr = format!("{}:{}", host, port);
+        let addrs: Vec<SocketAddr> = addr
+            .to_socket_addrs()
+            .map_err(|e| DnsError::ResolveFailed {
+                host: host.to_string(),
+                detail: e.to_string(),
+            })?
+            .collect();
+
+        if addrs.is_empty() {
+            return Err(DnsError::NoAddresses {
+                host: host.to_string(),
+                port,
+            });
+        }
+
+        Ok(addrs)
+    }
+}
