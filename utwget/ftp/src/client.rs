@@ -963,8 +963,13 @@ impl FtpClient {
     /// `Ok(())` on success.
     pub fn quit(&mut self) -> Result<(), FtpError> {
         if let Some(ref mut ctrl) = self.ctrl {
-            let _ = FtpCommand::send(ctrl.as_mut(), "QUIT");
-            let _ = FtpResponse::read(ctrl.as_mut());
+            // Send QUIT command, but don't fail if it errors
+            // (server might have already closed the connection)
+            if let Err(e) = FtpCommand::send(ctrl.as_mut(), "QUIT") {
+                log::debug!("FTP QUIT send failed: {}", e);
+            } else if let Err(e) = FtpResponse::read(ctrl.as_mut()) {
+                log::debug!("FTP QUIT response read failed: {}", e);
+            }
             let _ = ctrl.flush();
         }
         self.ctrl = None;
