@@ -173,3 +173,13 @@ pub enum TlsTransportError {
     /// A general transport error.
     Transport(String),
 }
+
+impl std::fmt::Display for TlsTransportError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TlsTransportError::Tls(e) => write!(f, "TLS error: {}", e),
+            TlsTransportError::Io(e) => write!(f, "I/O error: {}", e),
+            TlsTransportError::Transport(s) => write!(f, "transport error: {}", s),
+        }
+    }
+}
