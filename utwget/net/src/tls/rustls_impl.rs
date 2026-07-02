@@ -243,3 +243,48 @@ struct TlsTransport {
     /// Whether the connection is still alive.
     alive: bool,
 }
+
+impl TlsTransport {
+    /// Completes the TLS handshake.
+    ///
+    /// This method drives the handshake process by reading and writing
+    /// TLS records until the handshake is complete.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` on successful handshake, or a `TlsError` on failure.
+    fn complete_handshake(&mut self) -> Result<(), TlsError> {
+        let stream = self.stream.as_mut().ok_or_else(|| {
+            TlsError::HandshakeFailed("stream not available".into())
+        })?;
+        let conn = self.conn.as_mut().ok_or_else(|| {
+            TlsError::HandshakeFailed("connection not available".into())
+        })?;
+
+        loop {
+            if conn.wants_write() {
+                let _ = conn.write_tls(&mut *stream).map_err(TlsError::Io)?;
+                continue;
+            }
+
+            if conn.wants_read() {
+                match conn.read_tls(&mut *stream) {
+                    Ok(0) => {
+                        return Err(TlsError::HandshakeFailed(
+                            "connection closed during TLS handshake".into(),
+                        ))
+                    }
+                    Ok(_) => {}
+                    Err(e) => return Err(TlsError::Io(e)),
+                }
+                conn.process_new_packets()
+                    .map_err(|e| TlsError::HandshakeFailed(e.to_string()))?;
+                continue;
+            }
+
+            break;
+        }
+
+        Ok(())
+    }
+}
