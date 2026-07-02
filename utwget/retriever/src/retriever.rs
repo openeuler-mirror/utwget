@@ -661,13 +661,17 @@ impl Retriever {
         let effective_resume_pos = self.config.start_position.unwrap_or(state.resume_position);
         state.resume_position = effective_resume_pos;
 
-        let mut file = OpenOptions::new()
+        let file = OpenOptions::new()
             .create(true)
             .write(true)
             .truncate(effective_resume_pos == 0)
             .append(effective_resume_pos > 0)
             .open(&output_path)
             .map_err(RetrieveError::Io)?;
+
+        // Wrap file in BufWriter to reduce write system calls.
+        // 64KB capacity matches our I/O buffer size for efficient batching.
+        let mut file = io::BufWriter::with_capacity(IO_BUFFER_SIZE, file);
 
         // Use Content-Length for progress, unless ignore_length is set
         let total_size = if self.config.ignore_length {
@@ -697,6 +701,12 @@ impl Retriever {
                 state.resume_position,
             )?;
         }
+
+        // Flush BufWriter before applying timestamps / xattrs to ensure
+        // all data is persisted to the underlying file.
+        file.flush().map_err(RetrieveError::Io)?;
+        // Drop BufWriter to release the underlying file handle cleanly.
+        drop(file);
 
         let elapsed = start.elapsed();
         self.progress.finish(ut_progress::FinishStatus::Success {
