@@ -488,3 +488,25 @@ impl std::fmt::Debug for TlsTransport {
             .finish()
     }
 }
+
+/// Loads certificates from a PEM file.
+///
+/// # Arguments
+///
+/// * `path` - Path to the PEM file containing certificates.
+///
+/// # Returns
+///
+/// A vector of certificates on success, or a `TlsError` on failure.
+fn load_certs_from_file(path: &std::path::Path) -> Result<Vec<CertificateDer<'static>>, TlsError> {
+    let data = std::fs::read(path).map_err(|_| TlsError::InvalidCertFile(path.to_path_buf()))?;
+    let certs = rustls_pemfile::certs(&mut data.as_slice())
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| TlsError::InvalidCertFile(path.to_path_buf()))?;
+
+    if certs.is_empty() {
+        return Err(TlsError::InvalidCertFile(path.to_path_buf()));
+    }
+
+    Ok(certs.into_iter().map(|c| c.to_owned()).collect())
+}
