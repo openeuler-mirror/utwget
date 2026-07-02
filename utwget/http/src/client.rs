@@ -215,3 +215,62 @@ fn read_exact(
 
     Ok(total)
 }
+
+/// Reads a chunked transfer-encoded body.
+///
+/// # Arguments
+///
+/// * `output` - The output writer.
+/// * `transport` - The transport reader.
+/// * `decompressor` - Optional decompressor for compressed content.
+///
+/// # Returns
+///
+/// The number of bytes written.
+#[cfg(feature = "compression")]
+fn read_chunked(
+    output: &mut dyn Write,
+    transport: Box<dyn Read + Send>,
+    decompressor: Option<crate::compression::Decompressor>,
+) -> io::Result<u64> {
+    let mut reader = ChunkedReaderAdapter { inner: transport };
+
+    let mut total = 0u64;
+    loop {
+        let line = read_chunk_line(&mut reader)?;
+        if line.is_empty() {
+            continue;
+        }
+
+        let size = parse_chunk_size(&line)?;
+        if size == 0 {
+            break;
+        }
+
+        let mut read_so_far = 0usize;
+        while read_so_far < size {
+            let to_read = (size - read_so_far).min(8192);
+            let mut buf = vec![0u8; to_read];
+
+            let n = if let Some(ref mut decomp) = decompressor {
+                decomp.read(&mut buf)?
+            } else {
+                reader.read(&mut buf)?
+            };
+
+            if n == 0 {
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "unexpected EOF in chunk data",
+                ));
+            }
+
+            output.write_all(&buf[..n])?;
+            read_so_far += n;
+        }
+
+        total += size as u64;
+    }
+
+    Ok(total)
+}
