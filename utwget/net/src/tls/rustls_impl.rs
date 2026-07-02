@@ -550,3 +550,48 @@ fn load_certs_from_dir(dir: &std::path::Path, root_store: &mut RootCertStore) ->
 
     Ok(())
 }
+
+/// Loads a private key from a file.
+///
+/// Tries to load the key in the following formats:
+/// 1. PKCS#8 (recommended)
+/// 2. RSA (PKCS#1)
+/// 3. EC (SEC1)
+///
+/// # Arguments
+///
+/// * `path` - Path to the private key file.
+///
+/// # Returns
+///
+/// The private key on success, or a `TlsError` on failure.
+fn load_private_key_from_file(path: &std::path::Path) -> Result<PrivateKeyDer<'static>, TlsError> {
+    let data = std::fs::read(path).map_err(|_| TlsError::InvalidCertFile(path.to_path_buf()))?;
+
+    // Try PKCS8 private key first
+    if let Some(key) = rustls_pemfile::private_key(&mut data.as_slice())
+        .map_err(|_| TlsError::InvalidCertFile(path.to_path_buf()))?
+    {
+        return Ok(key);
+    }
+
+    // Try RSA private key
+    let rsa_keys: Vec<_> = rustls_pemfile::rsa_private_keys(&mut data.as_slice())
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| TlsError::InvalidCertFile(path.to_path_buf()))?;
+
+    if let Some(key) = rsa_keys.into_iter().next() {
+        return Ok(PrivateKeyDer::Pkcs1(key));
+    }
+
+    // Try EC private key
+    let ec_keys: Vec<_> = rustls_pemfile::ec_private_keys(&mut data.as_slice())
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| TlsError::InvalidCertFile(path.to_path_buf()))?;
+
+    if let Some(key) = ec_keys.into_iter().next() {
+        return Ok(PrivateKeyDer::Sec1(key));
+    }
+
+    Err(TlsError::InvalidCertFile(path.to_path_buf()))
+}
