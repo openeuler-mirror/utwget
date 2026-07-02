@@ -131,3 +131,21 @@ impl BodyReaderEnum {
         }
     }
 }
+
+/// Wraps a transport with a decompressor if needed.
+///
+/// # Arguments
+///
+/// * `transport` - The underlying transport.
+/// * `encoding` - The Content-Encoding header value.
+///
+/// # Returns
+///
+/// A decompressor if compression is detected, otherwise None.
+#[cfg(feature = "compression")]
+fn wrap_with_decompressor(
+    transport: Box<dyn Read + Send>,
+    encoding: Option<&str>,
+) -> Option<crate::compression::Decompressor> {
+    crate::compression::Decompressor::from_encoding(DecompressorRead(transport), encoding).ok().filter(|d| !d.is_identity())
+}
