@@ -256,3 +256,19 @@ impl<'a, T: Read> ChunkedReader<'a, T> {
         Ok(total)
     }
 }
+
+impl<'a, T: Read> Iterator for ChunkedReader<'a, T> {
+    type Item = io::Result<Vec<u8>>;
+
+    /// Returns the next chunk as an iterator item.
+    ///
+    /// This allows `ChunkedReader` to be used in `for` loops and with
+    /// iterator adapters like `collect()`.
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.read_next_chunk() {
+            Ok(Some(chunk)) => Some(Ok(chunk)),
+            Ok(None) => None,
+            Err(e) => Some(Err(e)),
+        }
+    }
+}
