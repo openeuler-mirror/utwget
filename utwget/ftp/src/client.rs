@@ -67,8 +67,13 @@ pub enum FtpError {
 ///
 /// FTP commands are terminated by CRLF, so embedding \r or \n in
 /// user-supplied values like filenames allows arbitrary command execution.
+/// Null bytes can also cause issues with C string handling.
 fn validate_ftp_input(input: &str) -> Result<(), FtpError> {
-    if input.contains('\r') || input.contains('\n') {
+    if input.contains('\r') || input.contains('\n') || input.contains('\0') {
+        return Err(FtpError::InvalidInput);
+    }
+    // Also reject other ASCII control characters that could cause issues
+    if input.chars().any(|c| c.is_ascii_control()) {
         return Err(FtpError::InvalidInput);
     }
     Ok(())
