@@ -39,3 +39,19 @@ pub struct FetchOptions {
     /// Cookie header value.
     pub cookies: Option<String>,
 }
+
+impl Default for FetchOptions {
+    /// Creates default fetch options for a simple GET request.
+    fn default() -> Self {
+        FetchOptions {
+            method: None,
+            body: None,
+            extra_headers: Vec::new(),
+            use_proxy: false,
+            resume_from: None,
+            if_modified_since: None,
+            if_none_match: None,
+            cookies: None,
+        }
+    }
+}
