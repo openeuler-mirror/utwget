@@ -40,3 +40,31 @@ enum ChunkState {
     /// All chunks have been read; no more data available.
     Done,
 }
+
+/// Reader for HTTP chunked transfer-encoded response bodies.
+///
+/// Wraps an underlying transport and parses chunk boundaries, returning
+/// only the actual chunk data to the caller.
+///
+/// # Example
+///
+/// ```ignore
+/// let mut reader = ChunkedReader::new(&mut transport);
+///
+/// // Iterate over chunks
+/// while let Some(chunk) = reader.read_next_chunk().unwrap() {
+///     // process chunk
+/// }
+///
+/// // Or read all at once
+/// let mut output = Vec::new();
+/// reader.read_to_end(&mut output).unwrap();
+/// ```
+pub struct ChunkedReader<'a, T> {
+    /// The underlying transport reader.
+    transport: &'a mut T,
+    /// Buffer for partially read data.
+    buffer: Vec<u8>,
+    /// Current state of the chunk parser.
+    state: ChunkState,
+}
