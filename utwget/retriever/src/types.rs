@@ -207,6 +207,18 @@ pub enum RetrieveError {
     NoUrls,
 }
 
+impl From<RetrieveError> for WgetError {
+    fn from(err: RetrieveError) -> Self {
+        match err {
+            RetrieveError::Protocol(w) => w,
+            RetrieveError::Response(w) => w,
+            RetrieveError::Io(io_err) => WgetError::SocketError(io_err),
+            RetrieveError::Quota => WgetError::Other("quota exceeded".to_string()),
+            RetrieveError::NoUrls => WgetError::Other("no URLs to download".to_string()),
+        }
+    }
+}
+
 /// Trait for protocol implementations (HTTP, FTP).
 ///
 /// Defines the interface that protocol handlers must implement to
@@ -259,22 +271,6 @@ pub trait Protocol: Send + Sync {
 
     /// Whether the connection can be reused for subsequent requests.
     fn connection_reusable(&self) -> bool;
-}
-
-/// Convert `RetrieveError` to `WgetError`.
-///
-/// This implementation allows `RetrieveError` to be converted to the
-/// more general `WgetError` type for unified error handling.
-impl From<RetrieveError> for WgetError {
-    fn from(e: RetrieveError) -> Self {
-        match e {
-            RetrieveError::Protocol(err) => err,
-            RetrieveError::Response(err) => err,
-            RetrieveError::Io(err) => WgetError::SocketError(err),
-            RetrieveError::Quota => WgetError::Other("quota exceeded".into()),
-            RetrieveError::NoUrls => WgetError::Other("no URLs".into()),
-        }
-    }
 }
 
 /// Parse an HTTP date header value.

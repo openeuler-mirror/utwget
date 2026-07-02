@@ -370,13 +370,7 @@ impl App {
                                 break;
                             }
                             Err(e) => {
-                                let wg_err = match e {
-                                    ut_retriever::RetrieveError::Protocol(w) => w,
-                                    ut_retriever::RetrieveError::Response(w) => w,
-                                    ut_retriever::RetrieveError::Io(io_err) => WgetError::SocketError(io_err),
-                                    ut_retriever::RetrieveError::Quota => WgetError::Other("quota exceeded".to_string()),
-                                    ut_retriever::RetrieveError::NoUrls => WgetError::Other("no URLs to download".to_string()),
-                                };
+                                let wg_err: WgetError = e.into();
                                 let status = ExitStatus::from_error(&wg_err);
                                 if status > self.worst_status {
                                     self.worst_status = status;
@@ -396,13 +390,7 @@ impl App {
                     // Spider mode, no download
                 }
                 Err(e) => {
-                    let wg_err = match e {
-                        ut_retriever::RetrieveError::Protocol(w) => w,
-                        ut_retriever::RetrieveError::Response(w) => w,
-                        ut_retriever::RetrieveError::Io(io_err) => WgetError::SocketError(io_err),
-                        ut_retriever::RetrieveError::Quota => WgetError::Other("quota exceeded".to_string()),
-                        ut_retriever::RetrieveError::NoUrls => WgetError::Other("no URLs to download".to_string()),
-                    };
+                    let wg_err: WgetError = e.into();
                     let status = ExitStatus::from_error(&wg_err);
                     if status > self.worst_status {
                         self.worst_status = status;
@@ -486,13 +474,7 @@ impl App {
                             *downloaded += 1;
                         }
                         Err(e) => {
-                            let wg_err = match e {
-                                ut_retriever::RetrieveError::Protocol(w) => w,
-                                ut_retriever::RetrieveError::Response(w) => w,
-                                ut_retriever::RetrieveError::Io(io_err) => WgetError::SocketError(io_err),
-                                ut_retriever::RetrieveError::Quota => WgetError::Other("quota exceeded".to_string()),
-                                ut_retriever::RetrieveError::NoUrls => WgetError::Other("no URLs to download".to_string()),
-                            };
+                            let wg_err: WgetError = e.into();
                             let status = ExitStatus::from_error(&wg_err);
                             let mut worst = worst_status.lock().unwrap_or_else(|e| e.into_inner());
                             if status > *worst {
