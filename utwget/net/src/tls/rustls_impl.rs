@@ -510,3 +510,43 @@ fn load_certs_from_file(path: &std::path::Path) -> Result<Vec<CertificateDer<'st
 
     Ok(certs.into_iter().map(|c| c.to_owned()).collect())
 }
+
+/// Loads certificates from a directory.
+///
+/// Scans the directory for `.pem`, `.crt`, and `.cer` files and
+/// adds them to the root certificate store.
+///
+/// # Arguments
+///
+/// * `dir` - Path to the directory containing certificate files.
+/// * `root_store` - The root certificate store to add certificates to.
+///
+/// # Returns
+///
+/// `Ok(())` on success, or a `TlsError` on failure.
+fn load_certs_from_dir(dir: &std::path::Path, root_store: &mut RootCertStore) -> Result<(), TlsError> {
+    if !dir.is_dir() {
+        return Err(TlsError::InvalidCertFile(dir.to_path_buf()));
+    }
+
+    for entry in std::fs::read_dir(dir).map_err(|_| TlsError::InvalidCertFile(dir.to_path_buf()))? {
+        let entry = entry.map_err(|_| TlsError::InvalidCertFile(dir.to_path_buf()))?;
+        let path = entry.path();
+
+        // Only process .pem, .crt, .cer files
+        let ext = path.extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_lowercase());
+        if !matches!(ext.as_deref(), Some("pem") | Some("crt") | Some("cer")) {
+            continue;
+        }
+
+        if let Ok(certs) = load_certs_from_file(&path) {
+            for cert in certs {
+                let _ = root_store.add(cert);
+            }
+        }
+    }
+
+    Ok(())
+}
