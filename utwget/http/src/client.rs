@@ -71,3 +71,36 @@ pub struct FetchResult {
     /// Whether authentication was handled automatically.
     pub auth_handled: bool,
 }
+
+/// Enumeration of different body transfer modes.
+///
+/// HTTP response bodies can be transferred in different ways depending
+/// on the headers present in the response.
+pub enum BodyReaderEnum {
+    /// Body with a known Content-Length.
+    ContentLength {
+        /// Number of bytes remaining to read.
+        remaining: u64,
+        /// The underlying transport.
+        transport: Box<dyn Read + Send>,
+        /// Optional decompressor for compressed content.
+        #[cfg(feature = "compression")]
+        decompressor: Option<crate::compression::Decompressor>,
+    },
+    /// Body using chunked transfer encoding.
+    Chunked {
+        /// The underlying transport.
+        transport: Box<dyn Read + Send>,
+        /// Optional decompressor for compressed content.
+        #[cfg(feature = "compression")]
+        decompressor: Option<crate::compression::Decompressor>,
+    },
+    /// Body with unknown length (read until connection close).
+    ReadToEnd {
+        /// The underlying transport.
+        transport: Box<dyn Read + Send>,
+        /// Optional decompressor for compressed content.
+        #[cfg(feature = "compression")]
+        decompressor: Option<crate::compression::Decompressor>,
+    },
+}
