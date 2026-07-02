@@ -55,3 +55,19 @@ impl Default for FetchOptions {
         }
     }
 }
+
+/// Result of an HTTP fetch operation.
+///
+/// Contains the response status, headers, and an optional body reader.
+pub struct FetchResult {
+    /// The HTTP status code (e.g., 200, 404).
+    pub status_code: u16,
+    /// The complete HTTP response with headers.
+    pub response: HttpResponse,
+    /// A reader for the response body, if present.
+    pub body_reader: Option<BodyReaderEnum>,
+    /// Whether the response is a redirect.
+    pub redirected: bool,
+    /// Whether authentication was handled automatically.
+    pub auth_handled: bool,
+}
