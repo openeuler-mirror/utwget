@@ -33,7 +33,7 @@ use crate::types::{
 };
 use crate::utils::{
     adjust_file_extension, apply_file_timestamp, build_proxy_request, is_retryable, is_url_proxied,
-    parse_content_disposition, resolve_proxy, rotate_backups, serialize_headers,
+    parse_content_disposition, resolve_proxy, rotate_backups, sanitize_filename, serialize_headers,
 };
 
 #[cfg(feature = "warc")]
@@ -597,9 +597,11 @@ impl Retriever {
                 .and_then(parse_content_disposition);
 
             if let Some(ref filename) = content_disp_filename {
-                debug!("using filename from Content-Disposition: {}", filename);
+                // Sanitize filename to prevent path traversal attacks
+                let safe_filename = sanitize_filename(filename);
+                debug!("using filename from Content-Disposition: {} (sanitized from: {})", safe_filename, filename);
                 let mut new_path = output_path.parent().unwrap_or(Path::new(".")).to_path_buf();
-                new_path.push(filename);
+                new_path.push(&safe_filename);
                 new_path
             } else {
                 output_path.to_path_buf()
