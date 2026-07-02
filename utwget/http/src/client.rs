@@ -149,3 +149,14 @@ fn wrap_with_decompressor(
 ) -> Option<crate::compression::Decompressor> {
     crate::compression::Decompressor::from_encoding(DecompressorRead(transport), encoding).ok().filter(|d| !d.is_identity())
 }
+
+/// Adapter to implement Read for boxed transport.
+#[cfg(feature = "compression")]
+struct DecompressorRead(Box<dyn Read + Send>);
+
+#[cfg(feature = "compression")]
+impl Read for DecompressorRead {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.0.read(buf)
+    }
+}
