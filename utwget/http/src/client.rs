@@ -104,3 +104,30 @@ pub enum BodyReaderEnum {
         decompressor: Option<crate::compression::Decompressor>,
     },
 }
+
+impl BodyReaderEnum {
+    /// Reads the entire body and writes it to the output.
+    ///
+    /// Handles all three transfer modes transparently.
+    ///
+    /// # Arguments
+    ///
+    /// * `output` - The writer to receive the body data.
+    ///
+    /// # Returns
+    ///
+    /// The total number of bytes written.
+    pub fn read_to_end(self, output: &mut dyn Write) -> io::Result<u64> {
+        match self {
+            BodyReaderEnum::ContentLength { remaining, transport, #[cfg(feature = "compression")] decompressor } => {
+                read_exact(output, transport, remaining, decompressor)
+            }
+            BodyReaderEnum::Chunked { transport, #[cfg(feature = "compression")] decompressor } => {
+                read_chunked(output, transport, decompressor)
+            }
+            BodyReaderEnum::ReadToEnd { transport, #[cfg(feature = "compression")] decompressor } => {
+                read_until_eof(output, transport, decompressor)
+            }
+        }
+    }
+}
