@@ -160,3 +160,58 @@ impl Read for DecompressorRead {
         self.0.read(buf)
     }
 }
+
+/// Reads exactly `remaining` bytes from the transport.
+///
+/// # Arguments
+///
+/// * `output` - The output writer.
+/// * `transport` - The transport reader.
+/// * `remaining` - The exact number of bytes to read.
+/// * `decompressor` - Optional decompressor for compressed content.
+///
+/// # Returns
+///
+/// The number of bytes written.
+#[cfg(feature = "compression")]
+fn read_exact(
+    output: &mut dyn Write,
+    transport: Box<dyn Read + Send>,
+    mut remaining: u64,
+    decompressor: Option<crate::compression::Decompressor>,
+) -> io::Result<u64> {
+    let mut total = 0u64;
+    let mut buf = [0u8; 8192];
+
+    if let Some(mut decomp) = decompressor {
+        loop {
+            if remaining == 0 {
+                break;
+            }
+            let to_read = (remaining as usize).min(buf.len());
+            let n = decomp.read(&mut buf[..to_read])?;
+            if n == 0 {
+                break;
+            }
+            output.write_all(&buf[..n])?;
+            total += n as u64;
+            remaining -= n as u64;
+        }
+    } else {
+        loop {
+            if remaining == 0 {
+                break;
+            }
+            let to_read = (remaining as usize).min(buf.len());
+            let n = transport.read(&mut buf[..to_read])?;
+            if n == 0 {
+                break;
+            }
+            output.write_all(&buf[..n])?;
+            total += n as u64;
+            remaining -= n as u64;
+        }
+    }
+
+    Ok(total)
+}
