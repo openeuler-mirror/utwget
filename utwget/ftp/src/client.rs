@@ -636,6 +636,10 @@ impl FtpClient {
     /// Returns `FtpError::CommandFailed` if the source doesn't exist,
     /// the destination already exists, or the command fails.
     pub fn rename(&mut self, from: &str, to: &str) -> Result<FtpResponse, FtpError> {
+        // Validate both parameters to prevent command injection
+        validate_ftp_input(from)?;
+        validate_ftp_input(to)?;
+
         self.send_cmd(&format!("RNFR {}", from))?;
         let resp = self.read_response()?;
         if !resp.is_positive_intermediate {
