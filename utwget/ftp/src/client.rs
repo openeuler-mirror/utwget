@@ -62,6 +62,9 @@ pub enum FtpError {
     Protocol(#[from] FtpCommandError),
 }
 
+/// I/O buffer size for FTP data transfers (64KB).
+const FTP_IO_BUFFER_SIZE: usize = 64 * 1024;
+
 /// Validates that input does not contain control characters that could
 /// be used for FTP command injection (CRLF injection).
 ///
@@ -766,7 +769,7 @@ impl FtpClient {
         }
 
         let mut listing_data = Vec::new();
-        let mut buf = [0u8; 8192];
+        let mut buf = [0u8; FTP_IO_BUFFER_SIZE];
         loop {
             let n = data_conn.stream.read(&mut buf).map_err(|e| FtpError::TransferFailed(e.to_string()))?;
             if n == 0 { break; }
@@ -822,7 +825,7 @@ impl FtpClient {
         }
 
         let mut data = Vec::new();
-        let mut buf = [0u8; 8192];
+        let mut buf = [0u8; FTP_IO_BUFFER_SIZE];
         loop {
             let n = data_conn.stream.read(&mut buf).map_err(|e| FtpError::TransferFailed(e.to_string()))?;
             if n == 0 { break; }
@@ -885,7 +888,7 @@ impl FtpClient {
 
         let start_pos = resume_pos.unwrap_or(0);
         let mut total_bytes = start_pos;
-        let mut buf = [0u8; 32768];
+        let mut buf = [0u8; FTP_IO_BUFFER_SIZE];
         loop {
             let n = data_conn.stream.read(&mut buf).map_err(|e| FtpError::TransferFailed(e.to_string()))?;
             if n == 0 { break; }
@@ -941,7 +944,7 @@ impl FtpClient {
         }
 
         let mut total_bytes = 0u64;
-        let mut buf = [0u8; 32768];
+        let mut buf = [0u8; FTP_IO_BUFFER_SIZE];
         loop {
             let n = input.read(&mut buf).map_err(|e| FtpError::TransferFailed(e.to_string()))?;
             if n == 0 { break; }

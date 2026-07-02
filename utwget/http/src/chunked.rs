@@ -100,7 +100,7 @@ impl<'a, T: Read> ChunkedReader<'a, T> {
     /// Returns an error if the transport ends before enough data is available.
     fn ensure_buffer(&mut self, needed: usize) -> io::Result<()> {
         if self.buffer.len() < needed {
-            let mut tmp = [0u8; 8192];
+            let mut tmp = [0u8; 64 * 1024];
             loop {
                 let n = self.transport.read(&mut tmp)?;
                 if n == 0 {
@@ -135,7 +135,7 @@ impl<'a, T: Read> ChunkedReader<'a, T> {
                 return Ok(line);
             }
 
-            let mut tmp = [0u8; 8192];
+            let mut tmp = [0u8; 64 * 1024];
             let n = self.transport.read(&mut tmp)?;
             if n == 0 {
                 return Err(io::Error::new(
