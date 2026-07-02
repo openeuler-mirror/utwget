@@ -1866,7 +1866,7 @@ impl Retriever {
     fn calculate_backoff(&self, attempt: u32) -> Duration {
         let base = self.config.wait_retry.unwrap_or(Duration::from_secs(1));
         let max_wait = Duration::from_secs(60);
-        let exponential = base * 2u32.saturating_pow(attempt);
+        let exponential = base.saturating_mul(2u32.saturating_pow(attempt));
 
         let jitter = if self.config.random_wait {
             let mut rng = rand::thread_rng();
