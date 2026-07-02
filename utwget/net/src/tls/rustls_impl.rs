@@ -288,3 +288,194 @@ impl TlsTransport {
         Ok(())
     }
 }
+
+impl Transport for TlsTransport {
+    type Error = TlsError;
+
+    /// Reads data from the TLS connection.
+    ///
+    /// If there's data in the peek buffer, it's returned first.
+    /// Otherwise, TLS records are read from the underlying stream
+    /// and decrypted.
+    ///
+    /// # Arguments
+    ///
+    /// * `buf` - The buffer to read data into.
+    ///
+    /// # Returns
+    ///
+    /// The number of bytes read on success, or a `TlsError` on failure.
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, TlsError> {
+        if !self.peek_buf.is_empty() {
+            let n = self.peek_buf.len().min(buf.len());
+            buf[..n].copy_from_slice(&self.peek_buf[..n]);
+            self.peek_buf.drain(..n);
+            return Ok(n);
+        }
+
+        let stream = self.stream.as_mut().ok_or_else(|| {
+            TlsError::HandshakeFailed("stream not available".into())
+        })?;
+        let conn = self.conn.as_mut().ok_or_else(|| {
+            TlsError::HandshakeFailed("connection not available".into())
+        })?;
+
+        conn.read_tls(&mut *stream).map_err(TlsError::Io)?;
+        conn.process_new_packets()
+            .map_err(|e| TlsError::HandshakeFailed(e.to_string()))?;
+
+        let mut reader = conn.reader();
+        let n = reader.read(buf).map_err(TlsError::Io)?;
+        Ok(n)
+    }
+
+    /// Writes data to the TLS connection.
+    ///
+    /// Data is encrypted and written to the underlying TCP stream.
+    ///
+    /// # Arguments
+    ///
+    /// * `buf` - The data to write.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` on success, or a `TlsError` on failure.
+    fn write(&mut self, buf: &[u8]) -> Result<(), TlsError> {
+        let stream = self.stream.as_mut().ok_or_else(|| {
+            TlsError::HandshakeFailed("stream not available".into())
+        })?;
+        let conn = self.conn.as_mut().ok_or_else(|| {
+            TlsError::HandshakeFailed("connection not available".into())
+        })?;
+
+        {
+            let mut writer = conn.writer();
+            writer.write_all(buf).map_err(TlsError::Io)?;
+            writer.flush().map_err(TlsError::Io)?;
+        }
+
+        loop {
+            if conn.wants_write() {
+                let _ = conn.write_tls(&mut *stream).map_err(TlsError::Io)?;
+            } else {
+                break;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Polls the connection for readiness.
+    ///
+    /// Checks whether the underlying TCP stream is ready for
+    /// reading or writing.
+    ///
+    /// # Arguments
+    ///
+    /// * `interest` - What operations to check for.
+    /// * `timeout` - Maximum time to wait.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(true)` if ready, `Ok(false)` if timeout, or an error.
+    fn poll_ready(&mut self, interest: Interest, timeout: Duration) -> Result<bool, TlsError> {
+        let stream = self.stream.as_mut().ok_or_else(|| {
+            TlsError::HandshakeFailed("stream not available".into())
+        })?;
+
+        #[cfg(unix)]
+        {
+            let fd = stream.as_raw_fd();
+            stream.set_nonblocking(true).map_err(TlsError::Io)?;
+            let result = crate::transport::poll_fd(fd, interest, timeout).map_err(TlsError::Io);
+            let _ = stream.set_nonblocking(false);
+            return result;
+        }
+
+        #[cfg(not(unix))]
+        {
+            let deadline = std::time::Instant::now() + timeout;
+            loop {
+                if interest.readable || interest.writable {
+                    return Ok(true);
+                }
+                if std::time::Instant::now() >= deadline {
+                    return Ok(false);
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+    }
+
+    /// Peeks data from the TLS connection without consuming it.
+    ///
+    /// This is implemented by reading data into an internal buffer
+    /// and returning it on subsequent reads.
+    ///
+    /// # Arguments
+    ///
+    /// * `buf` - The buffer to peek data into.
+    ///
+    /// # Returns
+    ///
+    /// The number of bytes peeked on success, or a `TlsError` on failure.
+    fn peek(&mut self, buf: &mut [u8]) -> Result<usize, TlsError> {
+        if !self.peek_buf.is_empty() {
+            let n = self.peek_buf.len().min(buf.len());
+            buf[..n].copy_from_slice(&self.peek_buf[..n]);
+            return Ok(n);
+        }
+
+        let mut temp_buf = vec![0u8; buf.len()];
+        let n = self.read(&mut temp_buf)?;
+        self.peek_buf.extend_from_slice(&temp_buf[..n]);
+        buf[..n].copy_from_slice(&temp_buf[..n]);
+        Ok(n)
+    }
+
+    /// Closes the TLS connection.
+    ///
+    /// Sends a close notify alert and shuts down the underlying stream.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` on success, or a `TlsError` on failure.
+    fn close(&mut self) -> Result<(), TlsError> {
+        if let Some(mut conn) = self.conn.take() {
+            let _ = conn.send_close_notify();
+            if conn.wants_write() {
+                if let Some(stream) = self.stream.as_mut() {
+                    let _ = conn.write_tls(&mut *stream);
+                    let _ = stream.shutdown(std::net::Shutdown::Both);
+                }
+            }
+        } else if let Some(stream) = self.stream.take() {
+            let _ = stream.shutdown(std::net::Shutdown::Both);
+        }
+        self.alive = false;
+        Ok(())
+    }
+
+    /// Checks if the connection is still alive.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the connection is alive, `false` otherwise.
+    fn is_alive(&self) -> bool {
+        self.alive && self.conn.is_some()
+    }
+
+    /// Returns a reference to the transport as `Any`.
+    ///
+    /// Used for downcasting to concrete types.
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    /// Returns a mutable reference to the transport as `Any`.
+    ///
+    /// Used for downcasting to concrete types.
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
