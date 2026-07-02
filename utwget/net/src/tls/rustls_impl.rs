@@ -479,3 +479,12 @@ impl Transport for TlsTransport {
         self
     }
 }
+
+impl std::fmt::Debug for TlsTransport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TlsTransport")
+            .field("alive", &self.alive)
+            .field("has_conn", &self.conn.is_some())
+            .finish()
+    }
+}
