@@ -274,3 +274,30 @@ fn read_chunked(
 
     Ok(total)
 }
+
+/// Reads a chunked body without compression support.
+#[cfg(not(feature = "compression"))]
+fn read_chunked(
+    output: &mut dyn Write,
+    transport: Box<dyn Read + Send>,
+) -> io::Result<u64> {
+    let mut reader = ChunkedReaderAdapter { inner: transport };
+    let mut total = 0u64;
+
+    loop {
+        let line = read_chunk_line(&mut reader)?;
+        if line.is_empty() {
+            continue;
+        }
+
+        let size = parse_chunk_size(&line)?;
+        if size == 0 {
+            break;
+        }
+
+        io::copy(&mut reader.by_ref().take(size as u64), output)?;
+        total += size as u64;
+    }
+
+    Ok(total)
+}
