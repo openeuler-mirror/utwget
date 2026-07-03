@@ -379,3 +379,21 @@ fn read_chunk_line(reader: &mut impl Read) -> io::Result<Vec<u8>> {
         }
     }
 }
+
+/// Parses a chunk size from a line.
+///
+/// # Arguments
+///
+/// * `line` - The chunk size line.
+///
+/// # Returns
+///
+/// The parsed size in bytes.
+fn parse_chunk_size(line: &[u8]) -> io::Result<usize> {
+    let s = std::str::from_utf8(line)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "chunk size not utf8"))?;
+    let hex = s.split(';').next().unwrap_or("").trim();
+    usize::from_str_radix(hex, 16).map_err(|_| {
+        io::Error::new(io::ErrorKind::InvalidData, format!("invalid chunk size: {}", hex))
+    })
+}
