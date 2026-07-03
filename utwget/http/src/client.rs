@@ -397,3 +397,45 @@ fn parse_chunk_size(line: &[u8]) -> io::Result<usize> {
         io::Error::new(io::ErrorKind::InvalidData, format!("invalid chunk size: {}", hex))
     })
 }
+
+/// Returns None when compression is not enabled.
+#[cfg(not(feature = "compression"))]
+fn no_decompressor() -> Option<()> {
+    None
+}
+
+/// Creates a body reader based on the response headers.
+///
+/// # Arguments
+///
+/// * `response` - The HTTP response.
+/// * `transport` - The transport reader.
+///
+/// # Returns
+///
+/// The appropriate body reader variant.
+#[cfg(feature = "compression")]
+fn make_body_reader(
+    response: &HttpResponse,
+    transport: Box<dyn Read + Send>,
+) -> BodyReaderEnum {
+    let encoding = response.headers.content_encoding();
+
+    if response.is_chunked() {
+        BodyReaderEnum::Chunked {
+            transport,
+            decompressor: wrap_with_decompressor(transport, encoding),
+        }
+    } else if let Some(len) = response.content_length() {
+        BodyReaderEnum::ContentLength {
+            remaining: len,
+            transport,
+            decompressor: wrap_with_decompressor(transport, encoding),
+        }
+    } else {
+        BodyReaderEnum::ReadToEnd {
+            transport,
+            decompressor: wrap_with_decompressor(transport, encoding),
+        }
+    }
+}
