@@ -325,3 +325,12 @@ fn read_until_eof(
         io::copy(&mut transport.take(u64::MAX), output)
     }
 }
+
+/// Reads until EOF without compression support.
+#[cfg(not(feature = "compression"))]
+fn read_until_eof(
+    output: &mut dyn Write,
+    transport: Box<dyn Read + Send>,
+) -> io::Result<u64> {
+    io::copy(&mut transport.take(u64::MAX), output)
+}
