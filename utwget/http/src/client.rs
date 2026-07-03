@@ -457,3 +457,30 @@ fn make_body_reader(
         BodyReaderEnum::ReadToEnd { transport }
     }
 }
+
+/// HTTP client for making requests.
+///
+/// The client handles request building, authentication, and response parsing.
+/// It is configured with a `Config` object that controls behavior like
+/// user agent, timeouts, and authentication settings.
+///
+/// # Example
+///
+/// ```ignore
+/// use utwget_http::client::{HttpClient, FetchOptions};
+/// use ut_core::config::Config;
+/// use std::sync::Arc;
+///
+/// let config = Arc::new(Config::default());
+/// let mut client = HttpClient::new(config);
+///
+/// let url = ParsedUrl::parse("http://example.com/").unwrap();
+/// let opts = FetchOptions::default();
+/// let result = client.fetch(&url, &opts, &mut transport);
+/// ```
+pub struct HttpClient {
+    /// Configuration for the client.
+    config: Arc<Config>,
+    /// Authentication dispatcher for handling auth challenges.
+    auth_dispatch: AuthDispatcher,
+}
