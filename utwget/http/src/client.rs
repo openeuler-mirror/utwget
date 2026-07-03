@@ -439,3 +439,21 @@ fn make_body_reader(
         }
     }
 }
+
+/// Creates a body reader without compression support.
+#[cfg(not(feature = "compression"))]
+fn make_body_reader(
+    response: &HttpResponse,
+    transport: Box<dyn Read + Send>,
+) -> BodyReaderEnum {
+    if response.is_chunked() {
+        BodyReaderEnum::Chunked { transport }
+    } else if let Some(len) = response.content_length() {
+        BodyReaderEnum::ContentLength {
+            remaining: len,
+            transport,
+        }
+    } else {
+        BodyReaderEnum::ReadToEnd { transport }
+    }
+}
