@@ -334,3 +334,14 @@ fn read_until_eof(
 ) -> io::Result<u64> {
     io::copy(&mut transport.take(u64::MAX), output)
 }
+
+/// Adapter to implement Read for boxed transport.
+struct ChunkedReaderAdapter {
+    inner: Box<dyn Read + Send>,
+}
+
+impl Read for ChunkedReaderAdapter {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.inner.read(buf)
+    }
+}
