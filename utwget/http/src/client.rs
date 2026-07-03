@@ -301,3 +301,27 @@ fn read_chunked(
 
     Ok(total)
 }
+
+/// Reads until end of file (connection close).
+///
+/// # Arguments
+///
+/// * `output` - The output writer.
+/// * `transport` - The transport reader.
+/// * `decompressor` - Optional decompressor for compressed content.
+///
+/// # Returns
+///
+/// The number of bytes written.
+#[cfg(feature = "compression")]
+fn read_until_eof(
+    output: &mut dyn Write,
+    transport: Box<dyn Read + Send>,
+    decompressor: Option<crate::compression::Decompressor>,
+) -> io::Result<u64> {
+    if let Some(mut decomp) = decompressor {
+        io::copy(&mut decomp, output)
+    } else {
+        io::copy(&mut transport.take(u64::MAX), output)
+    }
+}
