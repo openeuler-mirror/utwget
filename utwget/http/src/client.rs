@@ -484,3 +484,206 @@ pub struct HttpClient {
     /// Authentication dispatcher for handling auth challenges.
     auth_dispatch: AuthDispatcher,
 }
+
+impl HttpClient {
+    /// Creates a new HTTP client with the given configuration.
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - The configuration to use for requests.
+    ///
+    /// # Returns
+    ///
+    /// A new `HttpClient` instance.
+    pub fn new(config: Arc<Config>) -> Self {
+        let mut auth_dispatch = AuthDispatcher::new();
+        if config.auth_without_challenge {
+        }
+        HttpClient {
+            config,
+            auth_dispatch,
+        }
+    }
+
+    /// Sets a custom authentication dispatcher.
+    ///
+    /// # Arguments
+    ///
+    /// * `dispatch` - The authentication dispatcher to use.
+    ///
+    /// # Returns
+    ///
+    /// The modified client instance.
+    pub fn with_auth_dispatcher(mut self, dispatch: AuthDispatcher) -> Self {
+        self.auth_dispatch = dispatch;
+        self
+    }
+
+    /// Performs an HTTP fetch operation.
+    ///
+    /// This is the main entry point for making HTTP requests. It builds
+    /// the request, sends it, and handles authentication challenges if needed.
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - The parsed URL to fetch.
+    /// * `opts` - Options for the request.
+    /// * `transport` - The transport to use for I/O.
+    ///
+    /// # Returns
+    ///
+    /// A `FetchResult` containing the response status, headers, and body reader.
+    pub fn fetch<T>(
+        &mut self,
+        url: &ParsedUrl,
+        opts: &FetchOptions,
+        transport: &mut T,
+    ) -> io::Result<FetchResult>
+    where
+        T: Read + Write,
+    {
+        let authorization = self.resolve_authorization(url, opts);
+        let cookies = opts.cookies.as_deref();
+
+        let mut req = request::build_request(
+            url,
+            &self.config,
+            &opts.extra_headers,
+            opts.method,
+            opts.body.clone(),
+            opts.resume_from,
+            opts.if_modified_since.as_ref(),
+            opts.if_none_match.as_deref(),
+            cookies,
+            authorization.as_deref(),
+        );
+
+        H1Codec::send_request(transport, &req)?;
+        let mut response = H1Codec::read_response_head(transport)?;
+
+        if response.status_code == 401 {
+            let auth_headers = response.headers.www_authenticate();
+            if !auth_headers.is_empty() {
+                let challenges = auth::parse_www_authenticate(&auth_headers);
+                if let Some(challenge) = challenges.iter().find(|c| {
+                    matches!(
+                        c.scheme,
+                        auth::AuthScheme::Basic
+                            | auth::AuthScheme::Digest
+                    )
+                }) {
+                    let credentials = self.resolve_credentials(url);
+                    if let Some(creds) = credentials {
+                        let auth_header = self.auth_dispatch.authenticate(
+                            challenge,
+                            &creds,
+                            req.method.as_str(),
+                            &req.path,
+                            opts.body.as_deref(),
+                        ).map_err(|e| {
+                            io::Error::new(io::ErrorKind::Other, e.to_string())
+                        })?;
+
+                        if let Some(auth_val) = auth_header {
+                            req.remove_header("Authorization");
+                            req.header("Authorization", &auth_val);
+
+                            H1Codec::send_request(transport, &req)?;
+                            response = H1Codec::read_response_head(transport)?;
+
+                            return Ok(FetchResult {
+                                status_code: response.status_code,
+                                body_reader: None,
+                                response,
+                                redirected: false,
+                                auth_handled: true,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        if response.status_code == 407 {
+            let proxy_auth_headers = response.headers.proxy_authenticate();
+            let _proxy_challenges = auth::parse_www_authenticate(&proxy_auth_headers);
+        }
+
+        let redirected = response.is_redirect();
+        let status_code = response.status_code;
+        let response_clone = HttpResponse {
+            version: response.version.clone(),
+            status_code: response.status_code,
+            reason: response.reason.clone(),
+            headers: response.headers.clone(),
+            body: None,
+        };
+
+        let body_reader = if (200..400).contains(&status_code) || self.config.http.content_on_error {
+            Some(make_body_reader(&response, Box::new(DummyRead)))
+        } else {
+            None
+        };
+
+        Ok(FetchResult {
+            status_code,
+            response: response_clone,
+            body_reader,
+            redirected,
+            auth_handled: false,
+        })
+    }
+
+    /// Resolves the Authorization header value for a request.
+    ///
+    /// Returns credentials for preemptive authentication if enabled.
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - The URL being requested.
+    /// * `_opts` - The fetch options.
+    ///
+    /// # Returns
+    ///
+    /// The Authorization header value, if any.
+    fn resolve_authorization(&self, url: &ParsedUrl, _opts: &FetchOptions) -> Option<String> {
+        let credentials = self.resolve_credentials(url)?;
+
+        if self.config.auth_without_challenge {
+            let request_uri = url.full_path();
+            return self.auth_dispatch.preemptive_auth(&credentials, &request_uri);
+        }
+
+        None
+    }
+
+    /// Resolves credentials for a URL.
+    ///
+    /// Credentials can come from the URL itself (user:pass@host) or
+    /// from the configuration.
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - The URL being requested.
+    ///
+    /// # Returns
+    ///
+    /// The credentials to use, if any.
+    fn resolve_credentials(&self, url: &ParsedUrl) -> Option<Credentials> {
+        if let (Some(ref user), Some(ref password)) = (&url.user, &url.password) {
+            return Some(Credentials {
+                username: user.clone(),
+                password: password.clone(),
+            });
+        }
+
+        if let (Some(ref user), Some(ref password)) = (&self.config.http.user, &self.config.http.password) {
+            return Some(Credentials {
+                username: user.clone(),
+                password: password.clone(),
+            });
+        }
+
+        None
+    }
+}
