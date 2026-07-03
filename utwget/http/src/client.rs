@@ -345,3 +345,37 @@ impl Read for ChunkedReaderAdapter {
         self.inner.read(buf)
     }
 }
+
+/// Reads a single line from a chunked stream.
+///
+/// # Arguments
+///
+/// * `reader` - The reader to read from.
+///
+/// # Returns
+///
+/// The line content without CRLF.
+fn read_chunk_line(reader: &mut impl Read) -> io::Result<Vec<u8>> {
+    let mut line = Vec::new();
+    let mut byte = [0u8; 1];
+    loop {
+        let n = reader.read(&mut byte)?;
+        if n == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "unexpected EOF reading chunk size",
+            ));
+        }
+        line.push(byte[0]);
+        if line.len() >= 2 && line[line.len() - 2..] == *b"\r\n" {
+            line.truncate(line.len() - 2);
+            return Ok(line);
+        }
+        if line.len() > 1024 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "chunk size line too long",
+            ));
+        }
+    }
+}
