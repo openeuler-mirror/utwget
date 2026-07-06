@@ -493,11 +493,13 @@ impl RecursiveRetriever {
         allowed
     }
 
-    /// Fetch robots.txt for a host from the network and cache it locally.
+    /// Fetch robots.txt for a host from the network.
     ///
-    /// Downloads `http://{host}/robots.txt` via the retriever, stores
-    /// the result in `/tmp/.wget-robots-{host}` for local caching.
-    /// Falls back to cached file if network fetch fails.
+    /// Downloads `http://{host}/robots.txt` via the retriever and returns
+    /// the content. Caching is handled in-memory by the `RobotParser`; we do
+    /// NOT write to a predictable `/tmp` path because that would expose us to
+    /// symlink attacks (an attacker could pre-create a symlink at the cache
+    /// path pointing at a sensitive file, which we would then overwrite).
     ///
     /// # Arguments
     ///
@@ -506,13 +508,11 @@ impl RecursiveRetriever {
     ///
     /// # Returns
     ///
-    /// `Some(content)` if robots.txt was successfully fetched or read from cache,
-    /// `None` if unavailable.
+    /// `Some(content)` if robots.txt was successfully fetched, `None` otherwise.
     fn fetch_robots(&mut self, host: &str, _robot_parser: &mut RobotParser) -> Option<String> {
         let robots_url = format!("http://{}/robots.txt", host);
 
-        // Try fetching from the network via the retriever
-        let content = match self.retriever.retrieve(&robots_url) {
+        match self.retriever.retrieve(&robots_url) {
             Ok(RetrieveOutcome::Success(body)) => {
                 if let Some(ref path) = body.local_file {
                     std::fs::read_to_string(path).ok()
@@ -521,16 +521,7 @@ impl RecursiveRetriever {
                 }
             }
             _ => None,
-        };
-
-        if let Some(ref c) = content {
-            // Cache to /tmp for future use
-            let _ = std::fs::write(format!("/tmp/.wget-robots-{}", host), c);
-            return Some(c.clone());
         }
-
-        // Fallback: read from cached file
-        std::fs::read_to_string(format!("/tmp/.wget-robots-{}", host)).ok()
     }
 
     /// Get a reference to the underlying retriever.
