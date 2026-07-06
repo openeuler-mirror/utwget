@@ -14,7 +14,7 @@ use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{ClientConfig, ClientConnection, DigitallySignedStruct, RootCertStore, SignatureScheme};
 
 use crate::command::FtpResponse;
-use crate::client::FtpError;
+use crate::client::{FtpError, validate_ftp_input};
 
 /// FTPS configuration
 #[derive(Debug, Clone)]
@@ -471,6 +471,8 @@ impl FtpsClient {
     ///
     /// Returns `FtpError::LoginRefused` if authentication fails.
     pub fn login(&mut self, user: &str, password: &str) -> Result<FtpResponse, FtpError> {
+        validate_ftp_input(user)?;
+        validate_ftp_input(password)?;
         self.send_cmd(&format!("USER {}", user))?;
         let resp = self.read_response()?;
 
@@ -536,6 +538,7 @@ impl FtpsClient {
     ///
     /// Returns `FtpError::CommandFailed` if the directory doesn't exist.
     pub fn cwd(&mut self, path: &str) -> Result<FtpResponse, FtpError> {
+        validate_ftp_input(path)?;
         self.send_cmd(&format!("CWD {}", path))?;
         let resp = self.read_response()?;
         if resp.is_positive_completion {
@@ -559,6 +562,7 @@ impl FtpsClient {
     ///
     /// `Some(size)` if the command succeeds, `None` if unsupported.
     pub fn size(&mut self, filename: &str) -> Result<Option<u64>, FtpError> {
+        validate_ftp_input(filename)?;
         self.send_cmd(&format!("SIZE {}", filename))?;
         let resp = self.read_response()?;
 
@@ -595,6 +599,7 @@ impl FtpsClient {
     ///
     /// `Some(datetime)` if the command succeeds, `None` if unsupported.
     pub fn mdtm(&mut self, filename: &str) -> Result<Option<chrono::DateTime<chrono::Utc>>, FtpError> {
+        validate_ftp_input(filename)?;
         self.send_cmd(&format!("MDTM {}", filename))?;
         let resp = self.read_response()?;
 
@@ -677,6 +682,7 @@ impl FtpsClient {
         }
 
         // Send RETR command
+        validate_ftp_input(filename)?;
         self.send_cmd(&format!("RETR {}", filename))?;
         let transfer_resp = self.read_response()?;
 

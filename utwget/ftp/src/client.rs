@@ -71,7 +71,7 @@ const FTP_IO_BUFFER_SIZE: usize = 64 * 1024;
 /// FTP commands are terminated by CRLF, so embedding \r or \n in
 /// user-supplied values like filenames allows arbitrary command execution.
 /// Null bytes can also cause issues with C string handling.
-fn validate_ftp_input(input: &str) -> Result<(), FtpError> {
+pub(crate) fn validate_ftp_input(input: &str) -> Result<(), FtpError> {
     if input.contains('\r') || input.contains('\n') || input.contains('\0') {
         return Err(FtpError::InvalidInput);
     }
@@ -279,6 +279,8 @@ impl FtpClient {
     /// Returns `FtpError::LoginRefused` if the server rejects the credentials.
     /// Returns `FtpError::CommandFailed` for other authentication failures.
     pub fn login(&mut self, user: &str, password: &str) -> Result<FtpResponse, FtpError> {
+        validate_ftp_input(user)?;
+        validate_ftp_input(password)?;
         self.send_cmd(&format!("USER {}", user))?;
         let resp = self.read_response()?;
 
@@ -462,6 +464,7 @@ impl FtpClient {
     ///
     /// Returns `FtpError::ParseError` if the response cannot be parsed.
     pub fn size(&mut self, filename: &str) -> Result<Option<u64>, FtpError> {
+        validate_ftp_input(filename)?;
         self.send_cmd(&format!("SIZE {}", filename))?;
         let resp = self.read_response()?;
 
@@ -492,6 +495,7 @@ impl FtpClient {
     ///
     /// Returns `FtpError::ParseError` if the response cannot be parsed.
     pub fn mdtm(&mut self, filename: &str) -> Result<Option<chrono::DateTime<chrono::Utc>>, FtpError> {
+        validate_ftp_input(filename)?;
         self.send_cmd(&format!("MDTM {}", filename))?;
         let resp = self.read_response()?;
 
@@ -753,6 +757,9 @@ impl FtpClient {
     /// Returns `FtpError::DataConnectFailed` if the data connection fails.
     /// Returns `FtpError::TransferFailed` if the transfer fails.
     pub fn list(&mut self, directory: Option<&str>) -> Result<Vec<FtpEntry>, FtpError> {
+        if let Some(dir) = directory {
+            validate_ftp_input(dir)?;
+        }
         let mut data_conn = self.open_data_connection()?;
 
         let cmd = match directory {
@@ -809,6 +816,9 @@ impl FtpClient {
     /// Returns `FtpError::DataConnectFailed` if the data connection fails.
     /// Returns `FtpError::TransferFailed` if the transfer fails.
     pub fn nlst(&mut self, directory: Option<&str>) -> Result<Vec<String>, FtpError> {
+        if let Some(dir) = directory {
+            validate_ftp_input(dir)?;
+        }
         let mut data_conn = self.open_data_connection()?;
 
         let cmd = match directory {
