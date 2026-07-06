@@ -5,8 +5,9 @@
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
-use std::net::ToSocketAddrs;
+use std::net::{IpAddr, ToSocketAddrs};
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -584,9 +585,31 @@ impl Retriever {
             if let Some(location) = response.location() {
                 let redirect_url = url.merge(location).map_err(RetrieveError::Protocol)?;
 
+                // Security: block HTTPS -> HTTP downgrade when --https-only is set
+                if self.config.http.https_only && !redirect_url.scheme.is_secure() {
+                    warn!("blocking HTTPS->HTTP downgrade (https_only): {} -> {}",
+                        url.display(), redirect_url.display());
+                    return Err(RetrieveError::Protocol(WgetError::Other(
+                        format!("HTTPS->HTTP redirect blocked (--https-only): {}", redirect_url.display())
+                    )));
+                }
+
                 // Warn about cross-scheme or cross-host redirects for security awareness
                 if url.scheme != redirect_url.scheme {
                     warn!("Cross-scheme redirect: {} -> {}", url.scheme, redirect_url.scheme);
+                }
+                if url.host != redirect_url.host {
+                    debug!("Cross-host redirect: {} -> {}", url.host, redirect_url.host);
+                }
+
+                // SSRF awareness: warn if redirect targets a private/loopback address.
+                // We do NOT block by default (wget follows all redirects), but warn so
+                // server-side users notice potential SSRF via redirect chains.
+                if let Some(ref host) = std::net::IpAddr::from_str(&redirect_url.host).ok() {
+                    if host.is_loopback() || is_private_ip(host) {
+                        warn!("redirect to private/loopback IP {} (potential SSRF): {}",
+                            host, redirect_url.display());
+                    }
                 }
                 if url.host != redirect_url.host {
                     debug!("Cross-host redirect: {} -> {}", url.host, redirect_url.host);
@@ -1566,6 +1589,21 @@ type ReturnInfo = (String, u16); // (host, port)
 /// significantly improving throughput for large file downloads.
 /// 64KB is a good balance between memory usage and syscall reduction.
 const IO_BUFFER_SIZE: usize = 64 * 1024;
+
+/// Returns true if the IP address is in a private (RFC 1918) or link-local
+/// range, used for SSRF awareness on redirects.
+fn is_private_ip(addr: &IpAddr) -> bool {
+    match addr {
+        IpAddr::V4(v4) => {
+            v4.is_private()      // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+                || v4.is_link_local() // 169.254.0.0/16 (cloud metadata)
+                || v4.is_unspecified() // 0.0.0.0
+        }
+        IpAddr::V6(v6) => {
+            v6.is_loopback() || v6.is_unspecified() || v6.is_multicast()
+        }
+    }
+}
 
 fn stream_response_body<R: Read, W: Write>(
     reader: &mut R,
