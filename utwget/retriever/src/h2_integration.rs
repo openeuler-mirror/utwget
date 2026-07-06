@@ -36,6 +36,25 @@ pub fn h2_pool() -> &'static H2ConnectionPool {
     H2_POOL.get_or_init(|| H2ConnectionPool::new(H2_POOL_MAX_ENTRIES))
 }
 
+/// Process-wide tokio runtime for HTTP/2 operations.
+///
+/// Sharing a single runtime avoids creating (and leaking) a new runtime per
+/// HTTP/2 connection, which would spawn a fresh thread pool each time and
+/// could exhaust system threads under heavy use. The runtime drives the H2
+/// connection driver task and runs async handshakes via `block_on`.
+static H2_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+
+/// Returns the process-wide tokio runtime for HTTP/2 operations.
+fn h2_runtime() -> &'static tokio::runtime::Runtime {
+    H2_RUNTIME.get_or_init(|| {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .expect("failed to create H2 runtime")
+    })
+}
+
 /// A generic connection pool keyed by (host, port).
 ///
 /// Generic over the connection type `T` so the pool logic can be unit-tested
@@ -273,10 +292,9 @@ impl H2Retriever {
                 format!("invalid server name: {}", e)
             )))?;
 
-        let tls_stream = tokio::runtime::Runtime::new()
-            .map_err(|e| RetrieveError::Protocol(WgetError::Other(
-                format!("failed to create tokio runtime: {}", e)
-            )))?
+        let rt = h2_runtime();
+
+        let tls_stream = rt
             .block_on(tls_connector.connect(server_name, tokio_stream))
             .map_err(|e| RetrieveError::Protocol(WgetError::Tls(
                 ut_core::error::TlsError::HandshakeFailed(e.to_string())
@@ -284,18 +302,14 @@ impl H2Retriever {
 
         debug!("TLS handshake completed through proxy tunnel");
 
-        // Perform HTTP/2 handshake over TLS
-        let rt = tokio::runtime::Runtime::new()
-            .map_err(|e| RetrieveError::Protocol(WgetError::Other(
-                format!("failed to create tokio runtime: {}", e)
-            )))?;
-
+        // Perform HTTP/2 handshake over TLS using the shared runtime
         let (sender, conn) = rt.block_on(ut_http::h2::client::handshake(tls_stream))
             .map_err(|e| RetrieveError::Protocol(WgetError::Other(
                 format!("HTTP/2 handshake failed: {}", e)
             )))?;
 
-        // Spawn connection driver
+        // Spawn connection driver on the shared runtime so it stays alive
+        // for the lifetime of the connection (not dropped with this function).
         rt.spawn(async move {
             if let Err(e) = conn.await {
                 debug!("HTTP/2 connection error: {}", e);
