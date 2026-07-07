@@ -187,7 +187,9 @@ fn test_merge_fragment() {
 fn test_merge_parent_directory() {
     let base = ParsedUrl::parse("http://example.com/a/b/c/page.html").unwrap();
     let merged = base.merge("../other.html").unwrap();
-    assert_eq!(merged.path, "/a/b/c/../other.html");
+    // RFC 3986 §5.2.4: ".." segments are normalized, so the merged path
+    // resolves to the parent directory rather than keeping ".." literal.
+    assert_eq!(merged.path, "/a/b/other.html");
 }
 
 #[test]

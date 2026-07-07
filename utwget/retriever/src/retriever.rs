@@ -1785,20 +1785,50 @@ impl Retriever {
             return Ok(doc.clone());
         }
 
-        let mut path = url.to_filename(self.config.no_host_directories);
+        // Build the local path from the URL's directory and filename.
+        // GNU wget creates the directory structure when recursive (-r) or
+        // --force-directories (-x) is active; otherwise it saves flat with
+        // just the filename. --no-host-directories (-nH) suppresses the
+        // leading host directory.
+        let create_dirs = self.config.recursive.enabled || self.config.force_directories;
 
+        let file_name = if url.file.is_empty() { "index.html".to_string() } else { url.file.clone() };
+        let safe_file = ut_core::utils::safe_filename(&file_name);
+
+        // Directory components from url.dir, sanitized and with --cut-dirs applied.
+        let dir_parts: Vec<String> = url.dir.split('/')
+            .filter(|s| !s.is_empty())
+            .map(|s| ut_core::utils::safe_filename(s))
+            .collect();
+        let cut = if self.config.cut_dirs > 0 {
+            (self.config.cut_dirs as usize).min(dir_parts.len())
+        } else {
+            0
+        };
+        let kept_dirs = &dir_parts[cut..];
+
+        let mut path = PathBuf::new();
+
+        // Host directory (unless -nH or saving flat without -r/-x)
+        if !self.config.no_host_directories && create_dirs {
+            path.push(ut_core::utils::safe_filename(&url.host));
+        }
+
+        // Protocol directory (--protocol-directories)
         if self.config.protocol_directories {
-            let scheme_dir = PathBuf::from(url.scheme.as_str());
-            path = scheme_dir.join(path);
+            path.push(url.scheme.as_str());
         }
 
-        if self.config.cut_dirs > 0 {
-            let components: Vec<_> = path.components().collect();
-            let skip = (self.config.cut_dirs as usize).min(components.len());
-            let remaining: PathBuf = components[skip..].iter().collect();
-            path = remaining;
+        // URL directory components (only when creating directory structure)
+        if create_dirs {
+            for dir in kept_dirs {
+                path.push(dir);
+            }
         }
 
+        path.push(&safe_file);
+
+        // --directory-prefix (-P)
         if let Some(ref prefix) = self.config.dir_prefix {
             path = prefix.join(path);
         }

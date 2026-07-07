@@ -413,9 +413,16 @@ impl RecursiveRetriever {
         }
 
         if self.retriever.config().recursive.no_parent {
-            let parent_dir = parent_parsed.dir.trim_end_matches('/');
-            let child_dir = child_parsed.dir.trim_end_matches('/');
-            if child_dir.len() < parent_dir.len() {
+            // Reject links that ascend above the parent directory. Compare the
+            // full path (dir + file) so that "../" links resolving to a parent
+            // directory are caught. A child is allowed only if its path starts
+            // with the parent's path.
+            let parent_path = parent_parsed.path.trim_end_matches('/').to_lowercase();
+            let child_path = child_parsed.path.trim_end_matches('/').to_lowercase();
+            // The child must be within the parent's subtree. Since "../" is now
+            // normalized during merge, a parent link resolves to a shorter path
+            // that does NOT start with the parent's path.
+            if !child_path.starts_with(&parent_path) {
                 return;
             }
         }
