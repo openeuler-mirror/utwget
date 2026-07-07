@@ -725,7 +725,7 @@ impl Retriever {
 
         // Wrap file in BufWriter to reduce write system calls.
         // 64KB capacity matches our I/O buffer size for efficient batching.
-        let mut file = io::BufWriter::with_capacity(IO_BUFFER_SIZE, file);
+        let file = io::BufWriter::with_capacity(IO_BUFFER_SIZE, file);
 
         // Use Content-Length for progress, unless ignore_length is set
         let total_size = if self.config.ignore_length {
@@ -747,13 +747,36 @@ impl Retriever {
 
         let mut body_bytes_read = 0u64;
         if let Some((leftover, mut source)) = self.pending_body_reader.take() {
+            // Determine if the response body is compressed (Content-Encoding).
+            // If so, wrap the writer in a flate2 decompressor so that compressed
+            // bytes read from the transport are decompressed before hitting disk.
+            // This must happen AFTER de-chunking (handled inside stream_response_body),
+            // since Content-Encoding applies to the entity body, not the transfer.
+            let encoding = response.headers.get("Content-Encoding");
+            let mut writer: Box<dyn io::Write> = match encoding {
+                #[cfg(feature = "compression")]
+                Some(e) if e.eq_ignore_ascii_case("gzip") || e.eq_ignore_ascii_case("x-gzip") => {
+                    debug!("decompressing gzip response body");
+                    Box::new(flate2::write::GzDecoder::new(file))
+                }
+                #[cfg(feature = "compression")]
+                Some(e) if e.eq_ignore_ascii_case("deflate") => {
+                    debug!("decompressing deflate response body");
+                    Box::new(flate2::write::ZlibDecoder::new(file))
+                }
+                _ => Box::new(file),
+            };
+
             let stream_result = stream_response_body(
                 &mut io::Cursor::new(leftover).chain(&mut source),
-                &mut file,
+                &mut writer,
                 &response,
                 &mut *self.progress,
                 state.resume_position,
             );
+            // Flush the (possibly decompressing) writer before dropping, so all
+            // pending decompressed bytes are written to the underlying file.
+            let _ = writer.flush();
             // On success, try to return the connection to the pool for Keep-Alive.
             // On error, drop the connection (do not reuse potentially-broken connections).
             if let Ok(n) = stream_result {
@@ -776,12 +799,9 @@ impl Retriever {
                 return Err(stream_result.unwrap_err());
             }
         }
-
-        // Flush BufWriter before applying timestamps / xattrs to ensure
-        // all data is persisted to the underlying file.
-        file.flush().map_err(RetrieveError::Io)?;
-        // Drop BufWriter to release the underlying file handle cleanly.
-        drop(file);
+        // Note: file (wrapped in BufWriter, possibly in a decompressor) was
+        // flushed and dropped inside the if-let above. If pending_body_reader
+        // was None, file is dropped at end of function with no data to write.
 
         let elapsed = start.elapsed();
         self.progress.finish(ut_progress::FinishStatus::Success {
