@@ -136,6 +136,10 @@ impl RustlsConnector {
         // Build root certificate store
         let mut root_store = RootCertStore::empty();
         let should_verify = config.check_certificate != CheckCertMode::Off;
+        if !should_verify {
+            log::warn!("TLS certificate verification is DISABLED (--no-check-certificate). \
+                        This makes the connection vulnerable to man-in-the-middle attacks.");
+        }
 
         if should_verify {
             // Load CA certificates from file if specified
