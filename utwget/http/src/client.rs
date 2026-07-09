@@ -411,15 +411,16 @@ fn make_body_reader(
     response: &HttpResponse,
     transport: Box<dyn Read + Send>,
 ) -> BodyReaderEnum {
-    let encoding = response.headers.content_encoding();
-    let reader = maybe_wrap_decompressor(transport, encoding);
-
+    // Note: decompression is NOT applied here. The correct HTTP layering is
+    // Transport -> Chunked Decoder -> Decompressor. Since make_body_reader
+    // doesn't know whether chunked decoding will happen downstream, we leave
+    // decompression to the caller (retriever.rs applies it at the write layer).
     if response.is_chunked() {
-        BodyReaderEnum::Chunked { reader }
+        BodyReaderEnum::Chunked { reader: transport }
     } else if let Some(len) = response.content_length() {
-        BodyReaderEnum::ContentLength { remaining: len, reader }
+        BodyReaderEnum::ContentLength { remaining: len, reader: transport }
     } else {
-        BodyReaderEnum::ReadToEnd { reader }
+        BodyReaderEnum::ReadToEnd { reader: transport }
     }
 }
 
