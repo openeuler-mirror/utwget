@@ -165,9 +165,11 @@ pub fn parse_status_line(line: &str) -> Option<(String, u16, String)> {
     let space_idx = line.find(' ')?;
     let version = line[..space_idx].to_string();
     let rest = &line[space_idx + 1..];
-    let next_space = rest.find(' ')?;
-    let status_code: u16 = rest[..next_space].parse().ok()?;
-    let reason = rest[next_space + 1..].to_string();
+    let (code_str, reason) = match rest.find(' ') {
+        Some(idx) => (&rest[..idx], rest[idx + 1..].to_string()),
+        None => (rest, String::new()),
+    };
+    let status_code: u16 = code_str.parse().ok()?;
     Some((version, status_code, reason))
 }
 
