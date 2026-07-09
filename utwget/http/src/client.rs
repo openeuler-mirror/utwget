@@ -592,12 +592,15 @@ impl HttpClient {
     /// # Returns
     ///
     /// The Authorization header value, if any.
-    fn resolve_authorization(&self, url: &ParsedUrl, _opts: &FetchOptions) -> Option<String> {
+    fn resolve_authorization(&self, url: &ParsedUrl, opts: &FetchOptions) -> Option<String> {
         let credentials = self.resolve_credentials(url)?;
 
         if self.config.auth_without_challenge {
             let request_uri = url.full_path();
-            return self.auth_dispatch.preemptive_auth(&credentials, &request_uri);
+            let method = opts.method.as_ref()
+                .map(|m| m.as_str())
+                .unwrap_or("GET");
+            return self.auth_dispatch.preemptive_auth(&credentials, &request_uri, method);
         }
 
         None

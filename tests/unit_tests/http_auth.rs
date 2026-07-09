@@ -263,7 +263,7 @@ fn test_dispatcher_preemptive_auth() {
     let mut dispatcher = AuthDispatcher::new();
     let creds = make_credentials("user", "pass");
 
-    let result = dispatcher.preemptive_auth(&creds, "/");
+    let result = dispatcher.preemptive_auth(&creds, "/", "GET");
     assert!(result.is_some());
     assert!(result.unwrap().starts_with("Basic "));
 }

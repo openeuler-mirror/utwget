@@ -376,7 +376,8 @@ impl Retriever {
         let creds = self.resolve_credentials(&url);
         let auth_header = if opts.auth_without_challenge {
             if let Some(ref c) = creds {
-                self.auth_dispatcher.preemptive_auth(c, &url.full_path())
+                let method = opts.method.as_str();
+                self.auth_dispatcher.preemptive_auth(c, &url.full_path(), method)
             } else {
                 None
             }

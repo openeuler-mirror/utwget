@@ -459,6 +459,7 @@ impl AuthDispatcher {
         &mut self,
         credentials: &ut_core::types::Credentials,
         request_uri: &str,
+        method: &str,
     ) -> Option<String> {
         for auth in &mut self.authenticators {
             if auth.supports_preemptive() {
@@ -478,7 +479,7 @@ impl AuthDispatcher {
                 let result = auth.authenticate(
                     &challenge,
                     credentials,
-                    "GET",
+                    method,
                     request_uri,
                     None,
                 );
