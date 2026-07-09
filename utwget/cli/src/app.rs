@@ -925,6 +925,17 @@ impl App {
 /// Metalink, progress, and miscellaneous settings.
 ///
 /// # Arguments
+/// Safely converts an f64 seconds value to Duration.
+/// Returns None for negative, NaN, or infinite values instead of panicking.
+fn safe_duration_f64(secs: f64) -> Option<Duration> {
+    if secs.is_finite() && secs >= 0.0 {
+        Some(Duration::from_secs_f64(secs))
+    } else {
+        eprintln!("warning: ignoring invalid duration value: {}", secs);
+        None
+    }
+}
+
 /// * `args` — The parsed command-line arguments.
 ///
 /// # Returns
@@ -979,8 +990,8 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
     config.quota = args.quota.as_ref().and_then(|s| ut_core::utils::parse_size_string(s));
     config.limit_rate = args.limit_rate.as_ref().and_then(|s| ut_core::utils::parse_size_string(s));
 
-    config.wait = args.wait.map(Duration::from_secs_f64);
-    config.wait_retry = args.wait_retry.map(Duration::from_secs_f64);
+    config.wait = args.wait.and_then(safe_duration_f64);
+    config.wait_retry = args.wait_retry.and_then(safe_duration_f64);
     config.random_wait = args.random_wait;
     config.delete_after = args.delete_after;
     config.content_disposition = args.content_disposition;
@@ -1168,10 +1179,10 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
 
     config.max_redirect = args.max_redirect;
 
-    config.timeout = args.timeout.map(Duration::from_secs_f64);
-    config.connect_timeout = args.connect_timeout.map(Duration::from_secs_f64);
-    config.read_timeout = args.read_timeout.map(Duration::from_secs_f64);
-    config.dns_timeout = args.dns_timeout.map(Duration::from_secs_f64);
+    config.timeout = args.timeout.and_then(safe_duration_f64);
+    config.connect_timeout = args.connect_timeout.and_then(safe_duration_f64);
+    config.read_timeout = args.read_timeout.and_then(safe_duration_f64);
+    config.dns_timeout = args.dns_timeout.and_then(safe_duration_f64);
     config.no_dns_cache = args.no_dns_cache;
 
     config.cookie.enabled = !args.no_cookies;
