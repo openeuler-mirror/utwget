@@ -358,7 +358,7 @@ pub fn parse_content_disposition(s: &str) -> Option<String> {
     if let Some(idx) = s.find(filename_star_key) {
         let rest = &s[idx + filename_star_key.len()..].trim_start();
         if rest.starts_with("UTF-8''") || rest.starts_with("utf-8''") {
-            let encoded = &rest[6..];
+            let encoded = &rest[8..];
             let end = encoded.find(';').unwrap_or(encoded.len());
             let encoded = &encoded[..end];
             if let Ok(decoded) = urlencoding_fallback(encoded) {
