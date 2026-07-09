@@ -309,7 +309,23 @@ pub(crate) fn sanitize_filename(filename: &str) -> String {
 
     // If the result is empty after sanitization, return a default
     if trimmed.is_empty() {
-        "download".to_string()
+        return "download".to_string();
+    }
+
+    // Check for Windows reserved device names (CON, NUL, AUX, PRN, COM1-9, LPT1-9)
+    let stem = trimmed.split('.').next().unwrap_or(trimmed);
+    let stem_upper = stem.to_ascii_uppercase();
+    let is_reserved = matches!(
+        stem_upper.as_str(),
+        "CON" | "PRN" | "AUX" | "NUL"
+            | "COM1" | "COM2" | "COM3" | "COM4" | "COM5"
+            | "COM6" | "COM7" | "COM8" | "COM9"
+            | "LPT1" | "LPT2" | "LPT3" | "LPT4" | "LPT5"
+            | "LPT6" | "LPT7" | "LPT8" | "LPT9"
+    );
+
+    if is_reserved {
+        format!("_{}", trimmed)
     } else {
         trimmed.to_string()
     }
