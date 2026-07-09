@@ -96,6 +96,10 @@ pub struct ConnectionKey {
     pub port: u16,
     /// Whether TLS/SSL is enabled for this connection.
     pub use_tls: bool,
+    /// Optional proxy host — different proxies must not share connections.
+    pub proxy_host: Option<String>,
+    /// Optional proxy port.
+    pub proxy_port: Option<u16>,
 }
 
 /// Internal DNS cache for storing resolved addresses.
@@ -291,6 +295,8 @@ impl<R: DnsResolver, T: TlsConnector> ConnectionManager<R, T> {
             host: host.to_string(),
             port,
             use_tls,
+            proxy_host: proxy_host.map(|s| s.to_string()),
+            proxy_port: proxy_port,
         };
 
         // Try to reuse an idle connection
