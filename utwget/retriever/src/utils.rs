@@ -25,34 +25,48 @@ pub(crate) struct ProxyInfo {
 
 /// Resolve the proxy configuration for a given URL.
 ///
+/// Parse a proxy URL string into host and port.
+///
+/// Supports formats:
+/// - `http://host:port`
+/// - `host:port`
+/// - `host`
+fn parse_proxy_url(proxy: &str) -> (String, u16) {
+    // Remove scheme prefix if present
+    let addr = proxy
+        .strip_prefix("http://")
+        .or_else(|| proxy.strip_prefix("https://"))
+        .or_else(|| proxy.strip_prefix("socks5://"))
+        .unwrap_or(proxy);
+    
+    // Parse host:port
+    if let Some((host, port_str)) = addr.rsplit_once(':') {
+        let port = port_str.parse::<u16>().unwrap_or(8080);
+        (host.to_string(), port)
+    } else {
+        (addr.to_string(), 8080)
+    }
+}
+
 /// Returns the proxy host and port based on the URL scheme and the
 /// corresponding proxy setting (`--http-proxy`, `--https-proxy`, `--ftp-proxy`).
 pub(crate) fn resolve_proxy(url: &ParsedUrl, config: &Config) -> ProxyInfo {
     match url.scheme {
-        Scheme::Http => ProxyInfo {
-            host: config.proxy.http_proxy.clone().unwrap_or_default(),
-            port: config.proxy.http_proxy.as_deref()
-                .and_then(|p| p.rfind(':').map(|i| p[i + 1..].parse::<u16>().unwrap_or(8080)))
-                .unwrap_or(8080),
-        },
-        Scheme::Https => ProxyInfo {
-            host: config.proxy.https_proxy.clone().unwrap_or_default(),
-            port: config.proxy.https_proxy.as_deref()
-                .and_then(|p| p.rfind(':').map(|i| p[i + 1..].parse::<u16>().unwrap_or(8080)))
-                .unwrap_or(8080),
-        },
-        Scheme::Ftp => ProxyInfo {
-            host: config.proxy.ftp_proxy.clone().unwrap_or_default(),
-            port: config.proxy.ftp_proxy.as_deref()
-                .and_then(|p| p.rfind(':').map(|i| p[i + 1..].parse::<u16>().unwrap_or(8080)))
-                .unwrap_or(8080),
-        },
-        Scheme::Ftps => ProxyInfo {
-            host: config.proxy.ftp_proxy.clone().unwrap_or_default(),
-            port: config.proxy.ftp_proxy.as_deref()
-                .and_then(|p| p.rfind(':').map(|i| p[i + 1..].parse::<u16>().unwrap_or(8080)))
-                .unwrap_or(8080),
-        },
+        Scheme::Http => {
+            let proxy_str = config.proxy.http_proxy.as_deref().unwrap_or("");
+            let (host, port) = parse_proxy_url(proxy_str);
+            ProxyInfo { host, port }
+        }
+        Scheme::Https => {
+            let proxy_str = config.proxy.https_proxy.as_deref().unwrap_or("");
+            let (host, port) = parse_proxy_url(proxy_str);
+            ProxyInfo { host, port }
+        }
+        Scheme::Ftp | Scheme::Ftps => {
+            let proxy_str = config.proxy.ftp_proxy.as_deref().unwrap_or("");
+            let (host, port) = parse_proxy_url(proxy_str);
+            ProxyInfo { host, port }
+        }
     }
 }
 
@@ -333,8 +347,55 @@ pub(crate) fn serialize_headers(header_map: &HeaderMap) -> Vec<u8> {
 }
 
 /// Build a proxy request by rewriting the request line to use an absolute URL.
-pub(crate) fn build_proxy_request(request: &HttpRequest, target_host: &str, target_port: u16) -> HttpRequest {
+/// Optionally adds Proxy-Authorization header if proxy credentials are provided.
+pub(crate) fn build_proxy_request(
+    request: &HttpRequest,
+    target_host: &str,
+    target_port: u16,
+    proxy_user: Option<&str>,
+    proxy_password: Option<&str>,
+) -> HttpRequest {
     let mut proxy_req = request.clone();
     proxy_req.path = format!("http://{}:{}{}", target_host, target_port, request.path);
+    
+    // Add Proxy-Authorization header if credentials are provided
+    if let (Some(user), Some(password)) = (proxy_user, proxy_password) {
+        let credentials = format!("{}:{}", user, password);
+        let encoded = base64_encode(&credentials);
+        proxy_req.headers.push((
+            "Proxy-Authorization".to_string(),
+            format!("Basic {}", encoded),
+        ));
+    }
+    
     proxy_req
+}
+
+/// Simple base64 encoding for proxy authentication.
+fn base64_encode(input: &str) -> String {
+    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let bytes = input.as_bytes();
+    let mut result = String::with_capacity((bytes.len() + 2) / 3 * 4);
+    
+    for chunk in bytes.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
+        let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
+        let triple = (b0 << 16) | (b1 << 8) | b2;
+        
+        result.push(CHARS[((triple >> 18) & 0x3F) as usize] as char);
+        result.push(CHARS[((triple >> 12) & 0x3F) as usize] as char);
+        if chunk.len() > 1 {
+            result.push(CHARS[((triple >> 6) & 0x3F) as usize] as char);
+        } else {
+            result.push('=');
+        }
+        if chunk.len() > 2 {
+            result.push(CHARS[(triple & 0x3F) as usize] as char);
+        } else {
+            result.push('=');
+        }
+    }
+    
+    result
 }

@@ -1199,8 +1199,8 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
     config.proxy.ftp_proxy = args.ftp_proxy.clone();
     config.proxy.proxy_user = args.proxy_user.clone();
     config.proxy.proxy_password = args.proxy_password.clone();
-    if let Some(ref np) = args.no_proxy {
-        config.proxy.no_proxy = np.split(',').map(String::from).collect();
+    if args.no_proxy {
+        config.proxy.use_proxy = false;
     }
 
     config.no_host_directories = args.no_host_directories;

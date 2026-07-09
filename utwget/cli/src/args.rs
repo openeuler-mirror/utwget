@@ -591,9 +591,9 @@ pub struct Args {
     #[arg(long = "proxy-password")]
     pub proxy_password: Option<String>,
 
-    /// Comma-separated list of domains to bypass proxy.
+    /// Disable proxy completely.
     #[arg(long = "no-proxy")]
-    pub no_proxy: Option<String>,
+    pub no_proxy: bool,
 
     /// Save request/response data to WARC file (.warc.gz).
     #[arg(long = "warc-file")]
