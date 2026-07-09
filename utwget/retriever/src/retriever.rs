@@ -540,6 +540,10 @@ impl Retriever {
             if !www_auth.is_empty() {
                 let challenges = AuthChallenge::from_www_authenticate(&www_auth.join(", "));
                 for challenge in &challenges {
+                    // Log stale nonce — server says credentials are fine but nonce expired
+                    if challenge.stale == Some(true) {
+                        debug!("nonce is stale for {}, retrying with new nonce", url.display());
+                    }
                     if let Some(ref c) = creds {
                         if let Ok(Some(auth_val)) = self.auth_dispatcher.authenticate(
                             challenge,
