@@ -185,16 +185,16 @@ fn connect_single(
         };
 
         if let Some(bind_addr) = bind_compatible {
-            let bind_socket = match bind_addr {
-                std::net::IpAddr::V4(v4) => std::net::TcpListener::bind((v4, 0))?,
-                std::net::IpAddr::V6(v6) => std::net::TcpListener::bind((v6, 0))?,
-            };
-            let _local_addr = bind_socket.local_addr()?;
-            drop(bind_socket);
-            let stream = TcpStream::connect_timeout(addr, timeout)?;
-            stream.set_read_timeout(Some(timeout))?;
-            stream.set_write_timeout(Some(timeout))?;
-            return Ok(stream);
+            // NOTE: --bind-address is currently not fully implemented.
+            // TcpStream::connect_timeout doesn't support local address binding.
+            // The original code created a TcpListener, bound it, then dropped it —
+            // the bind had no effect. Log a warning so users know the option is
+            // being ignored.
+            log::warn!(
+                "--bind-address {} is not yet supported for direct connections; \
+                 connecting without binding",
+                bind_addr
+            );
         }
     }
 
