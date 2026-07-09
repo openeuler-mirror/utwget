@@ -632,9 +632,6 @@ impl Retriever {
                             host, redirect_url.display());
                     }
                 }
-                if url.host != redirect_url.host {
-                    debug!("Cross-host redirect: {} -> {}", url.host, redirect_url.host);
-                }
 
                 self.download_registry.register_redirection(&url.display(), &redirect_url.display());
                 self.progress.set_redirected(&redirect_url.display());
