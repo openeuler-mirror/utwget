@@ -1152,6 +1152,7 @@ fn test_warc_header_serialize() {
         gzip_compressed: false,
         truncated: None,
         wagon: None,
+            payload_digest: None,
     };
     let bytes = header.serialize();
     let text = String::from_utf8(bytes).unwrap();
