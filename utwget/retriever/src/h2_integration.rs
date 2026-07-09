@@ -223,11 +223,18 @@ impl H2Retriever {
                 )))?;
         }
 
-        // Send CONNECT request
-        let connect_req = format!(
-            "CONNECT {}:{} HTTP/1.1\r\nHost: {}:{}\r\n\r\n",
+        // Send CONNECT request with proxy authentication if configured
+        let mut connect_req = format!(
+            "CONNECT {}:{} HTTP/1.1\r\nHost: {}:{}\r\n",
             host, port, host, port
         );
+        if let (Some(user), Some(pass)) = (&config.proxy.proxy_user, &config.proxy.proxy_password) {
+            use base64::Engine;
+            let credentials = format!("{}:{}", user, pass);
+            let encoded = base64::engine::general_purpose::STANDARD.encode(credentials);
+            connect_req.push_str(&format!("Proxy-Authorization: Basic {}\r\n", encoded));
+        }
+        connect_req.push_str("\r\n");
         debug!("CONNECT request: {}", connect_req.trim());
         stream.write_all(connect_req.as_bytes())
             .map_err(|e| RetrieveError::Protocol(WgetError::Other(
