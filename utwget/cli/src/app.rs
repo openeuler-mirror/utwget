@@ -57,7 +57,7 @@ impl ExitStatus {
     /// Uses the same priority logic as the original wget: the "worst"
     /// (highest numeric) status wins across all URLs.
     pub fn from_error(err: &ut_core::error::WgetError) -> Self {
-        use ut_core::error::{TlsError, FtpError};
+        use ut_core::error::TlsError;
         match err {
             WgetError::FtpFileNotFound(_)
             | WgetError::FileNotFound(_)
@@ -67,7 +67,7 @@ impl ExitStatus {
 
             WgetError::HostNotFound(_)
             | WgetError::ConnectionRefused
-            |             WgetError::ConnectionTimeout(_)
+            | WgetError::ConnectionTimeout(_)
             | WgetError::SocketError(_) => ExitStatus::NetworkFail,
 
             WgetError::Tls(TlsError::HandshakeFailed(_))
@@ -81,8 +81,7 @@ impl ExitStatus {
             | WgetError::TlsInitFailed => ExitStatus::SslAuthFail,
 
             WgetError::AuthFailed(_)
-            | WgetError::FtpLoginRefused
-            | WgetError::Ftp(FtpError::UnexpectedResponse { code: 530..=539, .. }) => ExitStatus::ServerAuthFail,
+            | WgetError::FtpLoginRefused => ExitStatus::ServerAuthFail,
 
             WgetError::Http { status: 400..=499, .. }
             | WgetError::TooManyRedirects { .. }
@@ -91,12 +90,7 @@ impl ExitStatus {
             | WgetError::UnsupportedScheme(_) => ExitStatus::ProtocolError,
 
             WgetError::Http { status: 500..=599, .. }
-            | WgetError::FtpServerError(_)
-            | WgetError::Ftp(FtpError::UnexpectedResponse { .. })
-            | WgetError::Ftp(FtpError::ConnectionLost)
-            | WgetError::Ftp(FtpError::DataConnectionFailed(_))
-            | WgetError::Ftp(FtpError::PasvFailed(_))
-            | WgetError::Ftp(FtpError::PortFailed(_)) => ExitStatus::ServerError,
+            | WgetError::FtpServerError(_) => ExitStatus::ServerError,
 
             WgetError::RetryLimitExceeded { .. }
             | WgetError::QuotaExceeded { .. }

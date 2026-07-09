@@ -56,10 +56,6 @@ pub enum WgetError {
     #[error("unsupported HTTP method: {0}")]
     UnsupportedMethod(String),
 
-    /// FTP protocol error.
-    #[error("FTP error: {0}")]
-    Ftp(#[from] FtpError),
-
     /// FTP login was refused.
     #[error("FTP login refused")]
     FtpLoginRefused,
@@ -187,41 +183,6 @@ pub enum TlsError {
     Io(#[from] std::io::Error),
 }
 
-/// FTP protocol errors.
-///
-/// Represents errors that can occur during FTP operations,
-/// including connection issues and protocol violations.
-#[derive(Debug, thiserror::Error)]
-pub enum FtpError {
-    /// Unexpected FTP response code.
-    #[error("FTP unexpected response: {code} {message}")]
-    UnexpectedResponse { code: u16, message: String },
-
-    /// FTP connection was lost.
-    #[error("FTP connection lost")]
-    ConnectionLost,
-
-    /// FTP data connection failed.
-    #[error("FTP data connection failed: {0}")]
-    DataConnectionFailed(String),
-
-    /// PASV (passive) mode failed.
-    #[error("FTP PASV mode failed: {0}")]
-    PasvFailed(String),
-
-    /// PORT (active) mode failed.
-    #[error("FTP PORT mode failed: {0}")]
-    PortFailed(String),
-
-    /// FTP command syntax error.
-    #[error("FTP syntax error: {0}")]
-    SyntaxError(String),
-
-    /// FTP I/O error.
-    #[error("FTP I/O error: {0}")]
-    Io(#[from] std::io::Error),
-}
-
 /// Configuration errors.
 ///
 /// Represents errors that can occur when parsing or applying
@@ -282,8 +243,6 @@ impl WgetError {
                 | WgetError::ConnectionTimeout(_)
                 | WgetError::SocketError(_)
                 | WgetError::Http { status: 500..=599, .. }
-                | WgetError::Ftp(FtpError::UnexpectedResponse { .. })
-                | WgetError::Ftp(FtpError::ConnectionLost)
                 | WgetError::TooManyRedirects { .. }
         )
     }
