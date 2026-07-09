@@ -696,14 +696,15 @@ fn get_ntlm_timestamp() -> u64 {
     // Windows FILETIME: 100-nanosecond intervals since January 1, 1601
     // Unix epoch: January 1, 1970
     // Difference: 11644473600 seconds
+    const EPOCH_DIFF: u64 = 11644473600;
 
-    let unix_time = SystemTime::now()
+    let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
+        .map(|d| d.as_nanos() as u64)
         .unwrap_or(0);
 
-    let windows_time = (unix_time + 11644473600) * 10_000_000;
-    windows_time
+    // Convert nanoseconds to 100-nanosecond intervals and add epoch offset
+    (nanos / 100) + (EPOCH_DIFF * 10_000_000)
 }
 
 /// Computes the MD4 hash of the input data.
