@@ -34,7 +34,12 @@ use ut_core::SecureProtocol;
 /// Building a ClientConfig is expensive (loads CA certs, parses keys), so we
 /// cache the result keyed by the relevant config fields. This avoids rebuilding
 /// the config on every TLS connection when the same TLS settings are reused.
+///
+/// The cache is bounded to prevent memory exhaustion from crafted configurations.
 static CONFIG_CACHE: OnceLock<Mutex<std::collections::HashMap<String, Arc<ClientConfig>>>> = OnceLock::new();
+
+/// Maximum number of cached TLS configurations.
+const MAX_CONFIG_CACHE_SIZE: usize = 32;
 
 fn config_cache() -> &'static Mutex<std::collections::HashMap<String, Arc<ClientConfig>>> {
     CONFIG_CACHE.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
@@ -88,6 +93,10 @@ impl RustlsConnector {
         // Slow path: build and cache
         let built = Arc::new(Self::build_config(config)?);
         if let Ok(mut map) = cache.lock() {
+            // Evict if at capacity to prevent unbounded memory growth
+            if map.len() >= MAX_CONFIG_CACHE_SIZE {
+                map.clear();
+            }
             map.insert(key, built.clone());
         }
         Ok(built)
