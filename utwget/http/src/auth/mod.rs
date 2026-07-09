@@ -170,7 +170,16 @@ impl AuthChallenge {
 
             let scheme = match AuthScheme::from_str(scheme_str) {
                 Some(s) => s,
-                None => break,
+                None => {
+                    // Unknown scheme (e.g. Negotiate): skip to next comma
+                    // instead of aborting, so subsequent valid challenges are parsed.
+                    if let Some(comma_idx) = remainder.find(',') {
+                        remainder = remainder[comma_idx + 1..].trim_start();
+                    } else {
+                        break;
+                    }
+                    continue;
+                }
             };
 
             let rest = rest.trim_start();
