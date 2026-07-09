@@ -18,14 +18,11 @@ use std::time::{Duration, Instant};
 use ut_core::AddressFamily;
 use ut_core::error::TlsError;
 
-use crate::dns::{DnsError, DnsResolver};
+use crate::dns::DnsError;
 use crate::proxy;
 use crate::tcp;
 use crate::tls::{TlsConfig, TlsConnector};
 use crate::transport::{Interest, Transport};
-
-/// Default TTL for DNS cache entries (5 minutes).
-const DNS_CACHE_TTL: Duration = Duration::from_secs(300);
 
 /// Maximum number of idle connections per connection key.
 const MAX_IDLE_PER_KEY: usize = 5;
@@ -60,13 +57,9 @@ const MAX_IDLE_AGE: Duration = Duration::from_secs(120);
 /// // Connect to a host
 /// let conn = manager.connect("example.com", 443, true, None, None, None, None, None)?;
 /// ```
-pub struct ConnectionManager<R: DnsResolver, T: TlsConnector> {
-    /// DNS resolver for hostname resolution.
-    resolver: R,
+pub struct ConnectionManager<T: TlsConnector> {
     /// TLS connector for secure connections.
     tls: Arc<T>,
-    /// DNS cache for storing resolved addresses.
-    dns_cache: DnsCache,
     /// Pool of idle connections organized by connection key.
     idle_connections: HashMap<ConnectionKey, Vec<IdleConnection>>,
     /// Timeout for establishing new connections.
@@ -102,16 +95,6 @@ pub struct ConnectionKey {
     pub proxy_port: Option<u16>,
 }
 
-/// Internal DNS cache for storing resolved addresses.
-///
-/// Maps hostnames to a list of socket addresses and the time they were cached.
-struct DnsCache {
-    /// Cached DNS entries: hostname -> (addresses, timestamp).
-    entries: HashMap<String, (Vec<std::net::SocketAddr>, Instant)>,
-    /// Time-to-live for cache entries.
-    ttl: Duration,
-}
-
 /// An idle connection waiting to be reused.
 ///
 /// Stores the transport and the time it was created for expiration tracking.
@@ -143,7 +126,7 @@ enum ManagedTransport {
     Tls(Box<dyn Transport<Error = TlsError>>),
 }
 
-impl<R: DnsResolver, T: TlsConnector> ConnectionManager<R, T> {
+impl<T: TlsConnector> ConnectionManager<T> {
     /// Creates a new connection manager with the given resolver and TLS connector.
     ///
     /// # Arguments
@@ -157,11 +140,9 @@ impl<R: DnsResolver, T: TlsConnector> ConnectionManager<R, T> {
     /// - Connect timeout: 30 seconds
     /// - Read timeout: 60 seconds
     /// - DNS timeout: 15 seconds
-    pub fn new(resolver: R, tls: T) -> Self {
+    pub fn new(tls: T) -> Self {
         Self {
-            resolver,
             tls: Arc::new(tls),
-            dns_cache: DnsCache::new(DNS_CACHE_TTL),
             idle_connections: HashMap::new(),
             connect_timeout: Duration::from_secs(30),
             read_timeout: Duration::from_secs(60),
@@ -439,41 +420,6 @@ impl<R: DnsResolver, T: TlsConnector> ConnectionManager<R, T> {
         self.idle_connections.retain(|_, v| !v.is_empty());
     }
 
-    /// Resolves a hostname using the DNS resolver with caching.
-    ///
-    /// If the result is in the cache and not expired, returns the cached
-    /// addresses. Otherwise, performs a fresh DNS lookup and caches the result.
-    ///
-    /// # Arguments
-    ///
-    /// * `host` - The hostname to resolve.
-    /// * `port` - The port to associate with the addresses.
-    ///
-    /// # Returns
-    ///
-    /// A vector of socket addresses on success, or a `ConnectionError` on failure.
-    #[allow(dead_code)]
-    fn resolve_cached(
-        &mut self,
-        host: &str,
-        port: u16,
-    ) -> Result<Vec<std::net::SocketAddr>, ConnectionError> {
-        if let Some((addrs, cached_at)) = self.dns_cache.get(host) {
-            if cached_at.elapsed() < self.dns_cache.ttl() {
-                return Ok(addrs.clone());
-            }
-        }
-
-        let addrs = self
-            .resolver
-            .resolve(host, port, self.address_family, self.dns_timeout)
-            .map_err(ConnectionError::Dns)?;
-
-        self.dns_cache.put(host.to_string(), addrs.clone());
-
-        Ok(addrs)
-    }
-
     /// Takes an idle connection from the pool if one is available.
     ///
     /// Only returns connections that are still alive and not expired.
@@ -613,43 +559,6 @@ impl ManagedConnection {
             ManagedTransport::Tcp(t) => t.is_alive(),
             ManagedTransport::Tls(t) => t.is_alive(),
         }
-    }
-}
-
-impl DnsCache {
-    /// Creates a new DNS cache with the specified TTL.
-    ///
-    /// # Arguments
-    ///
-    /// * `ttl` - Time-to-live for cache entries.
-    fn new(ttl: Duration) -> Self {
-        Self {
-            entries: HashMap::new(),
-            ttl,
-        }
-    }
-
-    /// Returns the TTL for cache entries.
-    fn ttl(&self) -> Duration {
-        self.ttl
-    }
-
-    /// Gets a cached DNS entry.
-    ///
-    /// Returns the addresses and the time they were cached, or `None`
-    /// if not in the cache.
-    fn get(&self, host: &str) -> Option<&(Vec<std::net::SocketAddr>, Instant)> {
-        self.entries.get(host)
-    }
-
-    /// Adds an entry to the DNS cache.
-    ///
-    /// # Arguments
-    ///
-    /// * `host` - The hostname.
-    /// * `addrs` - The resolved addresses.
-    fn put(&mut self, host: String, addrs: Vec<std::net::SocketAddr>) {
-        self.entries.insert(host, (addrs, Instant::now()));
     }
 }
 
