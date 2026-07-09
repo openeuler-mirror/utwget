@@ -395,7 +395,10 @@ impl Transport for TcpTransport {
                         let _ = s.set_nonblocking(false);
                         true
                     }
-                    Err(_) => false,
+                    Err(_) => {
+                        let _ = s.set_nonblocking(false);
+                        false
+                    }
                 }
         })
     }
