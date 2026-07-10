@@ -6,6 +6,9 @@
 
 use std::collections::{HashSet, VecDeque};
 
+/// Maximum number of URLs in the queue to prevent memory exhaustion from malicious pages.
+const MAX_QUEUE_SIZE: usize = 10_000;
+
 /// Entry in the URL queue representing a URL to be downloaded.
 #[derive(Debug, Clone)]
 pub struct QueueEntry {
@@ -84,6 +87,9 @@ impl UrlQueue {
     /// * `entry` - The queue entry to add.
     pub fn push(&mut self, entry: QueueEntry) {
         if self.max_depth.map_or(false, |md| entry.depth > md) {
+            return;
+        }
+        if self.queue.len() >= MAX_QUEUE_SIZE {
             return;
         }
         let normalized = normalize(&entry.url);
