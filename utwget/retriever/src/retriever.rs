@@ -329,7 +329,7 @@ impl Retriever {
         }
 
         let display_url = url.display();
-        info!("--{}", display_url);
+        info!("--{}", url.display_safe());
 
         let effective_url = match self.resolve_effective_url(url) {
             Some(u) => u,
