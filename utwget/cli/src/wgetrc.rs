@@ -482,7 +482,9 @@ impl WgetrcParser {
             "body_data" | "body-data" => {
                 config.http.body_data = Some(value.as_bytes().to_vec());
             }
-            _ => {}
+            _ => {
+                log::warn!("unknown wgetrc option: {}", key);
+            }
         }
         Ok(())
     }
@@ -671,7 +673,9 @@ impl WgetrcParser {
             "trust_server_names" | "trust-server-names" => {
                 // handled at app level
             }
-            _ => {}
+            _ => {
+                log::warn!("unknown wgetrc on/off option: {}", key);
+            }
         }
         Ok(())
     }

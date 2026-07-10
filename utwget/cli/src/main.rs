@@ -572,10 +572,18 @@ fn daemonize() -> Result<bool, Box<dyn std::error::Error>> {
         unsafe { libc::_exit(0); }
     }
 
-    // Grandchild (daemon) process
-    // Note: stdout/stderr are NOT redirected to /dev/null here.
-    // The caller should handle output redirection if needed.
-    // This allows error messages to be visible for debugging.
+    // Grandchild (daemon) process — redirect stdin/stdout/stderr to /dev/null
+    unsafe {
+        let devnull = libc::open(b"/dev/null\0".as_ptr() as *const libc::c_char, libc::O_RDWR);
+        if devnull >= 0 {
+            libc::dup2(devnull, libc::STDIN_FILENO);
+            libc::dup2(devnull, libc::STDOUT_FILENO);
+            libc::dup2(devnull, libc::STDERR_FILENO);
+            if devnull > 2 {
+                libc::close(devnull);
+            }
+        }
+    }
 
     Ok(false)
 }
