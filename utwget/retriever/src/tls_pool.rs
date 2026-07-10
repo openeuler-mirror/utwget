@@ -45,6 +45,9 @@ struct ConnectionEntry {
 /// This pool manages connections keyed by (host, port) and supports
 /// both plain TCP and TLS connections. Connections are automatically
 /// expired after a configurable idle timeout.
+/// Maximum number of distinct (host, port) pool entries to prevent unbounded growth.
+const MAX_POOL_ENTRIES: usize = 256;
+
 pub struct TlsConnectionPool {
     /// Pooled connections keyed by (host, port, use_tls).
     pools: Mutex<HashMap<(String, u16, bool), Vec<ConnectionEntry>>>,
@@ -119,6 +122,12 @@ impl TlsConnectionPool {
     fn put(&self, host: &str, port: u16, use_tls: bool, conn: PooledConnection) {
         let key = (host.to_string(), port, use_tls);
         let mut pools = self.pools.lock().unwrap_or_else(|e| e.into_inner());
+        // Evict oldest entry if at capacity to prevent unbounded memory growth
+        if pools.len() >= MAX_POOL_ENTRIES && !pools.contains_key(&key) {
+            if let Some(oldest_key) = pools.keys().next().cloned() {
+                pools.remove(&oldest_key);
+            }
+        }
         let pool = pools.entry(key).or_insert_with(Vec::new);
         if pool.len() < self.max_per_pool {
             pool.push(ConnectionEntry {
