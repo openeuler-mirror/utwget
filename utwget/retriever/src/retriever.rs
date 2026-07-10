@@ -240,10 +240,11 @@ impl Retriever {
         let parsed = ParsedUrl::parse(url).map_err(RetrieveError::Protocol)?;
         let max_tries = self.config.tries;
 
-        let mut state = ProtocolState::default();
         let mut last_error = None;
 
         for attempt in 0..max_tries {
+            // Reset state for each retry attempt (redirect_count etc. should not persist)
+            let mut state = ProtocolState::default();
             state.retry_count = attempt;
 
             match self.retrieve_inner(&parsed, &mut state, None) {
