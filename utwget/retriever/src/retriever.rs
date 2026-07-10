@@ -33,8 +33,9 @@ use crate::types::{
     ResponseMeta, RetrieveError, RetrieveOutcome,
 };
 use crate::utils::{
-    adjust_file_extension, apply_file_timestamp, build_proxy_request, is_retryable, is_url_proxied,
-    parse_content_disposition, resolve_proxy, rotate_backups, sanitize_filename, serialize_headers,
+    adjust_file_extension, apply_file_timestamp, build_proxy_request, find_next_backup,
+    is_retryable, is_url_proxied, parse_content_disposition, resolve_proxy, rotate_backups,
+    sanitize_filename, serialize_headers,
 };
 
 #[cfg(feature = "warc")]
@@ -336,7 +337,7 @@ impl Retriever {
             None => url.clone(),
         };
 
-        let output_path = self.determine_output_path(&effective_url)?;
+        let mut output_path = self.determine_output_path(&effective_url)?;
 
         // Debug: log output_path
         debug!("determine_output_path returned: {:?}", output_path);
@@ -344,6 +345,18 @@ impl Retriever {
 
         if self.check_existing(&output_path, &effective_url)? {
             return Ok(RetrieveOutcome::SpiderOnly);
+        }
+
+        // When file exists and will be overwritten, find next available backup name
+        // (file.1, file.2, etc.) and download there instead — matches GNU wget behavior.
+        if output_path.exists() {
+            let n_backups = self.config.backups.unwrap_or(1);
+            if n_backups > 0 {
+                if let Some(backup_path) = find_next_backup(&output_path, n_backups) {
+                    debug!("file exists, downloading to backup: {:?}", backup_path);
+                    output_path = backup_path;
+                }
+            }
         }
 
         let resume_pos = self.compute_resume_position(&output_path)?;
@@ -712,13 +725,6 @@ impl Retriever {
                         RetrieveError::Io(io::Error::new(e.kind(), format!("cannot create {:?}: {}", parent, e)))
                     })?;
                 }
-            }
-        }
-
-        // Rotate backup files if --backups is set
-        if let Some(n_backups) = self.config.backups {
-            if n_backups > 0 {
-                rotate_backups(&output_path, n_backups);
             }
         }
 
