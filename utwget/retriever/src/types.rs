@@ -323,7 +323,8 @@ pub fn parse_http_date(s: &str) -> Option<DateTime<Utc>> {
         }
     }
 
-    // Try parsing as NaiveDateTime for formats without timezone
+    // Try parsing as NaiveDateTime for formats without timezone.
+    // Per HTTP spec, dates without timezone are assumed to be in GMT/UTC.
     let naive_formats = [
         "%Y-%m-%d %H:%M:%S",
         "%Y-%m-%dT%H:%M:%S",
