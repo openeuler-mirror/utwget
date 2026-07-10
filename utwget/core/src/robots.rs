@@ -299,14 +299,21 @@ impl RobotParser {
 
 /// Checks whether a URL path matches a robots.txt path pattern.
 ///
-/// An empty pattern matches everything. The `*` pattern also matches everything.
+/// An empty pattern matches everything. The `*` in the pattern is treated
+/// as a literal character (not a wildcard) per the robots.txt specification.
 /// If the pattern ends with `/`, it matches any path that starts with that prefix.
 /// Otherwise, the pattern matches only if it is a prefix of the path and the
 /// remainder of the path is empty, starts with `/`, or starts with `?`.
+///
+/// Both path and pattern are percent-decoded before comparison (RFC 4748).
 fn path_matches_rule(path: &str, pattern: &str) -> bool {
     if pattern.is_empty() {
         return true;
     }
+    let decoded_path = percent_decode(path);
+    let decoded_pattern = percent_decode(pattern);
+    let path = decoded_path.as_str();
+    let pattern = decoded_pattern.as_str();
     if pattern == "*" {
         return true;
     }
@@ -322,5 +329,30 @@ fn path_matches_rule(path: &str, pattern: &str) -> bool {
         }
     }
     false
+}
+
+/// Percent-decodes a URL path component.
+///
+/// Replaces `%XX` sequences with their corresponding characters.
+/// Non-encoded characters are passed through unchanged.
+fn percent_decode(s: &str) -> String {
+    let mut result = Vec::new();
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(byte) = u8::from_str_radix(
+                std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or(""),
+                16,
+            ) {
+                result.push(byte);
+                i += 3;
+                continue;
+            }
+        }
+        result.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&result).to_string()
 }
 
