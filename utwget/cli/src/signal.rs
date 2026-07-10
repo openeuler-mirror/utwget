@@ -42,13 +42,30 @@ pub unsafe fn install_signal_handlers() {
         SIGHUP_RECEIVED.store(true, Ordering::SeqCst);
     }
 
-    libc::signal(libc::SIGINT, handle_sigint as *const () as libc::sighandler_t);
-    libc::signal(libc::SIGTERM, handle_sigterm as *const () as libc::sighandler_t);
-    libc::signal(libc::SIGHUP, handle_sighup as *const () as libc::sighandler_t);
-    libc::signal(libc::SIGUSR1, handle_sighup as *const () as libc::sighandler_t);
+    // Use sigaction for POSIX-correct signal handling (portable, no handler reset)
+    let mut sa: libc::sigaction = std::mem::zeroed();
+    sa.sa_sigaction = handle_sigint as usize;
+    sa.sa_flags = libc::SA_RESTART;
+    libc::sigemptyset(&mut sa.sa_mask);
+    libc::sigaction(libc::SIGINT, &sa, std::ptr::null_mut());
+
+    let mut sa: libc::sigaction = std::mem::zeroed();
+    sa.sa_sigaction = handle_sigterm as usize;
+    sa.sa_flags = libc::SA_RESTART;
+    libc::sigemptyset(&mut sa.sa_mask);
+    libc::sigaction(libc::SIGTERM, &sa, std::ptr::null_mut());
+
+    let mut sa: libc::sigaction = std::mem::zeroed();
+    sa.sa_sigaction = handle_sighup as usize;
+    sa.sa_flags = libc::SA_RESTART;
+    libc::sigemptyset(&mut sa.sa_mask);
+    libc::sigaction(libc::SIGHUP, &sa, std::ptr::null_mut());
+    libc::sigaction(libc::SIGUSR1, &sa, std::ptr::null_mut());
 
     // Ignore SIGPIPE (broken pipe) — write errors are handled in code
-    libc::signal(libc::SIGPIPE, libc::SIG_IGN);
+    let mut sa: libc::sigaction = std::mem::zeroed();
+    sa.sa_sigaction = libc::SIG_IGN;
+    libc::sigaction(libc::SIGPIPE, &sa, std::ptr::null_mut());
 }
 
 /// Check if we should stop the current download (SIGINT or SIGTERM received).
