@@ -129,7 +129,7 @@ impl BarProgress {
             format!("{:.0}B/s", speed)
         };
 
-        let time_str = format!("用时 {}s", elapsed.as_secs());
+        let time_str = format!("elapsed {}s", elapsed.as_secs());
 
         format!(
             "\r{} {} {:>3}% {}  {}  {}  [{}/{}]",
@@ -198,6 +198,7 @@ impl ProgressDisplay for BarProgress {
     fn begin(&mut self, url: &str, total_size: Option<u64>, resume_from: Option<u64>) {
         self.url = url.to_string();
         self.filename = url.rsplit('/').next().unwrap_or(url)
+            .split('?').next().unwrap_or("")
             .trim_end_matches('#').to_string();
         self.total_size = total_size;
         self.resume_from = resume_from.unwrap_or(0);
@@ -278,7 +279,7 @@ impl ProgressDisplay for BarProgress {
 
         match status {
             FinishStatus::Success { downloaded, elapsed } => {
-                let speed = if elapsed.as_secs() > 0 {
+                let speed = if elapsed.as_millis() > 0 {
                     downloaded as f64 / elapsed.as_secs_f64()
                 } else {
                     0.0
