@@ -1842,6 +1842,9 @@ impl Retriever {
         let dir_parts: Vec<String> = url.dir.split('/')
             .filter(|s| !s.is_empty())
             .map(|s| ut_core::utils::safe_filename(s))
+            // Final guard: never allow a ".." component into the path, even
+            // if it somehow survived normalization (e.g. from a malformed dir).
+            .filter(|s| s != ".." && s != ".")
             .collect();
         let cut = if self.config.cut_dirs > 0 {
             (self.config.cut_dirs as usize).min(dir_parts.len())

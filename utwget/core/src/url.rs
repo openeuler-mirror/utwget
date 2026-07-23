@@ -105,6 +105,11 @@ impl ParsedUrl {
         let (path, query, fragment) = parse_path_query_fragment(after_slash);
         let (path_only, params) = split_params(&path);
         let path_only = if path_only.is_empty() { "/".to_string() } else { path_only };
+        // Normalize "." and ".." segments per RFC 3986 §5.2.4.
+        // GNU wget calls path_simplify() during url_parse(); failing to do so
+        // here would leave literal ".." in the path, enabling path traversal
+        // when the path is mapped to a local filesystem path.
+        let path_only = normalize_dot_segments(&path_only);
         let dir = extract_dir(&path_only);
         let file = extract_file(&path_only);
 

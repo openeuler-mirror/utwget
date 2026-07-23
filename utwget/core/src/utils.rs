@@ -47,7 +47,13 @@ pub fn safe_filename(name: &str) -> String {
         }
     }
 
-    result
+    // Defense in depth: a single "." or ".." component must never survive
+    // sanitization, as it could enable path traversal when the result is
+    // joined into a filesystem path. Replace with a safe placeholder.
+    match result.as_str() {
+        "." | ".." => "_".to_string(),
+        _ => result,
+    }
 }
 
 /// Creates a safe filename with custom restrictions.
@@ -261,4 +267,3 @@ impl RateLimiter {
         self.bucket = (self.bucket + refill_amount).min(self.max_bucket);
     }
 }
-
