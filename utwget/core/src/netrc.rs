@@ -8,6 +8,8 @@ use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::path::Path;
+#[cfg(unix)]
+use std::os::unix::fs::MetadataExt;
 
 /// A single .netrc entry for a machine.
 ///
@@ -64,6 +66,23 @@ impl NetrcDb {
     ///
     /// Returns an error if the file cannot be read.
     pub fn load_from_file(&mut self, path: &Path) -> io::Result<()> {
+        // Security: warn (and skip) when .netrc is readable by group or others.
+        // .netrc may contain plaintext passwords; a loose permission indicates
+        // the file may have been tampered with or is inadvertently exposed.
+        #[cfg(unix)]
+        {
+            if let Ok(meta) = fs::metadata(path) {
+                let mode = meta.mode();
+                if mode & 0o077 != 0 {
+                    log::warn!(
+                        "Refusing to load .netrc {}: permissions {:o} are too open \
+                         (should be 0600 or stricter). Use `chmod 600 {}` to fix.",
+                        path.display(), mode & 0o777, path.display()
+                    );
+                    return Ok(());
+                }
+            }
+        }
         let content = fs::read_to_string(path)?;
         self.parse(&content);
         Ok(())
@@ -289,4 +308,3 @@ fn tokenize(content: &str) -> Vec<String> {
 
     tokens
 }
-
