@@ -2,7 +2,7 @@
 //
 // 测试 utwget 与原 wget 在 HTTP 协议处理上的一致性
 
-use crate::compatibility_tests::common::{TestContext, CommandComparison};
+use super::common::{TestContext, CommandComparison};
 use crate::require_network;
 
 /// 对比 HTTP 下载行为

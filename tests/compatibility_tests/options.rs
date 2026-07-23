@@ -2,7 +2,7 @@
 //
 // 测试 utwget 与原 wget 的命令行选项解析一致性
 
-use crate::compatibility_tests::common::{TestContext, CommandComparison};
+use super::common::{TestContext, CommandComparison};
 
 /// 对比命令行选项行为
 fn compare_options(ctx: &TestContext, args: &[&str]) -> CommandComparison {

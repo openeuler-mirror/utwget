@@ -3,6 +3,8 @@
 use ut_core::netrc::NetrcDb;
 use std::path::PathBuf;
 use std::fs;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 
 // ============================================================================
 // Basic Parsing Tests
@@ -253,6 +255,13 @@ password testpass
 "#;
     let temp_path = std::env::temp_dir().join("utwget_netrc_test.txt");
     fs::write(&temp_path, content).unwrap();
+    // Restrict permissions to 0600 so the security check in load_from_file
+    // does not reject the file (group/other read bits must be clear).
+    #[cfg(unix)]
+    {
+        use std::fs::Permissions;
+        let _ = fs::set_permissions(&temp_path, Permissions::from_mode(0o600));
+    }
 
     let mut db = NetrcDb::new();
     db.load_from_file(&temp_path).unwrap();
