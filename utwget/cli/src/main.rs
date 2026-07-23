@@ -269,13 +269,18 @@ fn main() -> ExitCode {
     }
 
     match app::App::new(config) {
-        Ok(mut app) => match app.run(&args.urls) {
-            Ok(status) => ExitCode::from(status.to_exit_code()),
-            Err(e) => {
-                eprintln!("utwget: {}", e);
-                ExitCode::from(1)
+        Ok(mut app) => {
+            let result = app.run(&args.urls);
+            // Persist cookies and HSTS regardless of whether the run succeeded.
+            app.save_state();
+            match result {
+                Ok(status) => ExitCode::from(status.to_exit_code()),
+                Err(e) => {
+                    eprintln!("utwget: {}", e);
+                    ExitCode::from(1)
+                }
             }
-        },
+        }
         Err(e) => {
             eprintln!("utwget: {}", e);
             ExitCode::from(1)

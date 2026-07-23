@@ -211,6 +211,45 @@ impl HstsStore {
         Ok(())
     }
 
+    /// Parses a `Strict-Transport-Security` response header and adds or
+    /// updates the HSTS entry for `host`.
+    ///
+    /// Recognizes the `max-age=<seconds>` directive (required) and the
+    /// optional `includeSubDomains` directive per RFC 6797 §6.1.
+    /// If `max-age` is missing or unparseable, the header is ignored.
+    /// A `max-age` of 0 removes any existing entry for the host.
+    ///
+    /// # Arguments
+    ///
+    /// * `host` - The hostname that sent the header.
+    /// * `header_value` - The raw `Strict-Transport-Security` header value.
+    pub fn add_from_header(&mut self, host: &str, header_value: &str) {
+        let mut max_age: Option<u64> = None;
+        let mut include_subdomains = false;
+
+        for directive in header_value.split(';') {
+            let directive = directive.trim();
+            if directive.is_empty() {
+                continue;
+            }
+            let lower = directive.to_ascii_lowercase();
+            if let Some(rest) = lower.strip_prefix("max-age") {
+                // Expect "=<digits>"
+                if let Some(val) = rest.trim_start().strip_prefix('=') {
+                    if let Ok(n) = val.trim().parse::<u64>() {
+                        max_age = Some(n);
+                    }
+                }
+            } else if lower == "includesubdomains" {
+                include_subdomains = true;
+            }
+        }
+
+        if let Some(age) = max_age {
+            self.add(host, include_subdomains, age);
+        }
+    }
+
     /// Saves HSTS entries to a JSON file.
     ///
     /// Only non-expired entries are saved. Creates parent directories

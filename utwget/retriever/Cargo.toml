@@ -6,12 +6,13 @@ description = "Download retrieval engine for utwget: HTTP/FTP protocols, recursi
 license = "GPL-3.0-or-later"
 
 [features]
-default = ["warc", "metalink", "compression", "async", "http2"]
+default = ["warc", "metalink", "compression", "async", "http2", "hsts"]
 warc = ["dep:ut-warc"]
 metalink = ["dep:ut-metalink"]
 compression = ["dep:flate2"]
 async = ["dep:tokio", "dep:futures"]
 http2 = ["ut-http/http2", "dep:tokio-rustls", "dep:rustls", "dep:webpki-roots"]
+hsts = ["ut-core/hsts"]
 
 [dependencies]
 ut-core = { path = "../core" }

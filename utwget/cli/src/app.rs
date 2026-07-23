@@ -622,6 +622,9 @@ impl App {
             self.convert_downloaded_links(&recursive_retriever);
         }
 
+        // Persist cookies and HSTS collected during the recursive crawl.
+        recursive_retriever.retriever_mut().save_state();
+
         self.print_summary();
 
         Ok(overall_status)
@@ -915,6 +918,14 @@ impl App {
                 ("duration", ut_progress::format_duration(elapsed)),
             ]));
         }
+    }
+
+    /// Persist session state (cookies, HSTS) to disk.
+    ///
+    /// Should be called after all downloads complete, regardless of success
+    /// or failure, so that accumulated cookies and HSTS entries are not lost.
+    pub fn save_state(&mut self) {
+        self.retriever.save_state();
     }
 }
 
