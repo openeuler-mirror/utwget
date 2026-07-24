@@ -503,11 +503,17 @@ fn url_to_scheme(url: &str) -> Option<Scheme> {
     ParsedUrl::parse(url).ok().map(|u| u.scheme)
 }
 
-/// Implements glob pattern matching using byte slicing for performance.
+/// Implements glob pattern matching (fnmatch-style) over UTF-8 bytes.
 ///
-/// Supports `*` (matches any sequence) and `?` (matches any single character).
-/// Operates on UTF-8 bytes; since glob metacharacters are ASCII, this is safe
-/// for matching against ASCII filenames with non-ASCII characters.
+/// Supports:
+/// - `*` matches any sequence of characters (including empty)
+/// - `?` matches any single character
+/// - `[...]` character classes, including ranges (`[a-z]`) and
+///   negation (`[!abc]` / `[^abc]`). A literal `]` can be matched by
+///   placing it first (`[]abc]`).
+///
+/// Since glob metacharacters are ASCII, operating on bytes is safe for
+/// ASCII filenames containing non-ASCII characters.
 ///
 /// # Arguments
 ///
@@ -517,35 +523,158 @@ fn url_to_scheme(url: &str) -> Option<Scheme> {
 /// # Returns
 ///
 /// `true` if the text matches the pattern.
-fn glob_match(text: &str, pattern: &str) -> bool {
-    let t = text.as_bytes();
-    let p = pattern.as_bytes();
-    let mut ti = 0;
-    let mut pi = 0;
+pub fn glob_match(text: &str, pattern: &str) -> bool {
+    glob_match_bytes(text.as_bytes(), pattern.as_bytes())
+}
+
+/// Test whether a single text byte matches a `[...]` class beginning at
+/// `class_start` (pointing at the `[`). On return, `consumed` is the index
+/// just past the closing `]`, or `None` if the class is malformed (no `]`).
+fn match_class(t: u8, pattern: &[u8], start: usize) -> Option<(bool, usize)> {
+    let mut i = start + 1; // skip '['
+    let mut negate = false;
+    if i < pattern.len() && (pattern[i] == b'!' || pattern[i] == b'^') {
+        negate = true;
+        i += 1;
+    }
+    let mut matched = false;
+    let class_start = i;
+    while i < pattern.len() {
+        if pattern[i] == b']' {
+            // A ']' at the very start (after optional !/^) is literal.
+            if i == class_start {
+                matched |= t == b']';
+                i += 1;
+                continue;
+            }
+            break;
+        }
+        // Range: a-z
+        if i + 2 < pattern.len() && pattern[i + 1] == b'-' && pattern[i + 2] != b']' {
+            let lo = pattern[i];
+            let hi = pattern[i + 2];
+            matched |= t >= lo && t <= hi;
+            i += 3;
+        } else {
+            matched |= pattern[i] == t;
+            i += 1;
+        }
+    }
+    if i >= pattern.len() {
+        // No closing ']' — malformed class; treat literally as '['
+        return None;
+    }
+    // i points at ']'; consumed index is i + 1
+    Some((matched ^ negate, i + 1))
+}
+
+fn glob_match_bytes(t: &[u8], p: &[u8]) -> bool {
+    let mut ti = 0usize;
+    let mut pi = 0usize;
     let mut star_ti = usize::MAX;
-    let mut star_pi = 0;
+    let mut star_pi = 0usize;
 
     while ti < t.len() {
-        if pi < p.len() && (p[pi] == b'?' || p[pi] == t[ti]) {
-            ti += 1;
-            pi += 1;
-        } else if pi < p.len() && p[pi] == b'*' {
-            star_ti = ti;
-            star_pi = pi;
-            pi += 1;
-        } else if star_pi < p.len() {
+        if pi < p.len() {
+            match p[pi] {
+                b'?' => {
+                    ti += 1;
+                    pi += 1;
+                    continue;
+                }
+                b'*' => {
+                    star_ti = ti;
+                    star_pi = pi;
+                    pi += 1;
+                    continue;
+                }
+                b'[' => {
+                    if let Some((matched, consumed)) = match_class(t[ti], p, pi) {
+                        if matched {
+                            ti += 1;
+                            pi = consumed;
+                            continue;
+                        }
+                    } else {
+                        // Malformed class: treat '[' literally.
+                        if p[pi] == t[ti] {
+                            ti += 1;
+                            pi += 1;
+                            continue;
+                        }
+                    }
+                }
+                c => {
+                    if c == t[ti] {
+                        ti += 1;
+                        pi += 1;
+                        continue;
+                    }
+                }
+            }
+        }
+        // Mismatch: backtrack to last '*' if any.
+        if star_pi < p.len() && p[star_pi] == b'*' {
             star_ti += 1;
             ti = star_ti;
             pi = star_pi + 1;
-        } else {
-            return false;
+            continue;
         }
+        return false;
     }
 
     while pi < p.len() && p[pi] == b'*' {
         pi += 1;
     }
-
     pi == p.len()
 }
 
+
+#[cfg(test)]
+mod glob_match_tests {
+    use super::glob_match;
+
+    #[test]
+    fn literal_match() {
+        assert!(glob_match("file.txt", "file.txt"));
+        assert!(!glob_match("file.txt", "file.dat"));
+    }
+
+    #[test]
+    fn star_matches_any() {
+        assert!(glob_match("anything", "*"));
+        assert!(glob_match("report.csv", "*.csv"));
+        assert!(glob_match("report.csv", "report*"));
+        assert!(!glob_match("report.csv", "*.txt"));
+    }
+
+    #[test]
+    fn question_matches_single() {
+        assert!(glob_match("a", "?"));
+        assert!(glob_match("file1", "file?"));
+        assert!(!glob_match("file12", "file?"));
+    }
+
+    #[test]
+    fn char_class_matches() {
+        assert!(glob_match("a", "[abc]"));
+        assert!(!glob_match("d", "[abc]"));
+        assert!(glob_match("x", "[!abc]"));
+        assert!(!glob_match("a", "[!abc]"));
+        assert!(glob_match("5", "[0-9]"));
+        assert!(!glob_match("a", "[0-9]"));
+    }
+
+    #[test]
+    fn combined_glob() {
+        assert!(glob_match("img_001.png", "img_*.[pP][nN][gG]"));
+        assert!(glob_match("data-2024.tar", "data-[0-9]*.tar"));
+    }
+
+    #[test]
+    fn empty_pattern() {
+        assert!(glob_match("", ""));
+        assert!(!glob_match("a", ""));
+        assert!(glob_match("", "*"));
+    }
+}
