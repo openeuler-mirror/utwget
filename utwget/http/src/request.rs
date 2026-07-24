@@ -159,14 +159,26 @@ impl HttpRequest {
     pub fn serialize(&self) -> io::Result<Vec<u8>> {
         let mut buf: Vec<u8> = Vec::with_capacity(1024);
 
-        write!(buf, "{} {} {}\r\n", self.method, self.path, self.version)?;
+        // Encode the request target so raw spaces / control chars cannot
+        // split the request line. Idempotent: already-encoded sequences
+        // (e.g. from ParsedUrl::full_path) pass through unchanged.
+        let safe_path = ut_core::url::encode_request_target(&self.path);
+        write!(buf, "{} {} {}\r\n", self.method, safe_path, self.version)?;
 
         for (key, value) in &self.headers {
-            // Strip CR/LF from header values to prevent header injection
+            // Strip CR/LF from header names and values to prevent header
+            // injection / request smuggling. A name that becomes empty after
+            // sanitization is invalid and skipped.
+            let safe_key: String = key.chars()
+                .filter(|&c| c != '\r' && c != '\n')
+                .collect();
+            if safe_key.is_empty() {
+                continue;
+            }
             let safe_value: String = value.chars()
                 .filter(|&c| c != '\r' && c != '\n')
                 .collect();
-            write!(buf, "{}: {}\r\n", key, safe_value)?;
+            write!(buf, "{}: {}\r\n", safe_key, safe_value)?;
         }
 
         buf.extend_from_slice(b"\r\n");
@@ -311,3 +323,36 @@ pub fn build_request(
     req
 }
 
+
+#[cfg(test)]
+mod serialize_tests {
+    use super::*;
+
+    #[test]
+    fn header_name_crlf_is_stripped() {
+        let mut req = HttpRequest::new(HttpMethod::Get, "/".to_string(), "example.com".to_string());
+        // A malicious header name containing CRLF must not inject extra lines.
+        req.header("X-Injected\r\nHost: evil", "value");
+        let bytes = req.serialize().unwrap();
+        let text = String::from_utf8(bytes).unwrap();
+        assert!(!text.contains("\r\nHost: evil"), "CRLF injected into header name");
+        assert!(text.contains("X-InjectedHost: evil: value"));
+    }
+
+    #[test]
+    fn empty_header_name_after_sanitization_is_skipped() {
+        let mut req = HttpRequest::new(HttpMethod::Get, "/".to_string(), "example.com".to_string());
+        req.header("\r\n", "value");
+        let bytes = req.serialize().unwrap();
+        let text = String::from_utf8(bytes).unwrap();
+        assert!(!text.contains(": value\r\n"), "empty header name was emitted");
+    }
+
+    #[test]
+    fn request_target_space_is_encoded() {
+        let req = HttpRequest::new(HttpMethod::Get, "/a b".to_string(), "example.com".to_string());
+        let bytes = req.serialize().unwrap();
+        let text = String::from_utf8(bytes).unwrap();
+        assert!(text.starts_with("GET /a%20b HTTP/"), "raw space in request target not encoded");
+    }
+}
