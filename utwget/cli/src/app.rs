@@ -975,6 +975,8 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
     config.debug = args.debug;
     config.server_response = args.server_response;
     config.background = args.background;
+    config.output_file = args.output_file.clone();
+    config.append_output = args.append_output.clone();
     config.tries = args.tries;
     config.retry_connrefused = args.retry_connrefused;
     config.retry_on_host_error = args.retry_on_host_error;
@@ -1025,9 +1027,12 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
         }
     }
 
-    // Handle --use-askpass: use external program to get password.
-    // Resolution order: explicit value, then WGET_ASKPASS, then SSH_ASKPASS.
-    if config.http.password.is_none() {
+    // Handle --use-askpass: use an external program to obtain the password.
+    // The askpass facility is only engaged when the user passes --use-askpass
+    // (optionally with an explicit command). GNU wget does NOT consult the
+    // WGET_ASKPASS/SSH_ASKPASS environment variables unless --use-askpass is
+    // given, so we gate the whole path on the flag's presence.
+    if config.http.password.is_none() && args.use_askpass.is_some() {
         if let Some(program) = resolve_askpass(args.use_askpass.as_deref()) {
             let prompt = match config.http.user {
                 Some(ref user) => format!("Password for {}: ", user),

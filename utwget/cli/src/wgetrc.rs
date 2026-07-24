@@ -269,6 +269,18 @@ impl WgetrcParser {
                     reason: "invalid path".to_string(),
                 })?);
             }
+            "output_file" | "output-file" => {
+                config.output_file = Some(value.parse::<std::path::PathBuf>().map_err(|_| ConfigError::InvalidValue {
+                    option: key.to_string(),
+                    reason: "invalid path".to_string(),
+                })?);
+            }
+            "append_output" | "append-output" => {
+                config.append_output = Some(value.parse::<std::path::PathBuf>().map_err(|_| ConfigError::InvalidValue {
+                    option: key.to_string(),
+                    reason: "invalid path".to_string(),
+                })?);
+            }
             "input_file" => {
                 config.input_filename = Some(value.parse::<std::path::PathBuf>().map_err(|_| ConfigError::InvalidValue {
                     option: key.to_string(),
@@ -925,6 +937,8 @@ fn normalize_wgetrc_key(key: &str) -> String {
         "includedirectories" => "include-directories".to_string(),
         "input" => "input-file".to_string(),
         "inputmetalink" => "input-metalink".to_string(),
+        "appendoutput" => "append-output".to_string(),
+        "outputfile" => "output-file".to_string(),
         "keepsessioncookies" => "keep-session-cookies".to_string(),
         "limitrate" => "limit-rate".to_string(),
         "loadcookies" => "load-cookies".to_string(),
