@@ -73,6 +73,9 @@ pub struct RecursiveRetriever {
     css_extractor: CssExtractor,
     /// Cache of robots.txt allow/deny status per host.
     robots_cache: HashMap<String, bool>,
+    /// The parsed start URL, used as the --no-parent reference point.
+    /// `None` before `retrieve_tree` is first called.
+    start_url: Option<ParsedUrl>,
 }
 
 impl RecursiveRetriever {
@@ -93,6 +96,7 @@ impl RecursiveRetriever {
             html_extractor: HtmlExtractor,
             css_extractor: CssExtractor,
             robots_cache: HashMap::new(),
+            start_url: None,
         }
     }
 
@@ -172,6 +176,7 @@ impl RecursiveRetriever {
         }
 
         let start_host = parsed.host.clone();
+        self.start_url = Some(parsed.clone());
         let mut robot_parser = RobotParser::new(
             self.retriever.config().http.user_agent.as_deref().unwrap_or("wget-rs")
         );
@@ -413,17 +418,28 @@ impl RecursiveRetriever {
         }
 
         if self.retriever.config().recursive.no_parent {
-            // Reject links that ascend above the parent directory. Compare the
-            // full path (dir + file) so that "../" links resolving to a parent
-            // directory are caught. A child is allowed only if its path starts
-            // with the parent's path.
-            let parent_path = parent_parsed.path.trim_end_matches('/').to_lowercase();
-            let child_path = child_parsed.path.trim_end_matches('/').to_lowercase();
-            // The child must be within the parent's subtree. Since "../" is now
-            // normalized during merge, a parent link resolves to a shorter path
-            // that does NOT start with the parent's path.
-            if !child_path.starts_with(&parent_path) {
-                return;
+            // --no-parent: reject links that ascend above the *start* URL's
+            // directory (GNU wget compares against start_url_parsed->dir, not
+            // the immediate parent). The check only applies when the child is
+            // on the same logical site as the start URL: schemes are "similar"
+            // (equal, or an http/https pair), the host matches, and -- when the
+            // schemes are identical -- the port matches too. Page requisites
+            // (inline resources) are exempt in -p mode. A child is allowed iff
+            // its directory lies within the start directory's subtree.
+            if let Some(ref start) = self.start_url {
+                let schemes_similar = schemes_are_similar(child_parsed.scheme, start.scheme);
+                let host_match = child_parsed.host.eq_ignore_ascii_case(&start.host);
+                // GNU wget skips the port test when the schemes differ (e.g.
+                // http vs https), because their default ports legitimately differ.
+                let port_ok = child_parsed.scheme != start.scheme
+                    || child_parsed.port == start.port;
+                let page_reqs_inline = self.retriever.config().page_requisites && link.inline;
+                if schemes_similar && host_match && port_ok && !page_reqs_inline {
+                    if !is_subdir(&start.dir, &child_parsed.dir, self.retriever.config().ignore_case) {
+                        debug!("--no-parent: {} escapes start dir {}", child_parsed.display(), start.dir);
+                        return;
+                    }
+                }
             }
         }
 
@@ -585,5 +601,88 @@ fn detect_content_type(path: &std::path::Path) -> String {
         Some("ico") => "image/x-icon".to_string(),
         Some("webp") => "image/webp".to_string(),
         _ => "application/octet-stream".to_string(),
+    }
+}
+
+
+/// Whether two URL schemes are "similar" per GNU wget's
+/// `schemes_are_similar_p` (src/url.c): equal, or an http/https pair. Used by
+/// `--no-parent` to decide whether a link is on the same logical site.
+fn schemes_are_similar(a: Scheme, b: Scheme) -> bool {
+    if a == b {
+        return true;
+    }
+    matches!((a, b), (Scheme::Http, Scheme::Https) | (Scheme::Https, Scheme::Http))
+}
+
+/// Check if `child_dir` is within the subtree of `start_dir`, matching GNU
+/// wget's `subdir_p()` (src/utils.c). GNU wget stores directory paths *without*
+/// a trailing slash, but Rust's `ParsedUrl::dir` keeps one, so trailing slashes
+/// are trimmed before the byte-wise prefix comparison.
+///
+/// Returns `true` when `child_dir` equals `start_dir` or begins with
+/// `start_dir` immediately followed by `/`. An empty `start_dir` (the site
+/// root) matches every directory.
+fn is_subdir(start_dir: &str, child_dir: &str, ignore_case: bool) -> bool {
+    let d1 = start_dir.trim_end_matches('/');
+    let d2 = child_dir.trim_end_matches('/');
+    if d1.is_empty() {
+        return true;
+    }
+    let b1 = d1.as_bytes();
+    let b2 = d2.as_bytes();
+    let mut i = 0;
+    if !ignore_case {
+        while i < b1.len() && i < b2.len() && b1[i] == b2[i] {
+            i += 1;
+        }
+    } else {
+        while i < b1.len() && i < b2.len()
+            && b1[i].to_ascii_lowercase() == b2[i].to_ascii_lowercase()
+        {
+            i += 1;
+        }
+    }
+    i == b1.len() && (i == b2.len() || b2[i] == b'/')
+}
+
+#[cfg(test)]
+mod no_parent_tests {
+    use super::is_subdir;
+
+    #[test]
+    fn same_directory_is_allowed() {
+        assert!(is_subdir("/a/b/", "/a/b/", false));
+        assert!(is_subdir("/a/b", "/a/b", false));
+    }
+
+    #[test]
+    fn child_subdirectory_is_allowed() {
+        assert!(is_subdir("/a/b/", "/a/b/c/", false));
+        assert!(is_subdir("/a/b/", "/a/b/c/d/", false));
+    }
+
+    #[test]
+    fn parent_directory_is_rejected() {
+        assert!(!is_subdir("/a/b/", "/a/", false));
+        assert!(!is_subdir("/a/b/", "/", false));
+    }
+
+    #[test]
+    fn sibling_directory_is_rejected() {
+        assert!(!is_subdir("/a/b/", "/a/c/", false));
+        assert!(!is_subdir("/a/b/", "/a/bc/", false));
+    }
+
+    #[test]
+    fn root_start_matches_everything() {
+        assert!(is_subdir("", "/anything/here/", false));
+        assert!(is_subdir("/", "/a/b/c/", false));
+    }
+
+    #[test]
+    fn ignore_case_comparison() {
+        assert!(is_subdir("/A/B/", "/a/b/c/", true));
+        assert!(!is_subdir("/A/B/", "/a/c/", true));
     }
 }
