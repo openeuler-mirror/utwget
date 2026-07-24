@@ -122,7 +122,9 @@ fn test_warc_header_serialize_gzip_compressed() {
     let bytes = header.serialize();
     let text = String::from_utf8(bytes).unwrap();
 
-    assert!(text.contains("WARC-Payload-Digest: sha1:\r\n"));
+    // gzip_compressed only affects content type here; with payload_digest
+    // unset, no WARC-Payload-Digest line should be emitted.
+    assert!(!text.contains("WARC-Payload-Digest"));
 }
 
 #[test]
@@ -436,7 +438,7 @@ fn test_warc_header_serialize_complete() {
         gzip_compressed: true,
         truncated: Some("time".to_string()),
         wagon: Some("test-wagon".to_string()),
-        payload_digest: None,
+        payload_digest: Some("sha1:abcdef0123456789abcdef0123456789abcdef01".to_string()),
     };
 
     let bytes = header.serialize();
@@ -451,7 +453,7 @@ fn test_warc_header_serialize_complete() {
     assert!(text.contains("Content-Length: 1234\r\n"));
     assert!(text.contains("WARC-Target-URI: http://example.com/page.html\r\n"));
     assert!(text.contains("WARC-Concurrent-To: <urn:uuid:related>\r\n"));
-    assert!(text.contains("WARC-Payload-Digest: sha1:\r\n"));
+    assert!(text.contains("WARC-Payload-Digest: sha1:abcdef0123456789abcdef0123456789abcdef01\r\n"));
     assert!(text.contains("WARC-Truncated: time\r\n"));
     assert!(text.contains("WARC-Wagon: test-wagon\r\n"));
     assert!(text.ends_with("\r\n\r\n"));
