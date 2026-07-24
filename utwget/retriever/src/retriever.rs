@@ -896,7 +896,6 @@ impl Retriever {
         state.head_done = true;
 
         self.apply_server_timestamp(&output_path, &resp_meta);
-        self.download_registry.register_download(&url.display(), &output_path);
 
         #[cfg(feature = "warc")]
         self.write_warc_record(&url.display(), &response, &resp_meta);
@@ -914,12 +913,17 @@ impl Retriever {
             }
         }
 
-        // Adjust file extension based on Content-Type if --adjust-extension is set
+        // Adjust file extension based on Content-Type if --adjust-extension is set.
+        // This renames the file on disk, so it must happen before the registry
+        // records the local path (used later by --convert-links).
         let final_output_path = if self.config.adjust_extension {
             adjust_file_extension(&output_path, resp_meta.content_type.as_deref())
         } else {
             output_path.clone()
         };
+
+        // Register the *final* local path so link conversion resolves to it.
+        self.download_registry.register_download(&url.display(), &final_output_path);
 
         // Preserve permissions if enabled
         if self.config.preserve_permissions {

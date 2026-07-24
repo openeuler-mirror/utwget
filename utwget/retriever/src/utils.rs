@@ -184,42 +184,55 @@ pub(crate) fn find_next_backup(path: &Path, max_backups: u32) -> Option<PathBuf>
 ///
 /// If `--adjust-extension` is set and the Content-Type indicates HTML or CSS,
 /// the file is renamed to have the appropriate extension (.html or .css).
-pub(crate) fn adjust_file_extension(path: &Path, content_type: Option<&str>) -> PathBuf {
-    let desired_ext = match content_type {
-        Some(ct) => {
-            let ct_lower = ct.to_lowercase();
-            if ct_lower.contains("text/html") || ct_lower.contains("application/xhtml+xml") {
-                Some(".html")
-            } else if ct_lower.contains("text/css") {
-                Some(".css")
-            } else {
-                None
-            }
-        }
-        None => None,
-    };
+/// Compute the desired extension (`.html` or `.css`) for a Content-Type, or
+/// `None` if the type is not HTML/CSS. Pure function, no filesystem access.
+fn desired_extension_for(content_type: Option<&str>) -> Option<&'static str> {
+    let ct = content_type?;
+    let ct_lower = ct.to_lowercase();
+    if ct_lower.contains("text/html") || ct_lower.contains("application/xhtml+xml") {
+        Some(".html")
+    } else if ct_lower.contains("text/css") {
+        Some(".css")
+    } else {
+        None
+    }
+}
 
-    let desired_ext = match desired_ext {
+/// Compute the target path after adjusting the extension, without touching the
+/// filesystem. Returns `None` when no adjustment is needed (the extension is
+/// already correct or the content type is not HTML/CSS).
+fn compute_adjusted_path(path: &Path, desired_ext: &str) -> Option<PathBuf> {
+    let file_stem = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    let last_dot = file_stem.rfind('.');
+    let already_has = match last_dot {
+        Some(idx) => {
+            let existing = &file_stem[idx..]; // includes the leading '.'
+            let existing_lower = existing.to_ascii_lowercase();
+            existing_lower == desired_ext
+                || (desired_ext == ".html" && existing_lower == ".htm")
+        }
+        None => false,
+    };
+    if already_has {
+        return None;
+    }
+    // Append the desired extension to the full file name (GNU wget appends,
+    // e.g. `file.txt` -> `file.txt.html`, `index` -> `index.html`).
+    let mut new_path = path.as_os_str().to_owned();
+    new_path.push(desired_ext);
+    Some(PathBuf::from(new_path))
+}
+
+pub(crate) fn adjust_file_extension(path: &Path, content_type: Option<&str>) -> PathBuf {
+    let desired_ext = match desired_extension_for(content_type) {
         Some(ext) => ext,
         None => return path.to_path_buf(),
     };
 
-    if let Some(existing_ext) = path.extension().and_then(|e| e.to_str()) {
-        let existing_lower = existing_ext.to_lowercase();
-        let desired_lower = desired_ext.trim_start_matches('.').to_lowercase();
-        if existing_lower == desired_lower {
-            return path.to_path_buf();
-        }
-        if desired_ext == ".html" && existing_lower == "htm" {
-            return path.to_path_buf();
-        }
-    }
-
-    let new_path = path.with_extension(format!(
-        "{}{}",
-        path.extension().and_then(|e| e.to_str()).unwrap_or(""),
-        desired_ext.trim_start_matches('.')
-    ));
+    let new_path = match compute_adjusted_path(path, desired_ext) {
+        Some(p) => p,
+        None => return path.to_path_buf(),
+    };
 
     if path.exists() {
         if let Err(e) = fs::rename(path, &new_path) {
@@ -229,6 +242,60 @@ pub(crate) fn adjust_file_extension(path: &Path, content_type: Option<&str>) -> 
     }
 
     new_path
+}
+
+#[cfg(test)]
+mod adjust_ext_tests {
+    use super::*;
+
+    #[test]
+    fn append_html_to_extensionless() {
+        assert_eq!(
+            compute_adjusted_path(std::path::Path::new("index"), ".html"),
+            Some(std::path::PathBuf::from("index.html"))
+        );
+    }
+
+    #[test]
+    fn append_html_to_existing_ext() {
+        // file.txt -> file.txt.html (append, NOT replace/merge)
+        assert_eq!(
+            compute_adjusted_path(std::path::Path::new("file.txt"), ".html"),
+            Some(std::path::PathBuf::from("file.txt.html"))
+        );
+    }
+
+    #[test]
+    fn already_html_no_change() {
+        assert_eq!(
+            compute_adjusted_path(std::path::Path::new("page.html"), ".html"),
+            None
+        );
+    }
+
+    #[test]
+    fn htm_treated_as_html() {
+        assert_eq!(
+            compute_adjusted_path(std::path::Path::new("page.htm"), ".html"),
+            None
+        );
+    }
+
+    #[test]
+    fn case_insensitive_html() {
+        assert_eq!(
+            compute_adjusted_path(std::path::Path::new("PAGE.HTML"), ".html"),
+            None
+        );
+    }
+
+    #[test]
+    fn css_extension() {
+        assert_eq!(
+            compute_adjusted_path(std::path::Path::new("style"), ".css"),
+            Some(std::path::PathBuf::from("style.css"))
+        );
+    }
 }
 
 /// Apply file timestamp from server response.
