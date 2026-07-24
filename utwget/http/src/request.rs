@@ -245,11 +245,9 @@ pub fn build_request(
     });
 
     let path = url.full_path();
-    let host = if url.port != url.scheme.default_port() {
-        format!("{}:{}", url.host, url.port)
-    } else {
-        url.host.clone()
-    };
+    // Use the bracketed (IPv6) / port-suffixed / sanitized host for the
+    // Host header and CONNECT target.
+    let host = url.host_header();
 
     let mut req = HttpRequest::new(method, path, host.clone());
 

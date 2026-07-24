@@ -1689,10 +1689,20 @@ impl Retriever {
         host: &str,
         port: u16,
     ) -> Result<(std::net::TcpStream, Vec<u8>), RetrieveError> {
-        // Send CONNECT request
+        // Send CONNECT request. Sanitize the host (strip CR/LF/control chars)
+        // and bracket IPv6 literals so the request line cannot be split and
+        // IPv6 targets are well-formed.
+        let clean_host: String = host.chars()
+            .filter(|&c| c != '\r' && c != '\n' && !c.is_ascii_control())
+            .collect();
+        let target = if clean_host.contains(':') {
+            format!("[{}]:{}", clean_host, port)
+        } else {
+            format!("{}:{}", clean_host, port)
+        };
         let connect_req = format!(
-            "CONNECT {}:{} HTTP/1.1\r\nHost: {}:{}\r\n\r\n",
-            host, port, host, port
+            "CONNECT {} HTTP/1.1\r\nHost: {}\r\n\r\n",
+            target, target
         );
         debug!("CONNECT request: {}", connect_req);
         stream.write_all(connect_req.as_bytes()).map_err(RetrieveError::Io)?;
