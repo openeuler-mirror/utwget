@@ -40,3 +40,76 @@ pub enum Decompressor {
     /// Passthrough reader for identity (uncompressed) data.
     Identity(Box<dyn Read>),
 }
+
+impl Decompressor {
+    /// Creates a `Decompressor` from an inner reader and an optional encoding name.
+    ///
+    /// The encoding string is compared case-insensitively against the standard
+    /// HTTP Content-Encoding values:
+    /// - `"gzip"` or `"x-gzip"` selects gzip decompression.
+    /// - `"deflate"` selects deflate decompression.
+    /// - `"identity"` or an empty string selects passthrough.
+    /// - `None` (the HTTP header was absent) also selects passthrough.
+    ///
+    /// # Arguments
+    ///
+    /// * `inner` - The underlying byte source to decompress.
+    /// * `encoding` - An optional content-encoding name as received in the
+    ///   HTTP `Content-Encoding` header.
+    ///
+    /// # Returns
+    ///
+    /// A `Decompressor` configured with the matching decoder, or an error if
+    /// the encoding name is not recognized.
+    ///
+    /// # Errors
+    ///
+    /// Returns `io::Error` with kind `InvalidData` when an unsupported encoding
+    /// name is provided (e.g. `"br"` for Brotli, which is not yet supported).
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Gzip decompression
+    /// let decomp = Decompressor::from_encoding(reader, Some("gzip"))?;
+    ///
+    /// // Passthrough (no compression)
+    /// let decomp = Decompressor::from_encoding(reader, None)?;
+    /// ```
+    pub fn from_encoding<R: Read + 'static>(inner: R, encoding: Option<&str>) -> io::Result<Self> {
+        match encoding {
+            Some(enc) if enc.eq_ignore_ascii_case("gzip")
+                || enc.eq_ignore_ascii_case("x-gzip") =>
+            {
+                Ok(Decompressor::Gzip(flate2::read::GzDecoder::new(Box::new(
+                    inner,
+                ))))
+            }
+            Some(enc) if enc.eq_ignore_ascii_case("deflate") => {
+                Ok(Decompressor::Deflate(flate2::read::DeflateDecoder::new(Box::new(
+                    inner,
+                ))))
+            }
+            Some(enc) if enc.eq_ignore_ascii_case("identity") || enc.is_empty() => {
+                Ok(Decompressor::Identity(Box::new(inner)))
+            }
+            Some(enc) => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("unsupported Content-Encoding: {}", enc),
+            )),
+            None => Ok(Decompressor::Identity(Box::new(inner))),
+        }
+    }
+
+    /// Returns `true` if this decompressor is the identity (passthrough) variant.
+    ///
+    /// This can be used to skip unnecessary wrapping or buffer allocations when
+    /// the response body is not compressed.
+    ///
+    /// # Returns
+    ///
+    /// `true` if this is an `Identity` decompressor, `false` otherwise.
+    pub fn is_identity(&self) -> bool {
+        matches!(self, Decompressor::Identity(_))
+    }
+}
