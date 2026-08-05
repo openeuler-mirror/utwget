@@ -696,3 +696,20 @@ impl Read for DummyRead {
         Ok(0)
     }
 }
+
+/// Sends an HTTP request over a transport.
+///
+/// # Arguments
+///
+/// * `transport` - The transport to write to.
+/// * `request` - The request to send.
+///
+/// # Returns
+///
+/// Ok(()) on success, or an I/O error.
+pub fn send_request<T: Write>(
+    transport: &mut T,
+    request: &HttpRequest,
+) -> io::Result<()> {
+    H1Codec::send_request(transport, request)
+}
