@@ -687,3 +687,12 @@ impl HttpClient {
         None
     }
 }
+
+/// Dummy reader that returns EOF immediately.
+struct DummyRead;
+
+impl Read for DummyRead {
+    fn read(&mut self, _buf: &mut [u8]) -> io::Result<usize> {
+        Ok(0)
+    }
+}
