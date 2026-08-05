@@ -11,3 +11,9 @@ pub const CONTENT_TYPE: &str = "Content-Type";
 
 /// Content-Encoding header - indicates any encodings applied to the body.
 pub const CONTENT_ENCODING: &str = "Content-Encoding";
+
+/// Transfer-Encoding header - indicates the transformation applied to the body.
+pub const TRANSFER_ENCODING: &str = "Transfer-Encoding";
+
+/// Location header - used in redirects to specify the target URL.
+pub const LOCATION: &str = "Location";
