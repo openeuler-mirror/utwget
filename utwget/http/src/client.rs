@@ -713,3 +713,18 @@ pub fn send_request<T: Write>(
 ) -> io::Result<()> {
     H1Codec::send_request(transport, request)
 }
+
+/// Reads an HTTP response from a transport.
+///
+/// # Arguments
+///
+/// * `transport` - The transport to read from.
+///
+/// # Returns
+///
+/// The parsed HTTP response.
+pub fn read_response<T: Read>(
+    transport: &mut T,
+) -> io::Result<HttpResponse> {
+    H1Codec::read_response_head(transport)
+}
