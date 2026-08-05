@@ -113,3 +113,25 @@ impl Decompressor {
         matches!(self, Decompressor::Identity(_))
     }
 }
+
+impl Read for Decompressor {
+    /// Reads decompressed bytes from the inner reader into the provided buffer.
+    ///
+    /// Delegates to the underlying decoder (gzip, deflate, or identity) depending
+    /// on which variant was constructed.
+    ///
+    /// # Arguments
+    ///
+    /// * `buf` - The byte buffer to fill with decompressed data.
+    ///
+    /// # Returns
+    ///
+    /// The number of bytes read, or an I/O error if decompression fails.
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self {
+            Decompressor::Gzip(r) => r.read(buf),
+            Decompressor::Deflate(r) => r.read(buf),
+            Decompressor::Identity(r) => r.read(buf),
+        }
+    }
+}
