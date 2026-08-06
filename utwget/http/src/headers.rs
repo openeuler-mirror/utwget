@@ -23,3 +23,9 @@ pub const SET_COOKIE: &str = "Set-Cookie";
 
 /// WWW-Authenticate header - indicates authentication scheme and parameters.
 pub const WWW_AUTHENTICATE: &str = "WWW-Authenticate";
+
+/// Proxy-Authenticate header - indicates proxy authentication requirements.
+pub const PROXY_AUTHENTICATE: &str = "Proxy-Authenticate";
+
+/// Last-Modified header - indicates the last modification date of the resource.
+pub const LAST_MODIFIED: &str = "Last-Modified";
