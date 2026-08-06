@@ -751,7 +751,11 @@ impl Retriever {
 
         // For 4xx errors (except 416 Range Not Satisfiable), never save the body
         // to match wget behavior: error responses are not written to disk.
-        if response.is_client_error() && response.status_code != 416 {
+        // --content-on-error overrides this and keeps the error body.
+        if response.is_client_error()
+            && response.status_code != 416
+            && !opts.content_on_error
+        {
             self.progress.finish(ut_progress::FinishStatus::Error(format!(
                 "错误 {}：{}。",
                 response.status_code,
