@@ -89,3 +89,9 @@ pub const EXPIRES: &str = "Expires";
 
 /// Cache-Control header - specifies caching directives.
 pub const CACHE_CONTROL: &str = "Cache-Control";
+
+/// Proxy-Authorization header - contains credentials for proxy authentication.
+pub const PROXY_AUTHORIZATION: &str = "Proxy-Authorization";
+
+/// Referer header - indicates the previous page that linked to the resource.
+pub const REFERER: &str = "Referer";
