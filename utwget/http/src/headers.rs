@@ -83,3 +83,9 @@ pub const RETRY_AFTER: &str = "Retry-After";
 
 /// Date header - indicates the date and time the message was sent.
 pub const DATE: &str = "Date";
+
+/// Expires header - indicates when the response should be considered stale.
+pub const EXPIRES: &str = "Expires";
+
+/// Cache-Control header - specifies caching directives.
+pub const CACHE_CONTROL: &str = "Cache-Control";
