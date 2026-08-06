@@ -53,3 +53,9 @@ pub const HOST: &str = "Host";
 
 /// Accept header - specifies media types the client can process.
 pub const ACCEPT: &str = "Accept";
+
+/// Accept-Language header - specifies preferred natural languages.
+pub const ACCEPT_LANGUAGE: &str = "Accept-Language";
+
+/// Accept-Encoding header - specifies acceptable content encodings.
+pub const ACCEPT_ENCODING: &str = "Accept-Encoding";
