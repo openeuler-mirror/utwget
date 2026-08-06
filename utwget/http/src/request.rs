@@ -267,7 +267,11 @@ pub fn build_request(
 
     #[cfg(feature = "compression")]
     {
-        req.header(crate::headers::ACCEPT_ENCODING, "gzip, deflate");
+        // Do not advertise Accept-Encoding when compression is explicitly
+        // disabled (--no-compression), so the server sends the raw body.
+        if config.compression != ut_core::types::CompressionMode::None {
+            req.header(crate::headers::ACCEPT_ENCODING, "gzip, deflate");
+        }
     }
 
     if let Some(cookie_str) = cookies {
