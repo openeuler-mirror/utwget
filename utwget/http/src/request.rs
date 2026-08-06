@@ -255,7 +255,7 @@ pub fn build_request(
         .http
         .user_agent
         .as_deref()
-        .unwrap_or(concat!("wget-rs/", env!("CARGO_PKG_VERSION")));
+        .unwrap_or("Wget/1.21.4");
     req.header(crate::headers::USER_AGENT, user_agent);
 
     // Always add Host header for HTTP/1.1
