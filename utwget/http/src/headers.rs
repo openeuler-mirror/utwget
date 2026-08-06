@@ -65,3 +65,9 @@ pub const RANGE: &str = "Range";
 
 /// If-Modified-Since header - makes a request conditional on modification.
 pub const IF_MODIFIED_SINCE: &str = "If-Modified-Since";
+
+/// If-None-Match header - makes a request conditional on ETag.
+pub const IF_NONE_MATCH: &str = "If-None-Match";
+
+/// Authorization header - contains credentials for authentication.
+pub const AUTHORIZATION: &str = "Authorization";
