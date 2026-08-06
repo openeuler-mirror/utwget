@@ -95,3 +95,9 @@ pub const PROXY_AUTHORIZATION: &str = "Proxy-Authorization";
 
 /// Referer header - indicates the previous page that linked to the resource.
 pub const REFERER: &str = "Referer";
+
+/// Content-Range header - specifies the range of bytes in a partial response.
+pub const CONTENT_RANGE: &str = "Content-Range";
+
+/// Vary header - indicates which headers affect the response representation.
+pub const VARY: &str = "Vary";
