@@ -71,3 +71,9 @@ pub const IF_NONE_MATCH: &str = "If-None-Match";
 
 /// Authorization header - contains credentials for authentication.
 pub const AUTHORIZATION: &str = "Authorization";
+
+/// Cookie header - sends previously stored cookies to the server.
+pub const COOKIE: &str = "Cookie";
+
+/// Content-Disposition header - suggests how to display the content.
+pub const CONTENT_DISPOSITION: &str = "Content-Disposition";
