@@ -77,3 +77,9 @@ pub const COOKIE: &str = "Cookie";
 
 /// Content-Disposition header - suggests how to display the content.
 pub const CONTENT_DISPOSITION: &str = "Content-Disposition";
+
+/// Retry-After header - indicates when to retry a failed request.
+pub const RETRY_AFTER: &str = "Retry-After";
+
+/// Date header - indicates the date and time the message was sent.
+pub const DATE: &str = "Date";
