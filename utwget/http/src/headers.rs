@@ -41,3 +41,9 @@ pub const CONNECTION: &str = "Connection";
 
 /// Keep-Alive header - provides parameters for persistent connections.
 pub const KEEP_ALIVE: &str = "Keep-Alive";
+
+/// Server header - identifies the server software.
+pub const SERVER: &str = "Server";
+
+/// User-Agent header - identifies the client software.
+pub const USER_AGENT: &str = "User-Agent";
