@@ -23,3 +23,14 @@ impl Default for HttpVersion {
         HttpVersion::Http11
     }
 }
+
+impl fmt::Display for HttpVersion {
+    /// Formats the version as it appears in request/status lines.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            HttpVersion::Http10 => f.write_str("HTTP/1.0"),
+            HttpVersion::Http11 => f.write_str("HTTP/1.1"),
+            HttpVersion::Http2 => f.write_str("HTTP/2"),
+        }
+    }
+}
