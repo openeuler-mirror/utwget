@@ -137,3 +137,59 @@ pub fn parse_header_line(line: &str) -> Option<(String, String)> {
     let value = line[colon_idx + 1..].trim().to_string();
     Some((key, value))
 }
+
+/// Parses an HTTP status line into its components.
+///
+/// Status lines have the format `HTTP/1.1 200 OK`.
+///
+/// # Arguments
+///
+/// * `line` - The status line to parse (may include trailing CRLF).
+///
+/// # Returns
+///
+/// `Some((version, status_code, reason))` if the line is valid, `None` otherwise.
+///
+/// # Example
+///
+/// ```
+/// use ut_http::headers::parse_status_line;
+///
+/// let (version, code, reason) = parse_status_line("HTTP/1.1 200 OK\r\n").unwrap();
+/// assert_eq!(version, "HTTP/1.1");
+/// assert_eq!(code, 200);
+/// assert_eq!(reason, "OK");
+/// ```
+pub fn parse_status_line(line: &str) -> Option<(String, u16, String)> {
+    let line = line.trim_end_matches(|c| c == '\r' || c == '\n');
+    let space_idx = line.find(' ')?;
+    let version = line[..space_idx].to_string();
+    let rest = &line[space_idx + 1..];
+    let next_space = rest.find(' ')?;
+    let status_code: u16 = rest[..next_space].parse().ok()?;
+    let reason = rest[next_space + 1..].to_string();
+    Some((version, status_code, reason))
+}
+
+/// Formats a header key-value pair as an HTTP header line.
+///
+/// # Arguments
+///
+/// * `key` - The header name.
+/// * `value` - The header value.
+///
+/// # Returns
+///
+/// A string in the format `Key: Value\r\n`.
+///
+/// # Example
+///
+/// ```
+/// use ut_http::headers::format_header_line;
+///
+/// let line = format_header_line("Host", "example.com");
+/// assert_eq!(line, "Host: example.com\r\n");
+/// ```
+pub fn format_header_line(key: &str, value: &str) -> String {
+    format!("{}: {}\r\n", key, value)
+}
