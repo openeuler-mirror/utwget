@@ -107,3 +107,33 @@ pub const X_FORWARDED_FOR: &str = "X-Forwarded-For";
 
 /// Strict-Transport-Security header - enforces HTTPS connections.
 pub const STRICT_TRANSPORT_SECURITY: &str = "Strict-Transport-Security";
+
+/// Parses a single HTTP header line into key-value pair.
+///
+/// Header lines have the format `Key: Value`. Leading and trailing whitespace
+/// around both key and value is trimmed.
+///
+/// # Arguments
+///
+/// * `line` - The header line to parse (may include trailing CRLF).
+///
+/// # Returns
+///
+/// `Some((key, value))` if the line is a valid header, `None` if no colon found.
+///
+/// # Example
+///
+/// ```
+/// use ut_http::headers::parse_header_line;
+///
+/// let (key, value) = parse_header_line("Content-Type: text/html\r\n").unwrap();
+/// assert_eq!(key, "Content-Type");
+/// assert_eq!(value, "text/html");
+/// ```
+pub fn parse_header_line(line: &str) -> Option<(String, String)> {
+    let line = line.trim_end_matches(|c| c == '\r' || c == '\n');
+    let colon_idx = line.find(':')?;
+    let key = line[..colon_idx].trim().to_string();
+    let value = line[colon_idx + 1..].trim().to_string();
+    Some((key, value))
+}
