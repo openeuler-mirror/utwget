@@ -503,19 +503,22 @@ impl From<Vec<(String, String)>> for HeaderMap {
 /// assert_eq!(resp.status_code, 200);
 /// ```
 pub fn parse_response_head(data: &[u8]) -> Option<HttpResponse> {
-    let text = std::str::from_utf8(data).ok()?;
-    let mut lines = text.split("\r\n");
-    let status_line = lines.next()?;
+    let mut lines = data.split(|b| *b == b'\n');
+    let status_line = std::str::from_utf8(lines.next()?).ok()?;
 
     let (version, status_code, reason) = headers::parse_status_line(status_line)?;
 
     let mut resp = HttpResponse::new(version, status_code, reason);
 
     for line in lines {
+        // Header names are always ASCII per RFC 7230; values may contain
+        // arbitrary bytes. Decode each line leniently so non-UTF-8 values
+        // (e.g. Latin-1 filenames) do not fail the whole response parse.
+        let line = String::from_utf8_lossy(&line[..line.len().saturating_sub(1)]);
         if line.is_empty() {
             break;
         }
-        if let Some((key, value)) = headers::parse_header_line(line) {
+        if let Some((key, value)) = headers::parse_header_line(&line) {
             resp.headers.insert(key, value);
         }
     }
