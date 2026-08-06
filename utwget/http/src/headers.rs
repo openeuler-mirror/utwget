@@ -101,3 +101,9 @@ pub const CONTENT_RANGE: &str = "Content-Range";
 
 /// Vary header - indicates which headers affect the response representation.
 pub const VARY: &str = "Vary";
+
+/// X-Forwarded-For header - identifies the original client IP through proxies.
+pub const X_FORWARDED_FOR: &str = "X-Forwarded-For";
+
+/// Strict-Transport-Security header - enforces HTTPS connections.
+pub const STRICT_TRANSPORT_SECURITY: &str = "Strict-Transport-Security";
