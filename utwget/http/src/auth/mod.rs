@@ -251,7 +251,15 @@ fn parse_auth_params(input: &str) -> (Vec<(String, String)>, &str) {
         }
 
         let key_end = rest.find('=').unwrap_or(rest.len());
-        let key = rest[..key_end].trim().to_string();
+        let key = rest[..key_end].trim();
+        // A key containing whitespace means we have reached the next scheme
+        // (e.g. "Digest realm=..." after "Basic realm=..."), not a parameter:
+        // parameter keys never contain whitespace. Stop so the caller can
+        // parse the next challenge.
+        if key.contains(char::is_whitespace) {
+            break;
+        }
+        let key = key.to_string();
         rest = &rest[key_end..];
 
         if rest.is_empty() || !rest.starts_with('=') {
