@@ -2048,7 +2048,28 @@ fn read_until_eof<R: Read, W: Write>(
 
 /// Reads only the HTTP response head (status line + headers), returning any
 /// leftover body bytes that were read together with the headers.
+///
+/// Informational (1xx) interim responses such as `100 Continue` are skipped,
+/// matching wget's behavior, so the caller only ever sees a final response.
 fn read_response_head<R: Read>(
+    reader: &mut R,
+) -> Result<(HttpResponse, Vec<u8>), RetrieveError> {
+    loop {
+        let (response, leftover) = read_one_response_head(reader)?;
+        if response.is_informational() {
+            debug!(
+                "skipping informational response: {} {}",
+                response.status_code, response.reason
+            );
+            continue;
+        }
+        return Ok((response, leftover));
+    }
+}
+
+/// Reads a single response head (status line + headers), returning any
+/// leftover body bytes that were read together with the headers.
+fn read_one_response_head<R: Read>(
     reader: &mut R,
 ) -> Result<(HttpResponse, Vec<u8>), RetrieveError> {
     let mut buf: Vec<u8> = Vec::with_capacity(8192);
