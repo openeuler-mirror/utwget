@@ -59,3 +59,9 @@ pub const ACCEPT_LANGUAGE: &str = "Accept-Language";
 
 /// Accept-Encoding header - specifies acceptable content encodings.
 pub const ACCEPT_ENCODING: &str = "Accept-Encoding";
+
+/// Range header - requests a specific range of bytes from the resource.
+pub const RANGE: &str = "Range";
+
+/// If-Modified-Since header - makes a request conditional on modification.
+pub const IF_MODIFIED_SINCE: &str = "If-Modified-Since";
