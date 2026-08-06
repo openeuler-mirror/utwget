@@ -801,14 +801,67 @@ impl Retriever {
         }
 
         // Handle --start-pos: use configured start position or computed resume position
-        let effective_resume_pos = self.config.start_position.unwrap_or(state.resume_position);
+        let mut effective_resume_pos = self.config.start_position.unwrap_or(state.resume_position);
         state.resume_position = effective_resume_pos;
 
+        // Validate the resume offset against the actual response.
+        //
+        // - 416 Range Not Satisfiable: the local file already covers the
+        //   requested range (wget treats this as "file already fully
+        //   retrieved; nothing to do"). Never write the 416 body to the file.
+        if response.status_code == 416 {
+            self.progress.finish(ut_progress::FinishStatus::NotModified);
+            let result = BodyResult {
+                bytes_read: 0,
+                elapsed: start.elapsed(),
+                local_file: (!self.config.delete_after).then(|| output_path.to_path_buf()),
+            };
+            return Ok(RetrieveOutcome::Success(result));
+        }
+        // - 200 (server ignored our Range): the response is the full entity.
+        //   If the local file already has that many bytes it is complete;
+        //   otherwise restart from scratch instead of appending the full
+        //   body to the partial file (which would corrupt it).
+        else if effective_resume_pos > 0 && response.status_code == 200 {
+            let remote_len = response.content_length();
+            let complete = remote_len.map(|len| len == effective_resume_pos).unwrap_or(false);
+            if !complete {
+                warn!(
+                    "server ignored Range request, restarting download of {} from scratch",
+                    output_path.display()
+                );
+                effective_resume_pos = 0;
+                state.resume_position = 0;
+            } else {
+                self.progress.finish(ut_progress::FinishStatus::AlreadyExists);
+                let result = BodyResult {
+                    bytes_read: 0,
+                    elapsed: start.elapsed(),
+                    local_file: if self.config.delete_after { None } else { Some(output_path.to_path_buf()) },
+                };
+                return Ok(RetrieveOutcome::Success(result));
+            }
+        }
+        // - 206 (Partial Content): verify the server honored our exact offset.
+        //   If Content-Range does not start where we asked, restart from scratch.
+        else if effective_resume_pos > 0 && response.status_code == 206 {
+            let server_start = response.content_range_start();
+            if server_start != Some(effective_resume_pos) {
+                warn!(
+                    "server returned Content-Range {:?}, requested resume from {}; restarting from scratch",
+                    server_start, effective_resume_pos
+                );
+                effective_resume_pos = 0;
+                state.resume_position = 0;
+            }
+        }
+
+        let resume_for_open = effective_resume_pos;
         let file = OpenOptions::new()
             .create(true)
             .write(true)
-            .truncate(effective_resume_pos == 0)
-            .append(effective_resume_pos > 0)
+            .truncate(resume_for_open == 0)
+            .append(resume_for_open > 0)
             .open(&output_path)
             .map_err(RetrieveError::Io)?;
 
