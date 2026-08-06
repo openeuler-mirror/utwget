@@ -178,6 +178,17 @@ impl App {
     /// # Returns
     /// A configured `App` instance, or a `WgetError` if construction fails.
     pub fn new(config: ut_core::Config) -> Result<Self, WgetError> {
+        // --crl-file and --pinnedpubkey are accepted for wget compatibility,
+        // but the current TLS backend (rustls) does not implement CRL
+        // verification or public-key pinning. Warn loudly so users are not
+        // misled into believing the options are enforced.
+        if config.tls.crl_file.is_some() {
+            eprintln!("utwget: warning: --crl-file is accepted but not implemented; certificate revocation list is ignored");
+        }
+        if config.tls.pinned_pubkey.is_some() {
+            eprintln!("utwget: warning: --pinnedpubkey is accepted but not implemented; public-key pinning is ignored");
+        }
+
         let config = Arc::new(config);
 
         let is_interactive = io::stdout().is_terminal();
