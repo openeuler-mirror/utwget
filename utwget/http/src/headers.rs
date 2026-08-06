@@ -29,3 +29,9 @@ pub const PROXY_AUTHENTICATE: &str = "Proxy-Authenticate";
 
 /// Last-Modified header - indicates the last modification date of the resource.
 pub const LAST_MODIFIED: &str = "Last-Modified";
+
+/// ETag header - provides an identifier for a specific version of a resource.
+pub const ETAG: &str = "ETag";
+
+/// Accept-Ranges header - indicates support for range requests.
+pub const ACCEPT_RANGES: &str = "Accept-Ranges";
