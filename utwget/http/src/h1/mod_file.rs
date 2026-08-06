@@ -30,8 +30,8 @@ impl H1Codec {
     /// # Example
     ///
     /// ```ignore
-    /// use utwget_http::h1::H1Codec;
-    /// use utwget_http::request::{HttpRequest, HttpMethod};
+    /// use ut_http::h1::H1Codec;
+    /// use ut_http::request::{HttpRequest, HttpMethod};
     ///
     /// let req = HttpRequest::new(HttpMethod::Get, "/".into(), "example.com".into());
     /// H1Codec::send_request(&mut transport, &req)?;
@@ -64,7 +64,7 @@ impl H1Codec {
     /// # Example
     ///
     /// ```ignore
-    /// use utwget_http::h1::H1Codec;
+    /// use ut_http::h1::H1Codec;
     ///
     /// let response = H1Codec::read_response_head(&mut transport)?;
     /// println!("Status: {}", response.status_code);

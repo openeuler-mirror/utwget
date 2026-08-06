@@ -24,7 +24,7 @@ use super::{AddressFamily, DnsError, DnsResolver};
 /// # Example
 ///
 /// ```
-/// use utwget_net::dns::{DnsResolver, StdResolver};
+/// use ut_net::dns::{DnsResolver, StdResolver};
 /// use ut_core::AddressFamily;
 /// use std::time::Duration;
 ///
@@ -39,7 +39,7 @@ impl StdResolver {
     /// # Example
     ///
     /// ```
-    /// use utwget_net::dns::StdResolver;
+    /// use ut_net::dns::StdResolver;
     ///
     /// let resolver = StdResolver::new();
     /// ```

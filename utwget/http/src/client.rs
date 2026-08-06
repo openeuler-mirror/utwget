@@ -423,7 +423,7 @@ fn make_body_reader(
 /// # Example
 ///
 /// ```ignore
-/// use utwget_http::client::{HttpClient, FetchOptions};
+/// use ut_http::client::{HttpClient, FetchOptions};
 /// use ut_core::config::Config;
 /// use std::sync::Arc;
 ///

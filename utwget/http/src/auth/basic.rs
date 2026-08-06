@@ -21,8 +21,8 @@ use base64::engine::general_purpose::STANDARD;
 /// # Example
 ///
 /// ```ignore
-/// use utwget_http::auth::basic::BasicAuthenticator;
-/// use utwget_http::auth::{Authenticator, AuthChallenge, AuthScheme};
+/// use ut_http::auth::basic::BasicAuthenticator;
+/// use ut_http::auth::{Authenticator, AuthChallenge, AuthScheme};
 ///
 /// let mut auth = BasicAuthenticator;
 /// let challenge = AuthChallenge {

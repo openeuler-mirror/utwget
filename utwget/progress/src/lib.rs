@@ -5,6 +5,10 @@ pub mod verbose;
 
 pub use ut_core::ProgressStyle;
 
+pub use verbose::VerboseProgress;
+pub use dot::DotProgress;
+pub use silent::SilentProgress;
+
 use std::time::Duration;
 
 pub trait ProgressDisplay: Send {

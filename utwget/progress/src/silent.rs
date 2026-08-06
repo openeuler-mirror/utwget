@@ -24,8 +24,8 @@ use std::time::Duration;
 /// # Example
 ///
 /// ```
-/// use utwget_progress::SilentProgress;
-/// use utwget_progress::ProgressDisplay;
+/// use ut_progress::SilentProgress;
+/// use ut_progress::ProgressDisplay;
 ///
 /// let mut progress = SilentProgress;
 /// progress.begin("http://example.com", Some(1000), None);

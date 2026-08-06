@@ -59,7 +59,7 @@ impl HttpVersion {
 /// # Example
 ///
 /// ```ignore
-/// use utwget_http::request::{HttpRequest, HttpVersion, HttpMethod};
+/// use ut_http::request::{HttpRequest, HttpVersion, HttpMethod};
 ///
 /// let mut req = HttpRequest::new(
 ///     HttpMethod::Get,

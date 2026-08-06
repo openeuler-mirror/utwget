@@ -33,7 +33,7 @@
 //!
 //! ```no_run
 //! use std::path::Path;
-//! use utwget::cli::wgetrc::{WgetrcParser, WgetrcCommand};
+//! use utwget_cli::wgetrc::{WgetrcParser, WgetrcCommand};
 //!
 //! // Parse a wgetrc file
 //! let commands = WgetrcParser::parse(Path::new("/etc/wgetrc"))?;
@@ -104,6 +104,7 @@ impl WgetrcParser {
     ///
     /// ```no_run
     /// use std::path::Path;
+    /// use utwget_cli::wgetrc::WgetrcParser;
     /// let commands = WgetrcParser::parse(Path::new("/etc/wgetrc"))?;
     /// # Ok::<(), ut_core::error::WgetError>(())
     /// ```

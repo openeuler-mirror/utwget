@@ -12,7 +12,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use utwget_net::transport::{Transport, TcpTransport, Interest};
+//! use ut_net::transport::{Transport, TcpTransport, Interest};
 //! use std::time::Duration;
 //!
 //! let mut transport = TcpTransport::new(tcp_stream);
@@ -168,7 +168,7 @@ impl Interest {
 ///
 /// ```ignore
 /// use std::net::TcpStream;
-/// use utwget_net::transport::TcpTransport;
+/// use ut_net::transport::TcpTransport;
 ///
 /// let stream = TcpStream::connect("example.com:80")?;
 /// let transport = TcpTransport::new(stream);
@@ -192,7 +192,7 @@ impl TcpTransport {
     ///
     /// ```ignore
     /// use std::net::TcpStream;
-    /// use utwget_net::transport::TcpTransport;
+    /// use ut_net::transport::TcpTransport;
     ///
     /// let stream = TcpStream::connect("example.com:80")?;
     /// let transport = TcpTransport::new(stream);

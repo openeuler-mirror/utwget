@@ -43,6 +43,7 @@ pub struct SpiderResult {
 /// use std::sync::Arc;
 ///
 /// let config = Arc::new(Config::default());
+/// let progress = ut_progress::create_progress_display(ut_core::ProgressStyle::Silent, true);
 /// let mut spider = Spider::new(config, progress);
 /// let result = spider.spider_and_report("http://example.com/");
 /// ```

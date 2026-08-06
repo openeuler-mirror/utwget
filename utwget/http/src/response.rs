@@ -13,7 +13,7 @@ use crate::headers;
 /// # Example
 ///
 /// ```ignore
-/// use utwget_http::response::HttpResponse;
+/// use ut_http::response::HttpResponse;
 ///
 /// let resp = HttpResponse::new(
 ///     "HTTP/1.1".to_string(),

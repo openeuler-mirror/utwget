@@ -39,7 +39,7 @@ impl StdResolver {
     /// # Example
     ///
     /// ```
-    /// use utwget_net::dns::std::StdResolver;
+    /// use ut_net::dns::std::StdResolver;
     ///
     /// let resolver = StdResolver::new();
     /// ```

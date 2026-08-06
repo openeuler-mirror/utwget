@@ -115,8 +115,8 @@ fn sha256_hex(data: &[u8]) -> Result<String, AuthError> {
 /// # Example
 ///
 /// ```ignore
-/// use utwget_http::auth::digest::DigestAuthenticator;
-/// use utwget_http::auth::{Authenticator, AuthChallenge, AuthScheme};
+/// use ut_http::auth::digest::DigestAuthenticator;
+/// use ut_http::auth::{Authenticator, AuthChallenge, AuthScheme};
 ///
 /// let mut auth = DigestAuthenticator::new();
 /// // After receiving a 401 with WWW-Authenticate: Digest ...

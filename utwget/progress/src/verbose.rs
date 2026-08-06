@@ -42,8 +42,8 @@ use std::time::{Duration, Instant};
 /// # Example
 ///
 /// ```
-/// use utwget_progress::VerboseProgress;
-/// use utwget_progress::ProgressDisplay;
+/// use ut_progress::VerboseProgress;
+/// use ut_progress::ProgressDisplay;
 ///
 /// let mut progress = VerboseProgress::new();
 /// progress.set_content_type("application/octet-stream");
@@ -72,7 +72,7 @@ impl VerboseProgress {
     /// # Example
     ///
     /// ```
-    /// use utwget_progress::VerboseProgress;
+    /// use ut_progress::VerboseProgress;
     /// let progress = VerboseProgress::new();
     /// ```
     pub fn new() -> Self {
@@ -99,7 +99,7 @@ impl VerboseProgress {
     /// # Example
     ///
     /// ```
-    /// use utwget_progress::VerboseProgress;
+    /// use ut_progress::VerboseProgress;
     /// let mut progress = VerboseProgress::new();
     /// progress.set_content_type("application/json");
     /// ```

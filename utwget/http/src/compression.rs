@@ -23,7 +23,7 @@ use std::io::{self, Read};
 /// # Example
 ///
 /// ```ignore
-/// use utwget_http::compression::Decompressor;
+/// use ut_http::compression::Decompressor;
 /// use std::io::Cursor;
 ///
 /// let compressed_data = Cursor::new(gzip_bytes);
