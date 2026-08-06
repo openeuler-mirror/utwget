@@ -35,9 +35,9 @@ use crate::types::{
     ResponseMeta, RetrieveError, RetrieveOutcome,
 };
 use crate::utils::{
-    adjust_file_extension, apply_file_timestamp, build_proxy_request, find_next_backup,
-    is_retryable, is_url_proxied, parse_content_disposition, resolve_proxy, rotate_backups,
-    sanitize_filename, serialize_headers,
+    adjust_file_extension, apply_file_timestamp, build_proxy_request, is_retryable,
+    is_url_proxied, parse_content_disposition, resolve_proxy, rotate_backups, sanitize_filename,
+    serialize_headers,
 };
 
 #[cfg(feature = "warc")]
@@ -359,7 +359,6 @@ impl Retriever {
             }
         }
 
-        let display_url = url.display();
         info!("--{}", url.display_safe());
 
         let mut effective_url = match self.resolve_effective_url(url) {
@@ -384,7 +383,7 @@ impl Retriever {
             }
         }
 
-        let mut output_path = self.determine_output_path(&effective_url)?;
+        let output_path = self.determine_output_path(&effective_url)?;
 
         // Debug: log output_path
         debug!("determine_output_path returned: {:?}", output_path);
@@ -394,15 +393,15 @@ impl Retriever {
             return Ok(RetrieveOutcome::SpiderOnly);
         }
 
-        // When file exists and will be overwritten, find next available backup name
-        // (file.1, file.2, etc.) and download there instead — matches GNU wget behavior.
+        // When file exists and will be overwritten, rotate the old file into
+        // backups (file -> file.1 -> file.2 -> ... -> file.N) while still
+        // writing the new content to the original path — matches GNU wget
+        // --backups behavior.
         if output_path.exists() {
             let n_backups = self.config.backups.unwrap_or(1);
             if n_backups > 0 {
-                if let Some(backup_path) = find_next_backup(&output_path, n_backups) {
-                    debug!("file exists, downloading to backup: {:?}", backup_path);
-                    output_path = backup_path;
-                }
+                debug!("file exists, rotating backups for: {:?}", output_path);
+                rotate_backups(&output_path, n_backups);
             }
         }
 

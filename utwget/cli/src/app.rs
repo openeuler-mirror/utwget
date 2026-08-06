@@ -976,6 +976,10 @@ fn parse_warc_maxsize(s: &str) -> Option<u64> {
 ///
 /// # Returns
 /// A `ut_core::Config` populated with all user-specified options and defaults.
+///
+/// Used by integration tests in `tests/integration_tests/`; the library
+/// itself builds configs via `main.rs`, so this is allowed-dead externally.
+#[allow(dead_code)]
 pub fn build_config(args: &Args) -> ut_core::Config {
     let mut config = ut_core::Config::default();
     apply_args(&mut config, args);
