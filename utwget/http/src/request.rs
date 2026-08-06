@@ -16,3 +16,10 @@ pub enum HttpVersion {
     /// HTTP/2 - binary protocol with multiplexing, header compression, and server push.
     Http2,
 }
+
+impl Default for HttpVersion {
+    /// Returns HTTP/1.1 as the default version.
+    fn default() -> Self {
+        HttpVersion::Http11
+    }
+}
