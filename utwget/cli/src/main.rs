@@ -91,8 +91,8 @@ fn rearrange_args() -> Vec<String> {
         "http-proxy", "https-proxy", "ftp-proxy", "no-proxy", "bind-address",
         "certificate", "private-key", "ca-certificate", "ca-directory", "crl-file",
         "pinnedpubkey", "secure-protocol", "ciphers", "ftp-user", "ftp-password",
-        "load-cookies", "save-cookies", "hsts-file", "warc-file", "warc-maxsize",
-        "warc-cdx", "warc-dedup", "warc-temp-dir", "warc-header", "referer",
+        "load-cookies", "save-cookies", "hsts-file", "warc-file", "warc-max-size",
+        "warc-cdx", "warc-dedup", "warc-tempdir", "warc-header", "referer",
         "local-encoding", "remote-encoding", "metalink", "default-page",
         "certificate-type", "private-key-type", "regex-type", "restrict-file-names",
         "use-askpass",
@@ -552,13 +552,13 @@ fn print_wget_help() {
 
     println!("{}:", t("utwget.help_warc_options"));
     println!("       --warc-file=FILENAME        {}", t("utwget.help_warc_file"));
-    println!("       --warc-maxsize=NUMBER       {}", t("utwget.help_warc_maxsize"));
+    println!("       --warc-max-size=NUMBER      {}", t("utwget.help_warc_maxsize"));
     println!("       --warc-cdx                  {}", t("utwget.help_warc_cdx"));
     println!("       --warc-dedup=URL            {}", t("utwget.help_warc_dedup"));
     println!("       --warc-compression          {}", t("utwget.help_warc_compression"));
     println!("       --warc-digests              {}", t("utwget.help_warc_digests"));
     println!("       --warc-keep-log             {}", t("utwget.help_warc_keep_log"));
-    println!("       --warc-temp-dir=DIR         {}", t("utwget.help_warc_temp_dir"));
+    println!("       --warc-tempdir=DIR          {}", t("utwget.help_warc_temp_dir"));
     println!("       --warc-header=STRING        {}", t("utwget.help_warc_header"));
     println!();
 
