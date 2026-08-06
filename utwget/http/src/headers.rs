@@ -17,3 +17,9 @@ pub const TRANSFER_ENCODING: &str = "Transfer-Encoding";
 
 /// Location header - used in redirects to specify the target URL.
 pub const LOCATION: &str = "Location";
+
+/// Set-Cookie header - used by servers to send cookies to the client.
+pub const SET_COOKIE: &str = "Set-Cookie";
+
+/// WWW-Authenticate header - indicates authentication scheme and parameters.
+pub const WWW_AUTHENTICATE: &str = "WWW-Authenticate";
