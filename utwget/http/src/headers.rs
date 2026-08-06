@@ -47,3 +47,9 @@ pub const SERVER: &str = "Server";
 
 /// User-Agent header - identifies the client software.
 pub const USER_AGENT: &str = "User-Agent";
+
+/// Host header - specifies the domain name and port of the server.
+pub const HOST: &str = "Host";
+
+/// Accept header - specifies media types the client can process.
+pub const ACCEPT: &str = "Accept";
