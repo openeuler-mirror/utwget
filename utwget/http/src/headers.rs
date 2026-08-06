@@ -35,3 +35,9 @@ pub const ETAG: &str = "ETag";
 
 /// Accept-Ranges header - indicates support for range requests.
 pub const ACCEPT_RANGES: &str = "Accept-Ranges";
+
+/// Connection header - controls connection behavior (keep-alive, close).
+pub const CONNECTION: &str = "Connection";
+
+/// Keep-Alive header - provides parameters for persistent connections.
+pub const KEEP_ALIVE: &str = "Keep-Alive";
