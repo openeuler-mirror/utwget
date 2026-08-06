@@ -599,9 +599,9 @@ pub struct Args {
     #[arg(long = "warc-file")]
     pub warc_file: Option<String>,
 
-    /// Maximum size of WARC files in bytes.
+    /// Maximum size of WARC files (e.g. 100K, 2.5G, inf).
     #[arg(long = "warc-maxsize")]
-    pub warc_maxsize: Option<u64>,
+    pub warc_maxsize: Option<String>,
 
     /// Write CDX index files for WARC.
     #[arg(long = "warc-cdx")]

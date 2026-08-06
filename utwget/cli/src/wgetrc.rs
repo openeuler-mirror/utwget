@@ -474,7 +474,7 @@ impl WgetrcParser {
                 config.warc.filename = Some(value.to_string());
             }
             "warc_maxsize" | "warc-maxsize" => {
-                config.warc.max_size = value.parse().ok();
+                config.warc.max_size = parse_warc_maxsize(value);
             }
             "prefer_family" | "prefer-family" => {
                 config.prefer_family = parse_address_family(value)?;
@@ -753,6 +753,18 @@ fn parse_secure_protocol(s: &str) -> Result<ut_core::SecureProtocol, ConfigError
             reason: format!("unknown value: {}", other),
         }),
     }
+}
+
+/// Parse a WARC max-size value with wget-compatible suffixes.
+///
+/// Accepts plain byte counts and values with K/M/G/T suffixes (e.g.
+/// "100K", "2.5G"). The special value "inf" means unlimited, which
+/// wget represents as 0.
+fn parse_warc_maxsize(s: &str) -> Option<u64> {
+    if s.trim().eq_ignore_ascii_case("inf") {
+        return Some(0);
+    }
+    ut_core::utils::parse_size_string(s)
 }
 
 /// Parse a duration string into an optional `Duration`.

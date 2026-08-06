@@ -960,6 +960,18 @@ fn safe_duration_f64(secs: f64) -> Option<Duration> {
     }
 }
 
+/// Parse a WARC max-size value with wget-compatible suffixes.
+///
+/// Accepts plain byte counts and values with K/M/G/T suffixes (e.g.
+/// "100K", "2.5G"). The special value "inf" means unlimited, which
+/// wget represents as 0.
+fn parse_warc_maxsize(s: &str) -> Option<u64> {
+    if s.trim().eq_ignore_ascii_case("inf") {
+        return Some(0);
+    }
+    ut_core::utils::parse_size_string(s)
+}
+
 /// * `args` — The parsed command-line arguments.
 ///
 /// # Returns
@@ -1270,7 +1282,7 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
     if args.warc_file.is_some() || args.warc_cdx || args.warc_dedup || args.warc_compression || args.warc_digests {
         config.warc.enabled = true;
         config.warc.filename = args.warc_file.clone();
-        config.warc.max_size = args.warc_maxsize;
+        config.warc.max_size = args.warc_maxsize.as_deref().map(parse_warc_maxsize).flatten();
         config.warc.cdx = args.warc_cdx;
         config.warc.keep_log = args.warc_keep_log;
         config.warc.compression = args.warc_compression;
