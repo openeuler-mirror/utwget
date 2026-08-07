@@ -158,3 +158,276 @@ impl HttpResponse {
         }
     }
 }
+
+/// A case-insensitive map for HTTP headers.
+///
+/// Headers are stored in order and can be looked up case-insensitively.
+/// Multiple values for the same header name are preserved.
+#[derive(Debug, Clone)]
+pub struct HeaderMap(Vec<(String, String)>);
+
+impl HeaderMap {
+    /// Creates an empty header map.
+    ///
+    /// # Returns
+    ///
+    /// A new `HeaderMap` with no headers.
+    pub fn new() -> Self {
+        HeaderMap(Vec::new())
+    }
+
+    /// Creates an empty header map with pre-allocated capacity.
+    ///
+    /// # Arguments
+    ///
+    /// * `capacity` - The number of headers to pre-allocate space for.
+    ///
+    /// # Returns
+    ///
+    /// A new `HeaderMap` with the given capacity.
+    pub fn with_capacity(capacity: usize) -> Self {
+        HeaderMap(Vec::with_capacity(capacity))
+    }
+
+    /// Adds a header to the map.
+    ///
+    /// Unlike a standard map, this allows duplicate header names.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The header name.
+    /// * `value` - The header value.
+    pub fn insert(&mut self, key: impl Into<String>, value: impl Into<String>) {
+        self.0.push((key.into(), value.into()));
+    }
+
+    /// Gets a header value by name (case-insensitive).
+    ///
+    /// Returns the first matching header if multiple exist.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The header name to look up.
+    ///
+    /// # Returns
+    ///
+    /// The header value, or `None` if not found.
+    pub fn get(&self, key: &str) -> Option<&str> {
+        self.0
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(key))
+            .map(|(_, v)| v.as_str())
+    }
+
+    /// Gets all values for a header name (case-insensitive).
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The header name to look up.
+    ///
+    /// # Returns
+    ///
+    /// A vector of all matching header values.
+    pub fn get_all(&self, key: &str) -> Vec<&str> {
+        self.0
+            .iter()
+            .filter(|(k, _)| k.eq_ignore_ascii_case(key))
+            .map(|(_, v)| v.as_str())
+            .collect()
+    }
+
+    /// Checks if a header exists (case-insensitive).
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The header name to check.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the header exists.
+    pub fn contains(&self, key: &str) -> bool {
+        self.0.iter().any(|(k, _)| k.eq_ignore_ascii_case(key))
+    }
+
+    /// Removes all headers with the given name (case-insensitive).
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The header name to remove.
+    pub fn remove(&mut self, key: &str) {
+        self.0.retain(|(k, _)| !k.eq_ignore_ascii_case(key));
+    }
+
+    /// Returns whether the Transfer-Encoding header includes "chunked".
+    ///
+    /// # Returns
+    ///
+    /// `true` if chunked encoding is specified.
+    pub fn is_chunked(&self) -> bool {
+        self.get(headers::TRANSFER_ENCODING)
+            .map(|v| v.split(',').any(|s| s.trim().eq_ignore_ascii_case("chunked")))
+            .unwrap_or(false)
+    }
+
+    /// Returns whether the Content-Encoding header includes "gzip".
+    ///
+    /// # Returns
+    ///
+    /// `true` if gzip encoding is specified.
+    pub fn is_gzip(&self) -> bool {
+        self.get(headers::CONTENT_ENCODING)
+            .map(|v| {
+                v.split(',')
+                    .any(|s| s.trim().eq_ignore_ascii_case("gzip") || s.trim().eq_ignore_ascii_case("x-gzip"))
+            })
+            .unwrap_or(false)
+    }
+
+    /// Returns whether the Content-Encoding header includes "deflate".
+    ///
+    /// # Returns
+    ///
+    /// `true` if deflate encoding is specified.
+    pub fn is_deflate(&self) -> bool {
+        self.get(headers::CONTENT_ENCODING)
+            .map(|v| v.split(',').any(|s| s.trim().eq_ignore_ascii_case("deflate")))
+            .unwrap_or(false)
+    }
+
+    /// Returns the Content-Length header value as a number.
+    ///
+    /// # Returns
+    ///
+    /// The content length in bytes, or `None` if missing or invalid.
+    pub fn content_length(&self) -> Option<u64> {
+        self.get(headers::CONTENT_LENGTH).and_then(|v| v.parse::<u64>().ok())
+    }
+
+    /// Returns the Content-Type header value.
+    ///
+    /// # Returns
+    ///
+    /// The content type, or `None` if not present.
+    pub fn content_type(&self) -> Option<&str> {
+        self.get(headers::CONTENT_TYPE)
+    }
+
+    /// Returns the Last-Modified header value.
+    ///
+    /// # Returns
+    ///
+    /// The last modified date string, or `None` if not present.
+    pub fn last_modified(&self) -> Option<&str> {
+        self.get(headers::LAST_MODIFIED)
+    }
+
+    /// Returns the ETag header value.
+    ///
+    /// # Returns
+    ///
+    /// The entity tag, or `None` if not present.
+    pub fn etag(&self) -> Option<&str> {
+        self.get(headers::ETAG)
+    }
+
+    /// Returns the Server header value.
+    ///
+    /// # Returns
+    ///
+    /// The server identification string, or `None` if not present.
+    pub fn server(&self) -> Option<&str> {
+        self.get(headers::SERVER)
+    }
+
+    /// Returns whether the server accepts byte range requests.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the Accept-Ranges header is "bytes".
+    pub fn accept_ranges(&self) -> bool {
+        self.get(headers::ACCEPT_RANGES)
+            .map(|v| v.eq_ignore_ascii_case("bytes"))
+            .unwrap_or(false)
+    }
+
+    /// Returns the Location header value.
+    ///
+    /// # Returns
+    ///
+    /// The redirect location URL, or `None` if not present.
+    pub fn location(&self) -> Option<&str> {
+        self.get(headers::LOCATION)
+    }
+
+    /// Returns the Content-Disposition header value.
+    ///
+    /// # Returns
+    ///
+    /// The content disposition string, or `None` if not present.
+    pub fn content_disposition(&self) -> Option<&str> {
+        self.get(headers::CONTENT_DISPOSITION)
+    }
+
+    /// Returns the Retry-After header value as seconds.
+    ///
+    /// # Returns
+    ///
+    /// The retry delay in seconds, or `None` if missing or invalid.
+    pub fn retry_after(&self) -> Option<u64> {
+        self.get(headers::RETRY_AFTER).and_then(|v| v.parse::<u64>().ok())
+    }
+
+    /// Returns all Set-Cookie header values.
+    ///
+    /// # Returns
+    ///
+    /// A vector of all cookie strings.
+    pub fn set_cookies(&self) -> Vec<&str> {
+        self.get_all(headers::SET_COOKIE)
+    }
+
+    /// Returns all WWW-Authenticate header values.
+    ///
+    /// # Returns
+    ///
+    /// A vector of all authentication challenge strings.
+    pub fn www_authenticate(&self) -> Vec<&str> {
+        self.get_all(headers::WWW_AUTHENTICATE)
+    }
+
+    /// Returns all Proxy-Authenticate header values.
+    ///
+    /// # Returns
+    ///
+    /// A vector of all proxy authentication challenge strings.
+    pub fn proxy_authenticate(&self) -> Vec<&str> {
+        self.get_all(headers::PROXY_AUTHENTICATE)
+    }
+
+    /// Returns the Content-Encoding header value.
+    ///
+    /// # Returns
+    ///
+    /// The content encoding string, or `None` if not present.
+    pub fn content_encoding(&self) -> Option<&str> {
+        self.get(headers::CONTENT_ENCODING)
+    }
+
+    /// Returns an iterator over all headers.
+    ///
+    /// # Returns
+    ///
+    /// An iterator yielding `(key, value)` pairs.
+    pub fn iter(&self) -> impl Iterator<Item = &(String, String)> {
+        self.0.iter()
+    }
+
+    /// Consumes the map and returns the underlying vector.
+    ///
+    /// # Returns
+    ///
+    /// The vector of header pairs.
+    pub fn into_inner(self) -> Vec<(String, String)> {
+        self.0
+    }
+}
