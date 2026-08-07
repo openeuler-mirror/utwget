@@ -431,3 +431,10 @@ impl HeaderMap {
         self.0
     }
 }
+
+impl Default for HeaderMap {
+    /// Creates an empty header map.
+    fn default() -> Self {
+        Self::new()
+    }
+}
