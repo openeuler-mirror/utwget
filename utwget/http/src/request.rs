@@ -51,3 +51,37 @@ impl HttpVersion {
         matches!(self, HttpVersion::Http2)
     }
 }
+
+/// Represents an HTTP request ready to be serialized and sent.
+///
+/// Contains the request line (method, path, host), headers, and optional body.
+///
+/// # Example
+///
+/// ```ignore
+/// use utwget_http::request::{HttpRequest, HttpVersion, HttpMethod};
+///
+/// let mut req = HttpRequest::new(
+///     HttpMethod::Get,
+///     "/path".to_string(),
+///     "example.com".to_string()
+/// );
+/// req.header("Accept", "*/*");
+///
+/// let bytes = req.serialize().unwrap();
+/// ```
+#[derive(Debug, Clone)]
+pub struct HttpRequest {
+    /// The HTTP method (GET, POST, etc.).
+    pub method: crate::request::HttpMethod,
+    /// The request path including query string.
+    pub path: String,
+    /// The host header value (may include port).
+    pub host: String,
+    /// The HTTP version to use.
+    pub version: HttpVersion,
+    /// The request headers.
+    pub headers: Vec<(String, String)>,
+    /// The request body, if any.
+    pub body: Option<Vec<u8>>,
+}
