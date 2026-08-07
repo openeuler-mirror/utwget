@@ -438,3 +438,10 @@ impl Default for HeaderMap {
         Self::new()
     }
 }
+
+impl From<Vec<(String, String)>> for HeaderMap {
+    /// Creates a header map from a vector of header pairs.
+    fn from(v: Vec<(String, String)>) -> Self {
+        HeaderMap(v)
+    }
+}
