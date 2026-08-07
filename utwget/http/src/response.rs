@@ -445,3 +445,47 @@ impl From<Vec<(String, String)>> for HeaderMap {
         HeaderMap(v)
     }
 }
+
+/// Parses an HTTP response from raw bytes.
+///
+/// The input should contain the status line and all headers,
+/// terminated by a blank line. Any body data after the headers
+/// is ignored.
+///
+/// # Arguments
+///
+/// * `data` - The raw response bytes.
+///
+/// # Returns
+///
+/// The parsed `HttpResponse`, or `None` if parsing fails.
+///
+/// # Example
+///
+/// ```
+/// use ut_http::response::parse_response_head;
+///
+/// let raw = b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n";
+/// let resp = parse_response_head(raw).unwrap();
+/// assert_eq!(resp.status_code, 200);
+/// ```
+pub fn parse_response_head(data: &[u8]) -> Option<HttpResponse> {
+    let text = std::str::from_utf8(data).ok()?;
+    let mut lines = text.split("\r\n");
+    let status_line = lines.next()?;
+
+    let (version, status_code, reason) = headers::parse_status_line(status_line)?;
+
+    let mut resp = HttpResponse::new(version, status_code, reason);
+
+    for line in lines {
+        if line.is_empty() {
+            break;
+        }
+        if let Some((key, value)) = headers::parse_header_line(line) {
+            resp.headers.insert(key, value);
+        }
+    }
+
+    Some(resp)
+}
