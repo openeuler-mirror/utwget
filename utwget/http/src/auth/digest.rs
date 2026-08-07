@@ -154,3 +154,21 @@ fn md5_hex(data: &[u8]) -> String {
 
     h.iter().map(|b| format!("{:02x}", b)).collect()
 }
+
+/// Computes the SHA-256 digest of `data` and returns it as a 64-character lowercase hex string.
+///
+/// Delegates to `ut_core::hash::sha256_reader`.  Falls back to a hexadecimal
+/// representation of the raw bytes on error.
+///
+/// # Arguments
+///
+/// * `data` - The byte slice to hash.
+///
+/// # Returns
+///
+/// A 64-character hex-encoded SHA-256 digest.
+fn sha256_hex(data: &[u8]) -> String {
+    ut_core::hash::sha256_reader(&mut data.as_ref()).unwrap_or_else(|_| {
+        data.iter().map(|b| format!("{:02x}", b)).collect()
+    })
+}
