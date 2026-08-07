@@ -184,3 +184,125 @@ impl HttpRequest {
             .and_then(|v| v.parse::<u64>().ok())
     }
 }
+
+/// Re-export HTTP method from core types.
+pub use ut_core::types::HttpMethod;
+
+/// Builds an HTTP request from a URL and configuration.
+///
+/// This function constructs a complete request with appropriate headers
+/// based on the URL, configuration, and options provided.
+///
+/// # Arguments
+///
+/// * `url` - The parsed URL to request.
+/// * `config` - The configuration for headers and settings.
+/// * `extra_headers` - Additional headers to include.
+/// * `method` - The HTTP method (defaults to GET).
+/// * `body` - The request body, if any.
+/// * `resume_from` - Byte offset for resuming a partial download.
+/// * `if_modified_since` - Conditional request timestamp.
+/// * `if_none_match` - Conditional request ETag.
+/// * `cookies` - Cookie header value.
+/// * `authorization` - Authorization header value.
+///
+/// # Returns
+///
+/// A complete `HttpRequest` ready to send.
+pub fn build_request(
+    url: &ut_core::url::ParsedUrl,
+    config: &ut_core::config::Config,
+    extra_headers: &[(String, String)],
+    method: Option<HttpMethod>,
+    body: Option<Vec<u8>>,
+    resume_from: Option<u64>,
+    if_modified_since: Option<&chrono::DateTime<chrono::Utc>>,
+    if_none_match: Option<&str>,
+    cookies: Option<&str>,
+    authorization: Option<&str>,
+) -> HttpRequest {
+    let method = method.unwrap_or_else(|| {
+        config
+            .http
+            .method
+            .unwrap_or(HttpMethod::Get)
+    });
+
+    let path = url.full_path();
+    let host = if url.port != url.scheme.default_port() {
+        format!("{}:{}", url.host, url.port)
+    } else {
+        url.host.clone()
+    };
+
+    let mut req = HttpRequest::new(method, path, host.clone());
+
+    let user_agent = config
+        .http
+        .user_agent
+        .as_deref()
+        .unwrap_or(concat!("wget-rs/", env!("CARGO_PKG_VERSION")));
+    req.header(crate::headers::USER_AGENT, user_agent);
+
+    // Always add Host header for HTTP/1.1
+    req.header(crate::headers::HOST, host);
+
+    if method == HttpMethod::Get || method == HttpMethod::Head {
+        req.header(crate::headers::ACCEPT, "*/*");
+    }
+
+    #[cfg(feature = "compression")]
+    {
+        req.header(crate::headers::ACCEPT_ENCODING, "gzip, deflate");
+    }
+
+    if let Some(cookie_str) = cookies {
+        req.header(crate::headers::COOKIE, cookie_str);
+    }
+
+    if let Some(auth) = authorization {
+        req.header(crate::headers::AUTHORIZATION, auth);
+    }
+
+    if let Some(pos) = resume_from {
+        req.header(crate::headers::RANGE, format!("bytes={}-", pos));
+    }
+
+    if let Some(dt) = if_modified_since {
+        req.header(
+            crate::headers::IF_MODIFIED_SINCE,
+            dt.format("%a, %d %b %Y %H:%M:%S GMT").to_string(),
+        );
+    }
+
+    if let Some(etag) = if_none_match {
+        req.header(crate::headers::IF_NONE_MATCH, etag);
+    }
+
+    if let Some(ref referer) = config.http.referer {
+        req.header(crate::headers::REFERER, referer);
+    }
+
+    if !config.http.keep_alive {
+        req.header(crate::headers::CONNECTION, "close");
+    }
+
+    if let Some(ref data) = body {
+        if req.get_header("Content-Length").is_none() {
+            req.header(crate::headers::CONTENT_LENGTH, data.len().to_string());
+        }
+        req.body = Some(data.clone());
+    }
+
+    for (key, value) in extra_headers {
+        req.header(key.clone(), value.clone());
+    }
+
+    for h in &config.http.headers {
+        if let Some((k, v)) = crate::headers::parse_header_line(h) {
+            req.header(k, v);
+        }
+    }
+
+    req
+}
