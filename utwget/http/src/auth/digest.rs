@@ -172,3 +172,30 @@ fn sha256_hex(data: &[u8]) -> String {
         data.iter().map(|b| format!("{:02x}", b)).collect()
     })
 }
+
+/// Authenticator that implements HTTP Digest Access Authentication (RFC 7616).
+///
+/// Tracks the nonce count internally to support the `nc` directive required
+/// when `qop` is present.
+///
+/// # Security
+///
+/// Digest authentication is more secure than Basic because it never sends
+/// the password in plaintext. Instead, it sends a hash of the credentials
+/// combined with server-provided nonce values.
+///
+/// # Example
+///
+/// ```ignore
+/// use utwget_http::auth::digest::DigestAuthenticator;
+/// use utwget_http::auth::{Authenticator, AuthChallenge, AuthScheme};
+///
+/// let mut auth = DigestAuthenticator::new();
+/// // After receiving a 401 with WWW-Authenticate: Digest ...
+/// let header = auth.authenticate(&challenge, &creds, "GET", "/path", None);
+/// ```
+pub struct DigestAuthenticator {
+    /// Monotonically increasing counter for the number of requests authenticated
+    /// with this session.  Sent as the `nc` directive in the Authorization header.
+    nonce_count: u32,
+}
