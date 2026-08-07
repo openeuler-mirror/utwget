@@ -320,3 +320,111 @@ impl DigestAuthenticator {
         rand_bytes.iter().map(|b| format!("{:02x}", b)).collect()
     }
 }
+
+impl Authenticator for DigestAuthenticator {
+    /// Builds the `Authorization: Digest ...` header value for the given challenge.
+    ///
+    /// Increments the internal nonce count on each call to ensure monotonic `nc` values.
+    ///
+    /// # Arguments
+    ///
+    /// * `challenge` - The `WWW-Authenticate` challenge from the server.
+    /// * `credentials` - The user's username and password.
+    /// * `request_method` - The HTTP method for the request.
+    /// * `request_uri` - The request URI path.
+    /// * `body` - The request body, used when `qop` is `"auth-int"`.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(Some(header_string))` on success, or an `AuthError`:
+    /// * `AuthError::MissingNonce` — the challenge did not include a nonce.
+    /// * `AuthError::AlgorithmUnsupported` — the algorithm in the challenge is not recognised.
+    fn authenticate(
+        &mut self,
+        challenge: &AuthChallenge,
+        credentials: &ut_core::types::Credentials,
+        request_method: &str,
+        request_uri: &str,
+        body: Option<&[u8]>,
+    ) -> Result<Option<String>, AuthError> {
+        let nonce = challenge
+            .nonce
+            .as_ref()
+            .ok_or(AuthError::MissingNonce)?;
+
+        let algorithm_str = challenge.algorithm.as_deref().unwrap_or("MD5");
+        let algorithm = DigestAlgorithm::from_str(algorithm_str)
+            .ok_or_else(|| AuthError::AlgorithmUnsupported(algorithm_str.to_string()))?;
+
+        self.nonce_count += 1;
+        let nc = self.nonce_count;
+        let cnonce = Self::generate_cnonce();
+
+        let ha1 = self.compute_ha1(algorithm, credentials, nonce, &cnonce);
+
+        let qop_value = challenge.qop.as_ref().and_then(|qops| {
+            qops.split(',')
+                .map(|s| s.trim())
+                .find(|s| *s == "auth-int" || *s == "auth")
+        });
+
+        let response = self.compute_response(
+            algorithm,
+            &ha1,
+            request_method,
+            request_uri,
+            nonce,
+            nc,
+            &cnonce,
+            qop_value,
+            body,
+        );
+
+        let mut parts = Vec::new();
+        parts.push(format!("username=\"{}\"", credentials.username));
+
+        if let Some(ref realm) = challenge.realm {
+            parts.push(format!("realm=\"{}\"", realm));
+        }
+
+        parts.push(format!("nonce=\"{}\"", nonce));
+        parts.push(format!("uri=\"{}\"", request_uri));
+        parts.push(format!("response=\"{}\"", response));
+        parts.push(format!("algorithm={}", algorithm_str));
+
+        if let Some(qop) = qop_value {
+            parts.push(format!("qop={}", qop));
+            parts.push(format!("nc={:08x}", nc));
+            parts.push(format!("cnonce=\"{}\"", cnonce));
+        }
+
+        if let Some(ref opaque) = challenge.opaque {
+            parts.push(format!("opaque=\"{}\"", opaque));
+        }
+
+        if let Some(true) = challenge.userhash {
+            let userhash = algorithm.hash_func(
+                format!("{}:{}", credentials.username, challenge.realm.as_deref().unwrap_or("")).as_bytes(),
+            );
+            parts.push(format!("userhash=true"));
+            parts.push(format!("username=\"{}\"", &userhash[..userhash.len().min(32)]));
+        }
+
+        Ok(Some(format!("Digest {}", parts.join(", "))))
+    }
+
+    /// Returns `false` — Digest authentication cannot be used preemptively
+    /// because a nonce from the server is required first.
+    fn supports_preemptive(&self) -> bool {
+        false
+    }
+
+    /// Returns the authentication scheme identifier for this authenticator.
+    ///
+    /// # Returns
+    ///
+    /// `AuthScheme::Digest`
+    fn scheme(&self) -> AuthScheme {
+        AuthScheme::Digest
+    }
+}
