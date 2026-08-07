@@ -85,3 +85,102 @@ pub struct HttpRequest {
     /// The request body, if any.
     pub body: Option<Vec<u8>>,
 }
+
+impl HttpRequest {
+    /// Creates a new HTTP request.
+    ///
+    /// # Arguments
+    ///
+    /// * `method` - The HTTP method.
+    /// * `path` - The request path (e.g., `/path?query`).
+    /// * `host` - The host header value.
+    ///
+    /// # Returns
+    ///
+    /// A new `HttpRequest` with no headers or body.
+    pub fn new(method: crate::request::HttpMethod, path: String, host: String) -> Self {
+        HttpRequest {
+            method,
+            path,
+            host,
+            version: HttpVersion::default(),
+            headers: Vec::new(),
+            body: None,
+        }
+    }
+
+    /// Adds a header to the request.
+    ///
+    /// Headers are added in order; duplicate headers are allowed.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The header name.
+    /// * `value` - The header value.
+    pub fn header(&mut self, key: impl Into<String>, value: impl Into<String>) {
+        self.headers.push((key.into(), value.into()));
+    }
+
+    /// Gets a header value by name (case-insensitive).
+    ///
+    /// Returns the first matching header if multiple exist.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The header name to look up.
+    ///
+    /// # Returns
+    ///
+    /// The header value, or `None` if not found.
+    pub fn get_header(&self, key: &str) -> Option<&str> {
+        self.headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(key))
+            .map(|(_, v)| v.as_str())
+    }
+
+    /// Removes all headers with the given name (case-insensitive).
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The header name to remove.
+    pub fn remove_header(&mut self, key: &str) {
+        self.headers.retain(|(k, _)| !k.eq_ignore_ascii_case(key));
+    }
+
+    /// Serializes the request to bytes ready to send over the network.
+    ///
+    /// The output includes the request line, all headers, a blank line,
+    /// and the body if present.
+    ///
+    /// # Returns
+    ///
+    /// The serialized request bytes.
+    pub fn serialize(&self) -> io::Result<Vec<u8>> {
+        let mut buf: Vec<u8> = Vec::with_capacity(1024);
+
+        write!(buf, "{} {} {}\r\n", self.method, self.path, self.version)?;
+
+        for (key, value) in &self.headers {
+            write!(buf, "{}: {}\r\n", key, value)?;
+        }
+
+        buf.extend_from_slice(b"\r\n");
+
+        if let Some(ref body) = self.body {
+            buf.extend_from_slice(body);
+        }
+
+        Ok(buf)
+    }
+
+    /// Parses the Content-Length header value.
+    ///
+    /// # Returns
+    ///
+    /// The content length, or `None` if the header is missing or invalid.
+    pub fn content_length(&self) -> Option<u64> {
+        self.get_header("Content-Length")
+            .and_then(|v| v.parse::<u64>().ok())
+    }
+}
