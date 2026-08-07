@@ -206,3 +206,117 @@ impl Default for DigestAuthenticator {
         DigestAuthenticator { nonce_count: 0 }
     }
 }
+
+impl DigestAuthenticator {
+    /// Creates a new `DigestAuthenticator` with default state.
+    ///
+    /// # Returns
+    ///
+    /// A new `DigestAuthenticator` with nonce count initialized to 0.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Computes the HA1 value (the "user credentials" hash) per RFC 7616 Section 3.4.2.
+    ///
+    /// For `Md5` and `Sha256` the HA1 is simply `hash(user:realm:password)`.
+    /// For `Md5Sess` and `Sha256Sess` the HA1 is re-derived as
+    /// `hash(HA1_base:nonce:cnonce)` for each authentication attempt.
+    ///
+    /// # Arguments
+    ///
+    /// * `algorithm` - The digest algorithm to use.
+    /// * `credentials` - The user's username and password.
+    /// * `nonce` - The server-provided nonce.
+    /// * `cnonce` - The client-generated nonce.
+    ///
+    /// # Returns
+    ///
+    /// The hex-encoded HA1 string.
+    fn compute_ha1(
+        &self,
+        algorithm: DigestAlgorithm,
+        credentials: &ut_core::types::Credentials,
+        nonce: &str,
+        cnonce: &str,
+    ) -> String {
+        let base = format!("{}:{}", credentials.username, credentials.password);
+        let ha1_base = algorithm.hash_func(base.as_bytes());
+
+        match algorithm {
+            DigestAlgorithm::Md5 | DigestAlgorithm::Sha256 => ha1_base,
+            DigestAlgorithm::Md5Sess | DigestAlgorithm::Sha256Sess => {
+                let session_input = format!("{}:{}:{}", ha1_base, nonce, cnonce);
+                algorithm.hash_func(session_input.as_bytes())
+            }
+        }
+    }
+
+    /// Computes the response value for the Digest Authorization header.
+    ///
+    /// The response is derived from HA1, the method, URI, nonce, nonce count,
+    /// client nonce, quality-of-protection, and optional request body.
+    ///
+    /// # Arguments
+    ///
+    /// * `algorithm` - The digest algorithm to use.
+    /// * `ha1` - The HA1 hash from [`compute_ha1`].
+    /// * `method` - The HTTP method (e.g. `"GET"`, `"POST"`).
+    /// * `uri` - The request URI path (e.g. `"/dir/index.html"`).
+    /// * `nonce` - The server-provided nonce.
+    /// * `nc` - The current nonce count.
+    /// * `cnonce` - The client-generated nonce.
+    /// * `qop` - The quality-of-protection value (`"auth"`, `"auth-int"`, or `None`).
+    /// * `body` - The request body bytes, required when `qop` is `"auth-int"`.
+    ///
+    /// # Returns
+    ///
+    /// The hex-encoded response digest.
+    fn compute_response(
+        &self,
+        algorithm: DigestAlgorithm,
+        ha1: &str,
+        method: &str,
+        uri: &str,
+        nonce: &str,
+        nc: u32,
+        cnonce: &str,
+        qop: Option<&str>,
+        body: Option<&[u8]>,
+    ) -> String {
+        let ha2 = if let Some("auth-int") = qop {
+            let body_hash = algorithm.hash_func(body.unwrap_or(b""));
+            format!("{}:{}:{}", method, uri, body_hash)
+        } else {
+            format!("{}:{}", method, uri)
+        };
+        let ha2_hex = algorithm.hash_func(ha2.as_bytes());
+
+        let response_input = match qop {
+            Some(q) => format!("{}:{}:{:08x}:{}:{}:{}", ha1, nonce, nc, cnonce, q, ha2_hex),
+            None => format!("{}:{}:{}", ha1, nonce, ha2_hex),
+        };
+
+        algorithm.hash_func(response_input.as_bytes())
+    }
+
+    /// Generates a client nonce (`cnonce`) value.
+    ///
+    /// The cnonce is derived from the current system timestamp (nanoseconds since epoch)
+    /// and the process ID, producing a 16-character hex string.
+    ///
+    /// # Returns
+    ///
+    /// A hex-encoded client nonce string.
+    fn generate_cnonce() -> String {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let rand_bytes: [u8; 8] = std::array::from_fn(|_| {
+            ((timestamp & 0xFF) as u8).wrapping_add(((timestamp >> 8) as u8).wrapping_add(std::process::id() as u8))
+        });
+        rand_bytes.iter().map(|b| format!("{:02x}", b)).collect()
+    }
+}
