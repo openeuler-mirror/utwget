@@ -489,3 +489,33 @@ pub fn parse_response_head(data: &[u8]) -> Option<HttpResponse> {
 
     Some(resp)
 }
+
+/// Finds the end of the HTTP header section.
+///
+/// The header section ends with a blank line (`\r\n\r\n`).
+///
+/// # Arguments
+///
+/// * `data` - The raw response bytes.
+///
+/// # Returns
+///
+/// The byte offset of the header end, or `None` if not found.
+///
+/// # Example
+///
+/// ```
+/// use ut_http::response::find_header_end;
+///
+/// let data = b"HTTP/1.1 200 OK\r\n\r\nbody";
+/// assert_eq!(find_header_end(data), Some(15));
+/// ```
+pub fn find_header_end(data: &[u8]) -> Option<usize> {
+    let windows = data.windows(4);
+    for (i, w) in windows.enumerate() {
+        if w == b"\r\n\r\n" {
+            return Some(i);
+        }
+    }
+    None
+}
