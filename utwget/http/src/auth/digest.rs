@@ -199,3 +199,10 @@ pub struct DigestAuthenticator {
     /// with this session.  Sent as the `nc` directive in the Authorization header.
     nonce_count: u32,
 }
+
+impl Default for DigestAuthenticator {
+    /// Creates a `DigestAuthenticator` with a nonce count of zero.
+    fn default() -> Self {
+        DigestAuthenticator { nonce_count: 0 }
+    }
+}
