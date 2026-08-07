@@ -34,3 +34,20 @@ impl fmt::Display for HttpVersion {
         }
     }
 }
+
+impl HttpVersion {
+    /// Returns whether this version supports persistent connections.
+    pub fn supports_keep_alive(&self) -> bool {
+        matches!(self, HttpVersion::Http11 | HttpVersion::Http2)
+    }
+
+    /// Returns whether this version supports chunked transfer encoding.
+    pub fn supports_chunked(&self) -> bool {
+        matches!(self, HttpVersion::Http11)
+    }
+
+    /// Returns whether this is HTTP/2.
+    pub fn is_http2(&self) -> bool {
+        matches!(self, HttpVersion::Http2)
+    }
+}
