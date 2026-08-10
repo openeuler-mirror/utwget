@@ -569,3 +569,39 @@ fn nt_response(nt_hash: &[u8; 16], challenge: &[u8; 8]) -> Vec<u8> {
 
     response
 }
+
+/// Calculates the LM response (same algorithm as NT response).
+///
+/// # Arguments
+///
+/// * `lm_hash` - The 16-byte LM hash.
+/// * `challenge` - The 8-byte server challenge.
+///
+/// # Returns
+///
+/// The 24-byte LM response.
+fn lm_response(lm_hash: &[u8; 16], challenge: &[u8; 8]) -> Vec<u8> {
+    nt_response(lm_hash, challenge) // Same algorithm
+}
+
+/// Calculates the NTLMv2 hash using HMAC-MD5.
+///
+/// # Arguments
+///
+/// * `nt_hash` - The base NT hash.
+/// * `username` - The username in UTF-16LE.
+/// * `domain` - The domain in UTF-16LE.
+///
+/// # Returns
+///
+/// The 16-byte NTLMv2 hash.
+fn ntlm_v2_hash(nt_hash: &[u8; 16], username: &[u8], domain: &[u8]) -> [u8; 16] {
+    // HMAC-MD5(NT hash, uppercase(username) + domain)
+    let mut data = Vec::with_capacity(username.len() + domain.len());
+    for &b in username {
+        data.push(b.to_ascii_uppercase());
+    }
+    data.extend_from_slice(domain);
+
+    hmac_md5(nt_hash, &data)
+}
