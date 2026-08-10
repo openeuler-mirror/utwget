@@ -391,3 +391,10 @@ impl NtlmAuthenticator {
         msg
     }
 }
+
+impl Default for NtlmAuthenticator {
+    /// Creates a new NTLM authenticator with default settings (NTLMv2).
+    fn default() -> Self {
+        Self::new()
+    }
+}
