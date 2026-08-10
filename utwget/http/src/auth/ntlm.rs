@@ -509,3 +509,36 @@ fn ntlm_hash(password: &[u8]) -> [u8; 16] {
     // Use MD4 hash
     md4_hash(password)
 }
+
+/// Calculates the LM hash (deprecated legacy hash).
+///
+/// The LM hash is considered insecure but is still computed for
+/// compatibility with older servers.
+///
+/// # Arguments
+///
+/// * `password` - The password bytes.
+///
+/// # Returns
+///
+/// The 16-byte LM hash.
+fn lm_hash(password: &[u8]) -> [u8; 16] {
+    // Convert to uppercase and pad/truncate to 14 bytes
+    let mut pwd = [0u8; 14];
+    for (i, &b) in password.iter().take(14).enumerate() {
+        pwd[i] = b.to_ascii_uppercase();
+    }
+
+    // DES encrypt two 7-byte blocks with known key
+    let mut hash = [0u8; 16];
+
+    // First half: DES(pwd[0..7], "KGS!@#$%")
+    let key1 = create_des_key(&pwd[0..7]);
+    des_encrypt(&[0x4b, 0x47, 0x53, 0x21, 0x40, 0x23, 0x24, 0x25], &key1, &mut hash[0..8]);
+
+    // Second half: DES(pwd[7..14], "KGS!@#$%")
+    let key2 = create_des_key(&pwd[7..14]);
+    des_encrypt(&[0x4b, 0x47, 0x53, 0x21, 0x40, 0x23, 0x24, 0x25], &key2, &mut hash[8..16]);
+
+    hash
+}
