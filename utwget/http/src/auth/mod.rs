@@ -493,3 +493,23 @@ impl AuthDispatcher {
         None
     }
 }
+
+/// Parses multiple `WWW-Authenticate` header values into challenges.
+///
+/// HTTP responses may include multiple `WWW-Authenticate` headers,
+/// each potentially containing multiple challenges.
+///
+/// # Arguments
+///
+/// * `headers` - Slice of raw header values.
+///
+/// # Returns
+///
+/// A vector of all parsed challenges across all headers.
+pub fn parse_www_authenticate(headers: &[&str]) -> Vec<AuthChallenge> {
+    let mut challenges = Vec::new();
+    for header in headers {
+        challenges.extend(AuthChallenge::from_www_authenticate(header));
+    }
+    challenges
+}
