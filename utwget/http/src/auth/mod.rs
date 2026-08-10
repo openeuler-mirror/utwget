@@ -295,3 +295,16 @@ fn parse_auth_params(input: &str) -> (Vec<(String, String)>, &str) {
 
     (params, rest)
 }
+
+/// Errors that can occur during authentication.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AuthError {
+    /// The authentication challenge is missing a required nonce value.
+    MissingNonce,
+    /// The authentication challenge is malformed or invalid.
+    InvalidChallenge(String),
+    /// The requested hash algorithm is not supported.
+    AlgorithmUnsupported(String),
+    /// An I/O error occurred during authentication.
+    Io(String),
+}
