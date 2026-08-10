@@ -206,3 +206,92 @@ impl AuthChallenge {
         challenges
     }
 }
+
+/// Parses authentication parameters from a challenge string.
+///
+/// Handles both quoted and unquoted parameter values, and stops
+/// when encountering the next scheme name or end of input.
+///
+/// # Arguments
+///
+/// * `input` - The parameter portion of a challenge string.
+///
+/// # Returns
+///
+/// A tuple of (parsed parameters, remaining unparsed input).
+fn parse_auth_params(input: &str) -> (Vec<(String, String)>, &str) {
+    let mut params = Vec::new();
+    let mut rest = input;
+
+    while !rest.is_empty() {
+        rest = rest.trim_start();
+
+        if rest.starts_with(',') {
+            rest = rest[1..].trim_start();
+            if rest.is_empty() || !rest.chars().next().map_or(false, |c| c.is_alphabetic()) {
+                break;
+            }
+            continue;
+        }
+
+        if rest.chars().next().map_or(false, |c| c.is_alphabetic())
+            && !rest.starts_with("realm")
+            && !rest.starts_with("nonce")
+            && !rest.starts_with("opaque")
+            && !rest.starts_with("qop")
+            && !rest.starts_with("algorithm")
+            && !rest.starts_with("charset")
+            && !rest.starts_with("userhash")
+            && !rest.starts_with("stale")
+            && !rest.starts_with("domain")
+            && !rest.starts_with("response")
+            && !rest.starts_with("cnonce")
+            && !rest.starts_with("nc")
+            && !rest.starts_with("uri")
+            && !rest.starts_with("username")
+        {
+            break;
+        }
+
+        let key_end = rest.find('=').unwrap_or(rest.len());
+        let key = rest[..key_end].trim().to_string();
+        rest = &rest[key_end..];
+
+        if rest.is_empty() || !rest.starts_with('=') {
+            break;
+        }
+        rest = &rest[1..];
+
+        let (value, next) = if rest.starts_with('"') {
+            match rest[1..].find('"') {
+                Some(end_idx) => {
+                    let val = rest[1..1 + end_idx].to_string();
+                    let after = &rest[2 + end_idx..];
+                    let after = after.trim_start();
+                    let after = if after.starts_with(',') { &after[1..] } else { after };
+                    (val, after)
+                }
+                None => {
+                    let val = rest[1..].to_string();
+                    (val, "")
+                }
+            }
+        } else {
+            let token_end = rest
+                .find(|c: char| c == ',' || c.is_whitespace())
+                .unwrap_or(rest.len());
+            let val = rest[..token_end].trim().to_string();
+            let after = &rest[token_end..];
+            let after = after.trim_start();
+            let after = if after.starts_with(',') { &after[1..] } else { after };
+            (val, after)
+        };
+
+        if !key.is_empty() {
+            params.push((key, value));
+        }
+        rest = next;
+    }
+
+    (params, rest)
+}
