@@ -90,3 +90,33 @@ impl AuthScheme {
         }
     }
 }
+
+/// Parsed authentication challenge from a `WWW-Authenticate` header.
+///
+/// Contains all parameters specified by the server for a particular
+/// authentication scheme. Not all fields are relevant for all schemes.
+#[derive(Debug, Clone)]
+pub struct AuthChallenge {
+    /// The authentication scheme being requested.
+    pub scheme: AuthScheme,
+    /// The protection realm (namespace for credentials).
+    pub realm: Option<String>,
+    /// Server-generated nonce value (Digest, NTLM).
+    pub nonce: Option<String>,
+    /// Server-provided opaque value to be returned unchanged (Digest).
+    pub opaque: Option<String>,
+    /// Quality of protection options (Digest: `"auth"`, `"auth-int"`).
+    pub qop: Option<String>,
+    /// Hash algorithm to use (Digest: `"MD5"`, `"SHA-256"`, etc.).
+    pub algorithm: Option<String>,
+    /// Character set for credentials (Digest: `"UTF-8"`).
+    pub charset: Option<String>,
+    /// Whether to hash the username (Digest).
+    pub userhash: Option<bool>,
+    /// Whether the nonce is stale (Digest).
+    pub stale: Option<bool>,
+    /// Domain(s) to which the authentication applies (Digest).
+    pub domain: Option<String>,
+    /// NTLM Type 2 message (NTLM).
+    pub ntlm_type2_msg: Option<String>,
+}
