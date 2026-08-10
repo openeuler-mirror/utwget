@@ -362,3 +362,11 @@ pub trait Authenticator: Send + Sync {
     /// Returns the authentication scheme this authenticator implements.
     fn scheme(&self) -> AuthScheme;
 }
+
+/// Dispatcher that routes authentication to the appropriate authenticator.
+///
+/// Holds a collection of authenticators and selects the correct one
+/// based on the scheme requested by the server.
+pub struct AuthDispatcher {
+    authenticators: Vec<Box<dyn Authenticator>>,
+}
