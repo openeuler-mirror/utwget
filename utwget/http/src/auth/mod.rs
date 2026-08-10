@@ -67,3 +67,26 @@ impl fmt::Display for AuthScheme {
         }
     }
 }
+
+impl AuthScheme {
+    /// Parses an authentication scheme name from a `WWW-Authenticate` header.
+    ///
+    /// The comparison is case-insensitive per HTTP specifications.
+    ///
+    /// # Arguments
+    ///
+    /// * `s` - The scheme name string (e.g., `"Basic"`, `"digest"`, `"NTLM"`).
+    ///
+    /// # Returns
+    ///
+    /// `Some(AuthScheme)` if the string matches a known scheme, `None` otherwise.
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "basic" => Some(AuthScheme::Basic),
+            "digest" => Some(AuthScheme::Digest),
+            "ntlm" => Some(AuthScheme::Ntlm),
+            "bearer" => Some(AuthScheme::Bearer),
+            _ => None,
+        }
+    }
+}
