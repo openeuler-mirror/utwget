@@ -542,3 +542,30 @@ fn lm_hash(password: &[u8]) -> [u8; 16] {
 
     hash
 }
+
+/// Calculates the NT response by encrypting the challenge with the NT hash.
+///
+/// # Arguments
+///
+/// * `nt_hash` - The 16-byte NT hash.
+/// * `challenge` - The 8-byte server challenge.
+///
+/// # Returns
+///
+/// The 24-byte NT response.
+fn nt_response(nt_hash: &[u8; 16], challenge: &[u8; 8]) -> Vec<u8> {
+    // NT response = DES(NT hash, challenge)
+    let mut response = vec![0u8; 24];
+
+    // Use NT hash as three DES keys
+    let key1 = create_des_key(&nt_hash[0..7]);
+    des_encrypt(challenge, &key1, &mut response[0..8]);
+
+    let key2 = create_des_key(&nt_hash[7..14]);
+    des_encrypt(challenge, &key2, &mut response[8..16]);
+
+    let key3 = create_des_key(&[nt_hash[14], nt_hash[15], 0, 0, 0, 0, 0]);
+    des_encrypt(challenge, &key3, &mut response[16..24]);
+
+    response
+}
