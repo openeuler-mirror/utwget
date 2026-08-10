@@ -487,3 +487,10 @@ struct NtlmChallenge {
     /// Target info block for NTLMv2.
     target_info: Vec<u8>,
 }
+
+// NTLM negotiation flags
+const NTLMSSP_NEGOTIATE_UNICODE: u32 = 0x00000001;
+const NTLMSSP_NEGOTIATE_NTLM: u32 = 0x00000200;
+const NTLMSSP_REQUEST_TARGET: u32 = 0x00000004;
+const NTLMSSP_NEGOTIATE_SIGN: u32 = 0x00000010;
+const NTLMSSP_NEGOTIATE_SEAL: u32 = 0x00000020;
