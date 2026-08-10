@@ -370,3 +370,126 @@ pub trait Authenticator: Send + Sync {
 pub struct AuthDispatcher {
     authenticators: Vec<Box<dyn Authenticator>>,
 }
+
+impl AuthDispatcher {
+    /// Creates a new dispatcher with all available authenticators.
+    ///
+    /// Automatically includes:
+    /// - Basic authenticator (always)
+    /// - Digest authenticator (if `auth-digest` feature is enabled)
+    /// - NTLM authenticator (if `auth-ntlm` feature is enabled)
+    ///
+    /// # Returns
+    ///
+    /// A new `AuthDispatcher` with default authenticators registered.
+    pub fn new() -> Self {
+        let mut authenticators: Vec<Box<dyn Authenticator>> = Vec::new();
+        authenticators.push(Box::new(basic::BasicAuthenticator));
+        #[cfg(feature = "auth-digest")]
+        authenticators.push(Box::new(digest::DigestAuthenticator::default()));
+        #[cfg(feature = "auth-ntlm")]
+        authenticators.push(Box::new(ntlm::NtlmAuthenticator::new()));
+        AuthDispatcher { authenticators }
+    }
+
+    /// Creates a dispatcher with a custom set of authenticators.
+    ///
+    /// # Arguments
+    ///
+    /// * `authenticators` - A vector of boxed authenticator implementations.
+    ///
+    /// # Returns
+    ///
+    /// A new `AuthDispatcher` with the provided authenticators.
+    pub fn with_authenticators(authenticators: Vec<Box<dyn Authenticator>>) -> Self {
+        AuthDispatcher { authenticators }
+    }
+
+    /// Adds an authenticator to the dispatcher.
+    ///
+    /// # Arguments
+    ///
+    /// * `auth` - The authenticator to add.
+    pub fn add(&mut self, auth: Box<dyn Authenticator>) {
+        self.authenticators.push(auth);
+    }
+
+    /// Authenticates a request using the appropriate authenticator for the challenge.
+    ///
+    /// # Arguments
+    ///
+    /// * `challenge` - The authentication challenge from the server.
+    /// * `credentials` - The user's credentials.
+    /// * `request_method` - The HTTP method of the request.
+    /// * `request_uri` - The URI path of the request.
+    /// * `body` - The request body, if any.
+    ///
+    /// # Returns
+    ///
+    /// The authorization header value from the matching authenticator,
+    /// or `Ok(None)` if no authenticator matches the challenge scheme.
+    pub fn authenticate(
+        &mut self,
+        challenge: &AuthChallenge,
+        credentials: &ut_core::types::Credentials,
+        request_method: &str,
+        request_uri: &str,
+        body: Option<&[u8]>,
+    ) -> Result<Option<String>, AuthError> {
+        for auth in &mut self.authenticators {
+            if auth.scheme() == challenge.scheme {
+                return auth.authenticate(challenge, credentials, request_method, request_uri, body);
+            }
+        }
+        Ok(None)
+    }
+
+    /// Attempts preemptive authentication for schemes that support it.
+    ///
+    /// Some authentication schemes (like Basic) can send credentials
+    /// before receiving a challenge, which can reduce round trips.
+    ///
+    /// # Arguments
+    ///
+    /// * `credentials` - The user's credentials.
+    /// * `request_uri` - The URI path of the request.
+    ///
+    /// # Returns
+    ///
+    /// The authorization header value from the first authenticator
+    /// that supports preemptive auth, or `None` if none do.
+    pub fn preemptive_auth(
+        &mut self,
+        credentials: &ut_core::types::Credentials,
+        request_uri: &str,
+    ) -> Option<String> {
+        for auth in &mut self.authenticators {
+            if auth.supports_preemptive() {
+                let challenge = AuthChallenge {
+                    scheme: auth.scheme(),
+                    realm: None,
+                    nonce: None,
+                    opaque: None,
+                    qop: None,
+                    algorithm: None,
+                    charset: None,
+                    userhash: None,
+                    stale: None,
+                    domain: None,
+                    ntlm_type2_msg: None,
+                };
+                let result = auth.authenticate(
+                    &challenge,
+                    credentials,
+                    "GET",
+                    request_uri,
+                    None,
+                );
+                if let Ok(Some(header)) = result {
+                    return Some(header);
+                }
+            }
+        }
+        None
+    }
+}
