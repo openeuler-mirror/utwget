@@ -55,3 +55,15 @@ pub enum AuthScheme {
     /// Uses an opaque bearer token.
     Bearer,
 }
+
+impl fmt::Display for AuthScheme {
+    /// Formats the authentication scheme as it appears in HTTP headers.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AuthScheme::Basic => f.write_str("Basic"),
+            AuthScheme::Digest => f.write_str("Digest"),
+            AuthScheme::Ntlm => f.write_str("NTLM"),
+            AuthScheme::Bearer => f.write_str("Bearer"),
+        }
+    }
+}
