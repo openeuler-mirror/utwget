@@ -120,3 +120,89 @@ pub struct AuthChallenge {
     /// NTLM Type 2 message (NTLM).
     pub ntlm_type2_msg: Option<String>,
 }
+
+impl AuthChallenge {
+    /// Parses a `WWW-Authenticate` header value into a list of challenges.
+    ///
+    /// A single `WWW-Authenticate` header may contain multiple challenges
+    /// for different schemes, separated by commas.
+    ///
+    /// # Arguments
+    ///
+    /// * `header` - The raw header value (e.g., `Basic realm="foo", Digest realm="bar", nonce="xyz"`).
+    ///
+    /// # Returns
+    ///
+    /// A vector of `AuthChallenge` instances, one per scheme in the header.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ut_http::auth::{AuthChallenge, AuthScheme};
+    ///
+    /// let challenges = AuthChallenge::from_www_authenticate(
+    ///     r#"Basic realm="WallyWorld""#
+    /// );
+    /// assert_eq!(challenges.len(), 1);
+    /// assert_eq!(challenges[0].scheme, AuthScheme::Basic);
+    /// assert_eq!(challenges[0].realm.as_deref(), Some("WallyWorld"));
+    /// ```
+    pub fn from_www_authenticate(header: &str) -> Vec<AuthChallenge> {
+        let mut challenges = Vec::new();
+        let mut remainder = header.trim();
+
+        while !remainder.is_empty() {
+            let (scheme_str, rest) = match remainder.find(|c: char| c.is_whitespace()) {
+                Some(idx) => (&remainder[..idx], &remainder[idx..]),
+                None => {
+                    if let Some(scheme) = AuthScheme::from_str(remainder) {
+                        challenges.push(AuthChallenge {
+                            scheme,
+                            realm: None, nonce: None, opaque: None,
+                            qop: None, algorithm: None, charset: None,
+                            userhash: None, stale: None, domain: None,
+                            ntlm_type2_msg: None,
+                        });
+                    }
+                    break;
+                }
+            };
+
+            let scheme = match AuthScheme::from_str(scheme_str) {
+                Some(s) => s,
+                None => break,
+            };
+
+            let rest = rest.trim_start();
+
+            let mut challenge = AuthChallenge {
+                scheme,
+                realm: None, nonce: None, opaque: None,
+                qop: None, algorithm: None, charset: None,
+                userhash: None, stale: None, domain: None,
+                ntlm_type2_msg: None,
+            };
+
+            let (params, next) = parse_auth_params(rest);
+            for (key, value) in params {
+                match key.to_ascii_lowercase().as_str() {
+                    "realm" => challenge.realm = Some(value),
+                    "nonce" => challenge.nonce = Some(value),
+                    "opaque" => challenge.opaque = Some(value),
+                    "qop" => challenge.qop = Some(value),
+                    "algorithm" => challenge.algorithm = Some(value),
+                    "charset" => challenge.charset = Some(value),
+                    "userhash" => challenge.userhash = Some(value == "true"),
+                    "stale" => challenge.stale = Some(value == "true"),
+                    "domain" => challenge.domain = Some(value),
+                    _ => {}
+                }
+            }
+
+            challenges.push(challenge);
+            remainder = next.trim_start_matches(',').trim_start();
+        }
+
+        challenges
+    }
+}
