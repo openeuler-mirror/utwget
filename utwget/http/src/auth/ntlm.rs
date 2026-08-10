@@ -494,3 +494,18 @@ const NTLMSSP_NEGOTIATE_NTLM: u32 = 0x00000200;
 const NTLMSSP_REQUEST_TARGET: u32 = 0x00000004;
 const NTLMSSP_NEGOTIATE_SIGN: u32 = 0x00000010;
 const NTLMSSP_NEGOTIATE_SEAL: u32 = 0x00000020;
+const NTLMSSP_NEGOTIATE_ALWAYS_SIGN: u32 = 0x00008000;
+
+/// Calculates the NTLM hash (MD4 of UTF-16LE password).
+///
+/// # Arguments
+///
+/// * `password` - The password in UTF-16LE encoding.
+///
+/// # Returns
+///
+/// The 16-byte NTLM hash.
+fn ntlm_hash(password: &[u8]) -> [u8; 16] {
+    // Use MD4 hash
+    md4_hash(password)
+}
