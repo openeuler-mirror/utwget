@@ -476,3 +476,14 @@ impl Authenticator for NtlmAuthenticator {
         AuthScheme::Ntlm
     }
 }
+
+/// Parsed NTLM Type 2 challenge data.
+struct NtlmChallenge {
+    /// The target (server) name.
+    #[allow(dead_code)]
+    target_name: String,
+    /// The 8-byte server challenge.
+    challenge: [u8; 8],
+    /// Target info block for NTLMv2.
+    target_info: Vec<u8>,
+}
