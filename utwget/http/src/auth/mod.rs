@@ -321,3 +321,44 @@ impl fmt::Display for AuthError {
         }
     }
 }
+
+impl std::error::Error for AuthError {}
+
+/// Trait for HTTP authentication implementations.
+///
+/// Each authentication scheme (Basic, Digest, NTLM) implements this trait
+/// to provide scheme-specific authentication logic.
+pub trait Authenticator: Send + Sync {
+    /// Generates an `Authorization` header value for the given challenge.
+    ///
+    /// # Arguments
+    ///
+    /// * `challenge` - The parsed `WWW-Authenticate` challenge from the server.
+    /// * `credentials` - The user's credentials.
+    /// * `request_method` - The HTTP method of the request being authenticated.
+    /// * `request_uri` - The URI path of the request.
+    /// * `body` - The request body, if any (used for `auth-int` qop in Digest).
+    ///
+    /// # Returns
+    ///
+    /// `Ok(Some(header))` with the authorization header value,
+    /// `Ok(None)` if no authentication is needed, or an error.
+    fn authenticate(
+        &mut self,
+        challenge: &AuthChallenge,
+        credentials: &ut_core::types::Credentials,
+        request_method: &str,
+        request_uri: &str,
+        body: Option<&[u8]>,
+    ) -> Result<Option<String>, AuthError>;
+
+    /// Returns whether this authenticator can send credentials preemptively.
+    ///
+    /// Some schemes (like Basic) can send credentials before receiving a
+    /// challenge, reducing round trips. Others (like Digest) require
+    /// server-provided parameters first.
+    fn supports_preemptive(&self) -> bool;
+
+    /// Returns the authentication scheme this authenticator implements.
+    fn scheme(&self) -> AuthScheme;
+}
