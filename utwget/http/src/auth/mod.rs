@@ -308,3 +308,16 @@ pub enum AuthError {
     /// An I/O error occurred during authentication.
     Io(String),
 }
+
+impl fmt::Display for AuthError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AuthError::MissingNonce => f.write_str("missing nonce in Digest challenge"),
+            AuthError::InvalidChallenge(msg) => write!(f, "invalid auth challenge: {}", msg),
+            AuthError::AlgorithmUnsupported(alg) => {
+                write!(f, "unsupported algorithm: {}", alg)
+            }
+            AuthError::Io(e) => write!(f, "I/O error: {}", e),
+        }
+    }
+}
