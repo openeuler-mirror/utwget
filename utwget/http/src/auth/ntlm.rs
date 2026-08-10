@@ -398,3 +398,81 @@ impl Default for NtlmAuthenticator {
         Self::new()
     }
 }
+
+impl Authenticator for NtlmAuthenticator {
+    /// Performs NTLM authentication for the given challenge.
+    ///
+    /// On the first call (no Type 2 challenge yet), returns a Type 1
+    /// Negotiate message. On subsequent calls with a Type 2 challenge,
+    /// returns a Type 3 Authenticate message.
+    ///
+    /// # Arguments
+    ///
+    /// * `challenge` - The authentication challenge (contains Type 2 message for second step).
+    /// * `credentials` - The user's username and password.
+    /// * `_request_method` - Unused for NTLM.
+    /// * `_request_uri` - Unused for NTLM.
+    /// * `_body` - Unused for NTLM.
+    ///
+    /// # Returns
+    ///
+    /// The `Authorization: NTLM <message>` header value.
+    fn authenticate(
+        &mut self,
+        challenge: &AuthChallenge,
+        credentials: &ut_core::types::Credentials,
+        _request_method: &str,
+        _request_uri: &str,
+        _body: Option<&[u8]>,
+    ) -> Result<Option<String>, AuthError> {
+        // Get NTLM challenge from the challenge data
+        let challenge_data = STANDARD.decode(challenge.nonce.as_deref().unwrap_or(""))
+            .map_err(|e| AuthError::InvalidChallenge(format!("base64 decode error: {}", e)))?;
+
+        // Check if this is a Type 2 challenge
+        if challenge_data.starts_with(b"NTLMSSP\x00") && challenge_data.len() >= 12 {
+            let msg_type = u32::from_le_bytes([
+                challenge_data[8], challenge_data[9], challenge_data[10], challenge_data[11]
+            ]);
+
+            if msg_type == 2 {
+                // Parse the challenge
+                let ntlm_challenge = self.parse_challenge(&challenge_data)?;
+
+                // Create Type 3 response
+                let response = self.create_type3_message(
+                    &credentials.username,
+                    &credentials.password,
+                    "", // domain
+                    "", // workstation
+                    &ntlm_challenge,
+                );
+
+                let response_b64 = STANDARD.encode(&response);
+                return Ok(Some(format!("NTLM {}", response_b64)));
+            }
+        }
+
+        // Initial request - send Type 1 message
+        let type1 = self.create_type1_message();
+        let type1_b64 = STANDARD.encode(&type1);
+        Ok(Some(format!("NTLM {}", type1_b64)))
+    }
+
+    /// Returns `false` — NTLM cannot be used preemptively.
+    ///
+    /// NTLM requires a server challenge (Type 2 message) before
+    /// the client can prove its identity.
+    fn supports_preemptive(&self) -> bool {
+        false
+    }
+
+    /// Returns the authentication scheme identifier.
+    ///
+    /// # Returns
+    ///
+    /// `AuthScheme::Ntlm`
+    fn scheme(&self) -> AuthScheme {
+        AuthScheme::Ntlm
+    }
+}
