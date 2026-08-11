@@ -1042,3 +1042,10 @@ impl Md5Ctx {
         self.state[3] = self.state[3].wrapping_add(d);
     }
 }
+
+/// MD5 round 1 function.
+fn f_md5(x: u32, y: u32, z: u32) -> u32 { (x & y) | (!x & z) }
+/// MD5 round 2 function.
+fn g_md5(x: u32, y: u32, z: u32) -> u32 { (x & z) | (y & !z) }
+/// MD5 round 3 function.
+fn h_md5(x: u32, y: u32, z: u32) -> u32 { x ^ y ^ z }
