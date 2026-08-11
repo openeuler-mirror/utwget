@@ -846,3 +846,34 @@ fn f(x: u32, y: u32, z: u32) -> u32 { (x & y) | (!x & z) }
 fn g(x: u32, y: u32, z: u32) -> u32 { (x & y) | (x & z) | (y & z) }
 /// MD4 round 3 function.
 fn h(x: u32, y: u32, z: u32) -> u32 { x ^ y ^ z }
+
+/// Computes HMAC-MD5 with a 16-byte key.
+///
+/// # Arguments
+///
+/// * `key` - The 16-byte key.
+/// * `data` - The data to authenticate.
+///
+/// # Returns
+///
+/// The 16-byte HMAC-MD5 digest.
+fn hmac_md5(key: &[u8; 16], data: &[u8]) -> [u8; 16] {
+    // Simplified HMAC-MD5 for 16-byte key
+    let mut inner = Vec::with_capacity(64 + data.len());
+    for &k in key.iter() {
+        inner.push(k ^ 0x36);
+    }
+    inner.extend_from_slice(&[0x36; 48]); // Pad to 64 bytes
+    inner.extend_from_slice(data);
+
+    let inner_hash = md5_hash(&inner);
+
+    let mut outer = Vec::with_capacity(64 + 16);
+    for &k in key.iter() {
+        outer.push(k ^ 0x5c);
+    }
+    outer.extend_from_slice(&[0x5c; 48]);
+    outer.extend_from_slice(&inner_hash);
+
+    md5_hash(&outer)
+}
