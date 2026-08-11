@@ -704,3 +704,18 @@ fn get_ntlm_timestamp() -> u64 {
     let windows_time = (unix_time + 11644473600) * 10_000_000;
     windows_time
 }
+
+/// Computes the MD4 hash of the input data.
+///
+/// # Arguments
+///
+/// * `data` - The data to hash.
+///
+/// # Returns
+///
+/// The 16-byte MD4 digest.
+fn md4_hash(data: &[u8]) -> [u8; 16] {
+    let mut md4 = Md4::new();
+    md4.update(data);
+    md4.finalize()
+}
