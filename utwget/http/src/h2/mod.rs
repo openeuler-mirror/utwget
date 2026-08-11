@@ -176,3 +176,44 @@ impl H2Client {
         })
     }
 }
+
+/// Check if the server supports HTTP/2 via ALPN.
+///
+/// This function performs TLS ALPN negotiation to determine if the server
+/// supports HTTP/2.
+pub fn check_http2_support(host: &str, port: u16) -> bool {
+    let runtime = match Runtime::new() {
+        Ok(r) => r,
+        Err(_) => return false,
+    };
+    
+    let tcp = match runtime.block_on(TcpStream::connect(format!("{}:{}", host, port))) {
+        Ok(t) => t,
+        Err(_) => return false,
+    };
+    
+    // Build TLS config with ALPN for HTTP/2
+    let mut root_store = rustls::RootCertStore::empty();
+    root_store.extend(TLS_SERVER_ROOTS.iter().cloned());
+    
+    let mut tls_config = ClientConfig::builder()
+        .with_root_certificates(root_store)
+        .with_no_client_auth();
+    
+    tls_config.alpn_protocols = vec![b"h2".to_vec()];
+    
+    let tls_connector = TlsConnector::from(Arc::new(tls_config));
+    
+    let server_name = match rustls::pki_types::ServerName::try_from(host.to_string()) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+    
+    let tls_stream = match runtime.block_on(tls_connector.connect(server_name, tcp)) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+    
+    // Check if HTTP/2 was negotiated
+    tls_stream.get_ref().1.alpn_protocol() == Some(b"h2")
+}
