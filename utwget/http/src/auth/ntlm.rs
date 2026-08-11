@@ -839,3 +839,10 @@ impl Md4 {
         self.state[3] = self.state[3].wrapping_add(d);
     }
 }
+
+/// MD4 round 1 function.
+fn f(x: u32, y: u32, z: u32) -> u32 { (x & y) | (!x & z) }
+/// MD4 round 2 function.
+fn g(x: u32, y: u32, z: u32) -> u32 { (x & y) | (x & z) | (y & z) }
+/// MD4 round 3 function.
+fn h(x: u32, y: u32, z: u32) -> u32 { x ^ y ^ z }
