@@ -907,3 +907,138 @@ struct Md5Ctx {
     count: [u32; 2],
     buffer: [u8; 64],
 }
+
+impl Md5Ctx {
+    /// Creates a new MD5 context with initial state.
+    fn new() -> Self {
+        Self {
+            state: [0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476],
+            count: [0, 0],
+            buffer: [0; 64],
+        }
+    }
+
+    /// Updates the hash with more data.
+    fn update(&mut self, data: &[u8]) {
+        let mut data = data;
+        let mut index = ((self.count[0] >> 3) & 0x3f) as usize;
+
+        self.count[0] = self.count[0].wrapping_add((data.len() << 3) as u32);
+        if self.count[0] < (data.len() << 3) as u32 {
+            self.count[1] = self.count[1].wrapping_add(1);
+        }
+        self.count[1] = self.count[1].wrapping_add((data.len() >> 29) as u32);
+
+        let part_len = 64 - index;
+        if data.len() >= part_len {
+            self.buffer[index..64].copy_from_slice(&data[..part_len]);
+            let block = self.buffer;
+            self.transform(&block);
+            let mut i = part_len;
+            while i + 63 < data.len() {
+                self.transform(&data[i..i + 64]);
+                i += 64;
+            }
+            index = 0;
+            data = &data[i..];
+        }
+
+        if !data.is_empty() {
+            self.buffer[index..index + data.len()].copy_from_slice(data);
+        }
+    }
+
+    /// Finalizes the hash and writes the digest.
+    fn finalize(&mut self, digest: &mut [u8]) {
+        let mut bits = [0u8; 8];
+        for (i, &c) in self.count.iter().enumerate() {
+            bits[i * 4..i * 4 + 4].copy_from_slice(&c.to_le_bytes());
+        }
+
+        let index = ((self.count[0] >> 3) & 0x3f) as usize;
+        let pad_len = if index < 56 { 56 - index } else { 120 - index };
+
+        let mut padding = [0u8; 64];
+        padding[0] = 0x80;
+        self.update(&padding[..pad_len]);
+        self.update(&bits);
+
+        for (i, &s) in self.state.iter().enumerate() {
+            digest[i * 4..i * 4 + 4].copy_from_slice(&s.to_le_bytes());
+        }
+    }
+
+    /// Transforms a single 64-byte block.
+    fn transform(&mut self, block: &[u8]) {
+        let mut x = [0u32; 16];
+        for i in 0..16 {
+            x[i] = u32::from_le_bytes([
+                block[i * 4],
+                block[i * 4 + 1],
+                block[i * 4 + 2],
+                block[i * 4 + 3],
+            ]);
+        }
+
+        let [mut a, mut b, mut c, mut d] = self.state;
+
+        // Round 1
+        a = b.wrapping_add((a.wrapping_add(f_md5(b, c, d)).wrapping_add(x[0]).wrapping_add(0xd76aa478)).rotate_left(7));
+        d = c.wrapping_add((d.wrapping_add(f_md5(a, b, c)).wrapping_add(x[1]).wrapping_add(0xe8c7b756)).rotate_left(12));
+        c = b.wrapping_add((c.wrapping_add(f_md5(d, a, b)).wrapping_add(x[2]).wrapping_add(0x242070db)).rotate_left(17));
+        b = a.wrapping_add((b.wrapping_add(f_md5(c, d, a)).wrapping_add(x[3]).wrapping_add(0xc1bdceee)).rotate_left(22));
+        a = b.wrapping_add((a.wrapping_add(f_md5(b, c, d)).wrapping_add(x[4]).wrapping_add(0xf57c0faf)).rotate_left(7));
+        d = c.wrapping_add((d.wrapping_add(f_md5(a, b, c)).wrapping_add(x[5]).wrapping_add(0x4787c62a)).rotate_left(12));
+        c = b.wrapping_add((c.wrapping_add(f_md5(d, a, b)).wrapping_add(x[6]).wrapping_add(0xa8304613)).rotate_left(17));
+        b = a.wrapping_add((b.wrapping_add(f_md5(c, d, a)).wrapping_add(x[7]).wrapping_add(0xfd469501)).rotate_left(22));
+        a = b.wrapping_add((a.wrapping_add(f_md5(b, c, d)).wrapping_add(x[8]).wrapping_add(0x698098d8)).rotate_left(7));
+        d = c.wrapping_add((d.wrapping_add(f_md5(a, b, c)).wrapping_add(x[9]).wrapping_add(0x8b44f7af)).rotate_left(12));
+        c = b.wrapping_add((c.wrapping_add(f_md5(d, a, b)).wrapping_add(x[10]).wrapping_add(0xffff5bb1)).rotate_left(17));
+        b = a.wrapping_add((b.wrapping_add(f_md5(c, d, a)).wrapping_add(x[11]).wrapping_add(0x895cd7be)).rotate_left(22));
+        a = b.wrapping_add((a.wrapping_add(f_md5(b, c, d)).wrapping_add(x[12]).wrapping_add(0x6b901122)).rotate_left(7));
+        d = c.wrapping_add((d.wrapping_add(f_md5(a, b, c)).wrapping_add(x[13]).wrapping_add(0xfd987193)).rotate_left(12));
+        c = b.wrapping_add((c.wrapping_add(f_md5(d, a, b)).wrapping_add(x[14]).wrapping_add(0xa679438e)).rotate_left(17));
+        b = a.wrapping_add((b.wrapping_add(f_md5(c, d, a)).wrapping_add(x[15]).wrapping_add(0x49b40821)).rotate_left(22));
+
+        // Round 2
+        a = b.wrapping_add((a.wrapping_add(g_md5(b, c, d)).wrapping_add(x[1]).wrapping_add(0xf61e2562)).rotate_left(5));
+        d = c.wrapping_add((d.wrapping_add(g_md5(a, b, c)).wrapping_add(x[6]).wrapping_add(0xc040b340)).rotate_left(9));
+        c = b.wrapping_add((c.wrapping_add(g_md5(d, a, b)).wrapping_add(x[11]).wrapping_add(0x265e5a51)).rotate_left(14));
+        b = a.wrapping_add((b.wrapping_add(g_md5(c, d, a)).wrapping_add(x[0]).wrapping_add(0xe9b6c7aa)).rotate_left(20));
+        a = b.wrapping_add((a.wrapping_add(g_md5(b, c, d)).wrapping_add(x[5]).wrapping_add(0xd62f105d)).rotate_left(5));
+        d = c.wrapping_add((d.wrapping_add(g_md5(a, b, c)).wrapping_add(x[10]).wrapping_add(0x02441453)).rotate_left(9));
+        c = b.wrapping_add((c.wrapping_add(g_md5(d, a, b)).wrapping_add(x[15]).wrapping_add(0xd8a1e681)).rotate_left(14));
+        b = a.wrapping_add((b.wrapping_add(g_md5(c, d, a)).wrapping_add(x[4]).wrapping_add(0xe7d3fbc8)).rotate_left(20));
+        a = b.wrapping_add((a.wrapping_add(g_md5(b, c, d)).wrapping_add(x[9]).wrapping_add(0x21e1cde6)).rotate_left(5));
+        d = c.wrapping_add((d.wrapping_add(g_md5(a, b, c)).wrapping_add(x[14]).wrapping_add(0xc33707d6)).rotate_left(9));
+        c = b.wrapping_add((c.wrapping_add(g_md5(d, a, b)).wrapping_add(x[3]).wrapping_add(0xf4d50d87)).rotate_left(14));
+        b = a.wrapping_add((b.wrapping_add(g_md5(c, d, a)).wrapping_add(x[8]).wrapping_add(0x455a14ed)).rotate_left(20));
+        a = b.wrapping_add((a.wrapping_add(g_md5(b, c, d)).wrapping_add(x[13]).wrapping_add(0xa9e3e905)).rotate_left(5));
+        d = c.wrapping_add((d.wrapping_add(g_md5(a, b, c)).wrapping_add(x[2]).wrapping_add(0xfcefa3f8)).rotate_left(9));
+        c = b.wrapping_add((c.wrapping_add(g_md5(d, a, b)).wrapping_add(x[7]).wrapping_add(0x676f02d9)).rotate_left(14));
+        b = a.wrapping_add((b.wrapping_add(g_md5(c, d, a)).wrapping_add(x[12]).wrapping_add(0x8d2a4c8a)).rotate_left(20));
+
+        // Round 3
+        a = b.wrapping_add((a.wrapping_add(h_md5(b, c, d)).wrapping_add(x[5]).wrapping_add(0xfffa3942)).rotate_left(4));
+        d = c.wrapping_add((d.wrapping_add(h_md5(a, b, c)).wrapping_add(x[8]).wrapping_add(0x8771f681)).rotate_left(11));
+        c = b.wrapping_add((c.wrapping_add(h_md5(d, a, b)).wrapping_add(x[11]).wrapping_add(0x6d9d6122)).rotate_left(16));
+        b = a.wrapping_add((b.wrapping_add(h_md5(c, d, a)).wrapping_add(x[14]).wrapping_add(0xfde5380c)).rotate_left(23));
+        a = b.wrapping_add((a.wrapping_add(h_md5(b, c, d)).wrapping_add(x[1]).wrapping_add(0xa4beea44)).rotate_left(4));
+        d = c.wrapping_add((d.wrapping_add(h_md5(a, b, c)).wrapping_add(x[4]).wrapping_add(0x4bdecfa9)).rotate_left(11));
+        c = b.wrapping_add((c.wrapping_add(h_md5(d, a, b)).wrapping_add(x[7]).wrapping_add(0xf6bb4b60)).rotate_left(16));
+        b = a.wrapping_add((b.wrapping_add(h_md5(c, d, a)).wrapping_add(x[10]).wrapping_add(0xbebfbc70)).rotate_left(23));
+        a = b.wrapping_add((a.wrapping_add(h_md5(b, c, d)).wrapping_add(x[13]).wrapping_add(0x289b7ec6)).rotate_left(4));
+        d = c.wrapping_add((d.wrapping_add(h_md5(a, b, c)).wrapping_add(x[0]).wrapping_add(0xeaa127fa)).rotate_left(11));
+        c = b.wrapping_add((c.wrapping_add(h_md5(d, a, b)).wrapping_add(x[3]).wrapping_add(0xd4ef3085)).rotate_left(16));
+        b = a.wrapping_add((b.wrapping_add(h_md5(c, d, a)).wrapping_add(x[6]).wrapping_add(0x04881d05)).rotate_left(23));
+        a = b.wrapping_add((a.wrapping_add(h_md5(b, c, d)).wrapping_add(x[9]).wrapping_add(0xd9d4d039)).rotate_left(4));
+        d = c.wrapping_add((d.wrapping_add(h_md5(a, b, c)).wrapping_add(x[12]).wrapping_add(0xe6db99e5)).rotate_left(11));
+        c = b.wrapping_add((c.wrapping_add(h_md5(d, a, b)).wrapping_add(x[15]).wrapping_add(0x1fa27cf8)).rotate_left(16));
+        b = a.wrapping_add((b.wrapping_add(h_md5(c, d, a)).wrapping_add(x[2]).wrapping_add(0xc4ac5665)).rotate_left(23));
+
+        self.state[0] = self.state[0].wrapping_add(a);
+        self.state[1] = self.state[1].wrapping_add(b);
+        self.state[2] = self.state[2].wrapping_add(c);
+        self.state[3] = self.state[3].wrapping_add(d);
+    }
+}
