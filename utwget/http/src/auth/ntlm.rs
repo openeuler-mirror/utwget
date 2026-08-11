@@ -1049,3 +1049,39 @@ fn f_md5(x: u32, y: u32, z: u32) -> u32 { (x & y) | (!x & z) }
 fn g_md5(x: u32, y: u32, z: u32) -> u32 { (x & z) | (y & !z) }
 /// MD5 round 3 function.
 fn h_md5(x: u32, y: u32, z: u32) -> u32 { x ^ y ^ z }
+
+/// Creates an 8-byte DES key from 7 input bytes.
+///
+/// Expands the 7-byte key to 8 bytes and adds parity bits.
+///
+/// # Arguments
+///
+/// * `key7` - The 7-byte input key.
+///
+/// # Returns
+///
+/// The 8-byte DES key with parity bits.
+fn create_des_key(key7: &[u8]) -> [u8; 8] {
+    let mut key = [0u8; 8];
+    key[0] = key7[0];
+    key[1] = (key7[0] << 7) | (key7[1] >> 1);
+    key[2] = (key7[1] << 6) | (key7[2] >> 2);
+    key[3] = (key7[2] << 5) | (key7[3] >> 3);
+    key[4] = (key7[3] << 4) | (key7[4] >> 4);
+    key[5] = (key7[4] << 3) | (key7[5] >> 5);
+    key[6] = (key7[5] << 2) | (key7[6] >> 6);
+    key[7] = key7[6] << 1;
+
+    // Add parity bits
+    for i in 0..8 {
+        let mut parity = 1u8;
+        let mut b = key[i];
+        for _ in 0..7 {
+            parity ^= b & 1;
+            b >>= 1;
+        }
+        key[i] = (key[i] & 0xFE) | parity;
+    }
+
+    key
+}
