@@ -900,3 +900,10 @@ fn md5_hash(data: &[u8]) -> [u8; 16] {
 
     result
 }
+
+/// Simple MD5 context.
+struct Md5Ctx {
+    state: [u32; 4],
+    count: [u32; 2],
+    buffer: [u8; 64],
+}
