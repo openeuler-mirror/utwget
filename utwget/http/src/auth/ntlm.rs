@@ -681,3 +681,26 @@ fn ntlm_v2_response(
 
     (nt_response, lm_response)
 }
+
+/// Gets the current time as a Windows FILETIME value.
+///
+/// FILETIME is the number of 100-nanosecond intervals since January 1, 1601.
+///
+/// # Returns
+///
+/// The current time as a 64-bit FILETIME value.
+fn get_ntlm_timestamp() -> u64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    // Windows FILETIME: 100-nanosecond intervals since January 1, 1601
+    // Unix epoch: January 1, 1970
+    // Difference: 11644473600 seconds
+
+    let unix_time = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+
+    let windows_time = (unix_time + 11644473600) * 10_000_000;
+    windows_time
+}
