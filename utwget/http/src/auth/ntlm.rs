@@ -605,3 +605,31 @@ fn ntlm_v2_hash(nt_hash: &[u8; 16], username: &[u8], domain: &[u8]) -> [u8; 16] 
 
     hmac_md5(nt_hash, &data)
 }
+
+/// Generates a random 8-byte client challenge.
+///
+/// Uses the current timestamp and process ID as entropy sources.
+///
+/// # Returns
+///
+/// An 8-byte client challenge value.
+fn generate_client_challenge() -> [u8; 8] {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+
+    let pid = std::process::id();
+
+    [
+        (timestamp & 0xFF) as u8,
+        ((timestamp >> 8) & 0xFF) as u8,
+        ((timestamp >> 16) & 0xFF) as u8,
+        ((timestamp >> 24) & 0xFF) as u8,
+        (pid & 0xFF) as u8,
+        ((pid >> 8) & 0xFF) as u8,
+        ((pid >> 16) & 0xFF) as u8,
+        ((pid >> 24) & 0xFF) as u8,
+    ]
+}
