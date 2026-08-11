@@ -719,3 +719,11 @@ fn md4_hash(data: &[u8]) -> [u8; 16] {
     md4.update(data);
     md4.finalize()
 }
+
+/// Simple MD4 hash implementation.
+struct Md4 {
+    buffer: [u8; 64],
+    buffer_len: usize,
+    total_len: u64,
+    state: [u32; 4],
+}
