@@ -727,3 +727,115 @@ struct Md4 {
     total_len: u64,
     state: [u32; 4],
 }
+
+impl Md4 {
+    /// Creates a new MD4 hash context with initial state.
+    fn new() -> Self {
+        Self {
+            buffer: [0; 64],
+            buffer_len: 0,
+            total_len: 0,
+            state: [0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476],
+        }
+    }
+
+    /// Updates the hash with more data.
+    ///
+    /// # Arguments
+    ///
+    /// * `data` - Additional data to hash.
+    fn update(&mut self, data: &[u8]) {
+        let mut data = data;
+        self.total_len += data.len() as u64;
+
+        // Process buffered data
+        if self.buffer_len > 0 {
+            let needed = 64 - self.buffer_len;
+            let take = needed.min(data.len());
+            self.buffer[self.buffer_len..self.buffer_len + take].copy_from_slice(&data[..take]);
+            self.buffer_len += take;
+            data = &data[take..];
+
+            if self.buffer_len == 64 {
+                let block = self.buffer;
+                self.process_block(&block);
+                self.buffer_len = 0;
+            }
+        }
+
+        // Process full blocks
+        while data.len() >= 64 {
+            self.process_block(&data[..64]);
+            data = &data[64..];
+        }
+
+        // Buffer remaining
+        if !data.is_empty() {
+            self.buffer[..data.len()].copy_from_slice(data);
+            self.buffer_len = data.len();
+        }
+    }
+
+    /// Finalizes the hash and returns the digest.
+    ///
+    /// # Returns
+    ///
+    /// The 16-byte MD4 digest.
+    fn finalize(&mut self) -> [u8; 16] {
+        // Pad message
+        let pad_len = if self.buffer_len < 56 { 56 - self.buffer_len } else { 120 - self.buffer_len };
+        let mut padding = vec![0u8; pad_len as usize];
+        padding[0] = 0x80;
+
+        self.update(&padding);
+
+        // Append length in bits
+        let bit_len = (self.total_len * 8).to_le_bytes();
+        self.update(&bit_len);
+
+        // Output state
+        let mut result = [0u8; 16];
+        for (i, &s) in self.state.iter().enumerate() {
+            result[i * 4..i * 4 + 4].copy_from_slice(&s.to_le_bytes());
+        }
+        result
+    }
+
+    /// Processes a single 64-byte block.
+    fn process_block(&mut self, block: &[u8]) {
+        let mut x = [0u32; 16];
+        for i in 0..16 {
+            x[i] = u32::from_le_bytes([
+                block[i * 4],
+                block[i * 4 + 1],
+                block[i * 4 + 2],
+                block[i * 4 + 3],
+            ]);
+        }
+
+        let [mut a, mut b, mut c, mut d] = self.state;
+
+        // Round 1
+        for &k in &[0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15] {
+            a = a.wrapping_add(f(b, c, d)).wrapping_add(x[k]).rotate_left(3);
+            let t = d; d = c; c = b; b = a; a = t;
+        }
+
+        // Round 2
+        for &k in &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15] {
+            a = a.wrapping_add(g(b, c, d)).wrapping_add(x[k]).wrapping_add(0x5a827999).rotate_left(5);
+            let t = d; d = c; c = b; b = a; a = t;
+        }
+
+        // Round 3
+        for &k in &[0, 2, 1, 3, 4, 6, 5, 7, 8, 10, 9, 11, 12, 14, 13, 15] {
+            a = a.wrapping_add(h(b, c, d)).wrapping_add(x[k]).wrapping_add(0x6ed9eba1).rotate_left(9);
+            let t = d; d = c; c = b; b = a; a = t;
+        }
+
+        self.state[0] = self.state[0].wrapping_add(a);
+        self.state[1] = self.state[1].wrapping_add(b);
+        self.state[2] = self.state[2].wrapping_add(c);
+        self.state[3] = self.state[3].wrapping_add(d);
+    }
+}
