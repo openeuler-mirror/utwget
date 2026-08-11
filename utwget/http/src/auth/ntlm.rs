@@ -633,3 +633,51 @@ fn generate_client_challenge() -> [u8; 8] {
         ((pid >> 24) & 0xFF) as u8,
     ]
 }
+
+/// Calculates the NTLMv2 response pair (NT response and LM response).
+///
+/// # Arguments
+///
+/// * `nt_v2_hash` - The NTLMv2 hash.
+/// * `server_challenge` - The 8-byte server challenge.
+/// * `client_challenge` - The 8-byte client challenge.
+/// * `target_info` - The target info block from Type 2 message.
+///
+/// # Returns
+///
+/// A tuple of (NT response, LM response) byte vectors.
+fn ntlm_v2_response(
+    nt_v2_hash: &[u8; 16],
+    server_challenge: &[u8; 8],
+    client_challenge: &[u8; 8],
+    target_info: &[u8],
+) -> (Vec<u8>, Vec<u8>) {
+    // Build temp = server_challenge + client_challenge + timestamp + target_info
+    let mut temp = Vec::with_capacity(8 + 8 + 8 + target_info.len());
+    temp.extend_from_slice(server_challenge);
+    temp.extend_from_slice(client_challenge);
+
+    // Add timestamp (Windows FILETIME, 64-bit)
+    let timestamp = get_ntlm_timestamp();
+    temp.extend_from_slice(&timestamp.to_le_bytes());
+
+    temp.extend_from_slice(target_info);
+    temp.extend_from_slice(&[0, 0, 0, 0]); // Null terminator
+
+    // NT response = HMAC-MD5(NTv2 hash, temp) + temp
+    let nt_proof = hmac_md5(nt_v2_hash, &temp);
+    let mut nt_response = Vec::with_capacity(16 + temp.len());
+    nt_response.extend_from_slice(&nt_proof);
+    nt_response.extend_from_slice(&temp);
+
+    // LM response = HMAC-MD5(NTv2 hash, server_challenge + client_challenge) + client_challenge
+    let mut lm_data = Vec::with_capacity(16);
+    lm_data.extend_from_slice(server_challenge);
+    lm_data.extend_from_slice(client_challenge);
+    let lm_proof = hmac_md5(nt_v2_hash, &lm_data);
+    let mut lm_response = Vec::with_capacity(16 + 8);
+    lm_response.extend_from_slice(&lm_proof);
+    lm_response.extend_from_slice(client_challenge);
+
+    (nt_response, lm_response)
+}
