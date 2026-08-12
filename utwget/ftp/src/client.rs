@@ -58,3 +58,9 @@ pub enum FtpError {
     #[error("FTP protocol error: {0}")]
     Protocol(#[from] FtpCommandError),
 }
+
+impl From<ut_core::WgetError> for FtpError {
+    fn from(e: ut_core::WgetError) -> Self {
+        FtpError::Connect(e.to_string())
+    }
+}
