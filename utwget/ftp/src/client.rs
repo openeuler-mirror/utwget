@@ -1231,3 +1231,13 @@ fn parse_ftp_timestamp(s: &str) -> Option<chrono::DateTime<chrono::Utc>> {
 
     chrono::Utc.with_ymd_and_hms(year, month, day, hour, minute, second).single()
 }
+
+/// Extract the parent directory path from a full path.
+fn parent_path(path: &str) -> String {
+    let path = path.trim_start_matches('/');
+    if let Some(last_slash) = path.rfind('/') {
+        format!("/{}", &path[..last_slash])
+    } else {
+        String::new()
+    }
+}
