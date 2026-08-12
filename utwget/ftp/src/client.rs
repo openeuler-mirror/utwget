@@ -64,3 +64,25 @@ impl From<ut_core::WgetError> for FtpError {
         FtpError::Connect(e.to_string())
     }
 }
+
+/// Result of fetching metadata from an FTP URL.
+///
+/// Contains information about the remote resource including whether it's
+/// a directory or file, its size, modification time, and directory listing
+/// if applicable.
+#[derive(Debug)]
+pub struct FtpFetchResult {
+    /// FTP status code from the operation.
+    pub status_code: u16,
+    /// Size of the file in bytes, if known.
+    pub content_length: Option<u64>,
+    /// Content type (e.g., "application/octet-stream" for files,
+    /// "text/ftp; type=directory" for directories).
+    pub content_type: Option<String>,
+    /// Last modification time of the resource.
+    pub last_modified: Option<chrono::DateTime<chrono::Utc>>,
+    /// Whether the resource is a directory.
+    pub is_directory: bool,
+    /// Directory listing entries, if the resource is a directory.
+    pub file_list: Option<Vec<FtpEntry>>,
+}
