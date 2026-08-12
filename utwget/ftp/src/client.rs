@@ -1127,3 +1127,35 @@ struct ParsedFtpUrl {
     /// Path component of the URL.
     path: String,
 }
+
+/// Parse an FTP URL into its components.
+///
+/// Supports URLs in the format: `ftp://[user:pass@]host[:port]/path`
+fn parse_ftp_url(url: &str) -> Result<ParsedFtpUrl, FtpError> {
+    let url = url.trim();
+
+    let scheme_end = url.find("://").ok_or_else(|| {
+        FtpError::ParseError("missing ://".into())
+    })?;
+    let scheme = &url[..scheme_end];
+    if scheme != "ftp" && scheme != "ftps" {
+        return Err(FtpError::ParseError(format!("not an FTP URL: {}", scheme)));
+    }
+
+    let rest = &url[scheme_end + 3..];
+
+    let (host_port, path_part) = match rest.find('/') {
+        Some(idx) => (&rest[..idx], &rest[idx..]),
+        None => (rest, "/"),
+    };
+
+    let (host, port, user, password) = parse_host_port_auth(host_port)?;
+
+    Ok(ParsedFtpUrl {
+        host,
+        port,
+        user,
+        password,
+        path: path_part.to_string(),
+    })
+}
