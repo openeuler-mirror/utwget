@@ -86,3 +86,27 @@ pub struct FtpFetchResult {
     /// Directory listing entries, if the resource is a directory.
     pub file_list: Option<Vec<FtpEntry>>,
 }
+
+/// FTP client for file transfer operations.
+///
+/// This struct manages an FTP control connection and provides methods
+/// for all standard FTP operations including file transfer, directory
+/// navigation, and file management.
+///
+/// The client supports both passive (PASV/EPSV) and active (PORT/EPRT)
+/// modes, with passive mode being the default. It also handles both
+/// IPv4 and IPv6 connections automatically.
+pub struct FtpClient {
+    /// Control connection transport.
+    ctrl: Option<Box<dyn Transport<Error = io::Error>>>,
+    /// Connected host name.
+    host: Option<String>,
+    /// Whether to use passive mode for data connections.
+    passive: bool,
+    /// Whether the connection is over IPv6.
+    is_ipv6: bool,
+    /// Whether binary (image) mode is active.
+    binary: bool,
+    /// Current working directory on the server.
+    current_dir: String,
+}
