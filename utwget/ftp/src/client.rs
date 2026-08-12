@@ -1113,3 +1113,17 @@ impl Drop for FtpClient {
         }
     }
 }
+
+/// Parsed components of an FTP URL.
+struct ParsedFtpUrl {
+    /// Host name or IP address.
+    host: String,
+    /// Port number (default 21).
+    port: u16,
+    /// Optional username for authentication.
+    user: Option<String>,
+    /// Optional password for authentication.
+    password: Option<String>,
+    /// Path component of the URL.
+    path: String,
+}
