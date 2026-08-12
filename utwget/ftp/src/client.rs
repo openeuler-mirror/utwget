@@ -1241,3 +1241,13 @@ fn parent_path(path: &str) -> String {
         String::new()
     }
 }
+
+/// Extract the base name (filename) from a full path.
+fn base_name(path: &str) -> String {
+    let path = path.trim_start_matches('/');
+    if let Some(last_slash) = path.rfind('/') {
+        path[last_slash + 1..].to_string()
+    } else {
+        path.to_string()
+    }
+}
