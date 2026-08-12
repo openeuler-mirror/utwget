@@ -217,3 +217,21 @@ pub fn check_http2_support(host: &str, port: u16) -> bool {
     // Check if HTTP/2 was negotiated
     tls_stream.get_ref().1.alpn_protocol() == Some(b"h2")
 }
+
+/// Convert HTTP/1.1 headers to HTTP/2 format.
+///
+/// HTTP/2 requires lowercase header names and removes the "Connection" header.
+pub fn convert_headers_to_h2(headers: &http::HeaderMap) -> http::HeaderMap {
+    let mut h2_headers = http::HeaderMap::new();
+    
+    for (name, value) in headers.iter() {
+        let name_str = name.as_str().to_lowercase();
+        if name_str != "connection" && name_str != "transfer-encoding" {
+            if let Ok(name) = http::header::HeaderName::from_bytes(name_str.as_bytes()) {
+                h2_headers.insert(name, value.clone());
+            }
+        }
+    }
+    
+    h2_headers
+}
