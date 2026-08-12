@@ -1159,3 +1159,29 @@ fn parse_ftp_url(url: &str) -> Result<ParsedFtpUrl, FtpError> {
         path: path_part.to_string(),
     })
 }
+
+use chrono::TimeZone;
+
+/// Parse a host:port string, handling IPv6 bracket notation.
+fn parse_host_and_port(host_port: &str) -> Result<(String, u16), FtpError> {
+    if host_port.starts_with('[') {
+        if let Some(bracket_end) = host_port.find(']') {
+            let h = host_port[1..bracket_end].to_string();
+            let rest = &host_port[bracket_end + 1..];
+            let p = if rest.starts_with(':') {
+                rest[1..].parse::<u16>().unwrap_or(21)
+            } else {
+                21
+            };
+            Ok((h, p))
+        } else {
+            Err(FtpError::ParseError("unclosed IPv6 bracket".into()))
+        }
+    } else if let Some(colon) = host_port.find(':') {
+        let h = host_port[..colon].to_string();
+        let p = host_port[colon + 1..].parse::<u16>().unwrap_or(21);
+        Ok((h, p))
+    } else {
+        Ok((host_port.to_string(), 21))
+    }
+}
