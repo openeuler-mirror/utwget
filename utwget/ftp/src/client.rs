@@ -1104,3 +1104,12 @@ impl FtpClient {
         Ok(resp)
     }
 }
+
+impl Drop for FtpClient {
+    /// Automatically close the connection when the client is dropped.
+    fn drop(&mut self) {
+        if self.ctrl.is_some() {
+            let _ = self.quit();
+        }
+    }
+}
