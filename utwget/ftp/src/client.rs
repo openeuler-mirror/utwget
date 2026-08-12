@@ -1214,3 +1214,20 @@ fn extract_quoted_path(text: &str) -> Option<String> {
     let end = text[start + 1..].find('"')?;
     Some(text[start + 1..start + 1 + end].to_string())
 }
+
+/// Parse an MDTM timestamp (YYYYMMDDHHMMSS) into a DateTime.
+fn parse_ftp_timestamp(s: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    let s = s.trim();
+    if s.len() != 14 {
+        return None;
+    }
+
+    let year: i32 = s[0..4].parse().ok()?;
+    let month: u32 = s[4..6].parse().ok()?;
+    let day: u32 = s[6..8].parse().ok()?;
+    let hour: u32 = s[8..10].parse().ok()?;
+    let minute: u32 = s[10..12].parse().ok()?;
+    let second: u32 = s[12..14].parse().ok()?;
+
+    chrono::Utc.with_ymd_and_hms(year, month, day, hour, minute, second).single()
+}
