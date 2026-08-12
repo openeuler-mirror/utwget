@@ -1207,3 +1207,10 @@ fn parse_host_port_auth(input: &str) -> Result<(String, u16, Option<String>, Opt
 
     Ok((host, port, user, password))
 }
+
+/// Extract a quoted path from a PWD response.
+fn extract_quoted_path(text: &str) -> Option<String> {
+    let start = text.find('"')?;
+    let end = text[start + 1..].find('"')?;
+    Some(text[start + 1..start + 1 + end].to_string())
+}
