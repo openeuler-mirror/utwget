@@ -1185,3 +1185,25 @@ fn parse_host_and_port(host_port: &str) -> Result<(String, u16), FtpError> {
         Ok((host_port.to_string(), 21))
     }
 }
+
+/// Parse host:port with optional user:pass@ prefix.
+fn parse_host_port_auth(input: &str) -> Result<(String, u16, Option<String>, Option<String>), FtpError> {
+    let input = input.trim_end_matches('/');
+
+    let (user, password, host_port) = if let Some(at) = input.rfind('@') {
+        let cred_str = &input[..at];
+        let hp = &input[at + 1..];
+        let (user, password) = if let Some(colon) = cred_str.find(':') {
+            (Some(cred_str[..colon].to_string()), Some(cred_str[colon + 1..].to_string()))
+        } else {
+            (Some(cred_str.to_string()), None)
+        };
+        (user, password, hp.to_string())
+    } else {
+        (None, None, input.to_string())
+    };
+
+    let (host, port) = parse_host_and_port(&host_port)?;
+
+    Ok((host, port, user, password))
+}
