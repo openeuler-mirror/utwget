@@ -35,3 +35,35 @@ impl DataConnection {
         DataConnection { stream }
     }
 }
+
+/// Enter passive mode for data transfer.
+///
+/// If IPv6 is preferred, tries EPSV first, falling back to PASV.
+/// Otherwise, uses PASV directly.
+///
+/// # Arguments
+///
+/// * `ctrl` - The control connection transport.
+/// * `prefer_ipv6` - Whether to prefer IPv6 (EPSV) over IPv4 (PASV).
+///
+/// # Returns
+///
+/// The established data connection.
+///
+/// # Errors
+///
+/// Returns `FtpCommandError` if the command fails or the response
+/// cannot be parsed.
+pub fn enter_passive_mode(
+    ctrl: &mut dyn Transport<Error = io::Error>,
+    prefer_ipv6: bool,
+) -> Result<DataConnection, FtpCommandError> {
+    if prefer_ipv6 {
+        match enter_epsv(ctrl) {
+            Ok(conn) => return Ok(conn),
+            Err(_) => {}
+        }
+    }
+
+    enter_pasv(ctrl)
+}
