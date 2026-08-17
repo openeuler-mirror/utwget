@@ -24,3 +24,14 @@ pub struct DataConnection {
     /// The underlying transport for data transfer.
     pub stream: Box<dyn Transport<Error = io::Error>>,
 }
+
+impl DataConnection {
+    /// Create a new data connection from a transport.
+    ///
+    /// # Arguments
+    ///
+    /// * `stream` - The transport to wrap.
+    pub fn new(stream: Box<dyn Transport<Error = io::Error>>) -> Self {
+        DataConnection { stream }
+    }
+}
