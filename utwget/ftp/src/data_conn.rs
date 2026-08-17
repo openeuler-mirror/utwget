@@ -105,3 +105,41 @@ pub fn enter_pasv(
         message: resp.text,
     })
 }
+
+/// Enter passive mode using the EPSV command (IPv6-capable).
+///
+/// EPSV is the extended passive mode command that works with both
+/// IPv4 and IPv6 addresses.
+///
+/// # Arguments
+///
+/// * `ctrl` - The control connection transport.
+///
+/// # Returns
+///
+/// The established data connection.
+///
+/// # Errors
+///
+/// Returns `FtpCommandError` if the command fails or the response
+/// cannot be parsed.
+pub fn enter_epsv(
+    ctrl: &mut dyn Transport<Error = io::Error>,
+) -> Result<DataConnection, FtpCommandError> {
+    FtpCommand::send(ctrl, "EPSV")?;
+    let resp = FtpResponse::read(ctrl)?;
+
+    if resp.is_positive_completion {
+        let addr = parse_epsv_response(&resp.text)?;
+        let stream = TcpStream::connect(addr).map_err(FtpCommandError::Io)?;
+        stream.set_nonblocking(false).ok();
+        log::debug!("FTP EPSV data connection to {}", addr);
+        return Ok(DataConnection::new(Box::new(stream)));
+    }
+
+    Err(FtpCommandError::UnexpectedCode {
+        expected: 229,
+        actual: resp.code,
+        message: resp.text,
+    })
+}
