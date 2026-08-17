@@ -16,3 +16,11 @@ pub enum DataConnectionMode {
     /// Active mode: server connects to client-specified address (PORT/EPRT).
     Active,
 }
+
+/// An established FTP data connection.
+///
+/// This wraps a transport that can be used for file transfers.
+pub struct DataConnection {
+    /// The underlying transport for data transfer.
+    pub stream: Box<dyn Transport<Error = io::Error>>,
+}
