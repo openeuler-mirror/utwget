@@ -42,3 +42,10 @@ impl IntoTcpStream for std::net::TcpStream {
         Ok(*self)
     }
 }
+
+impl Transport for std::net::TcpStream {
+    type Error = io::Error;
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> { std::io::Read::read(self, buf) }
+    fn write_all(&mut self, buf: &[u8]) -> Result<(), Self::Error> { std::io::Write::write_all(self, buf) }
+    fn flush(&mut self) -> Result<(), Self::Error> { std::io::Write::flush(self) }
+}
