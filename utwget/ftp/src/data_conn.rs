@@ -176,3 +176,48 @@ pub fn enter_active_mode(
     }
     enter_port(ctrl)
 }
+
+/// Enter active mode using the PORT command (IPv4 only).
+///
+/// Binds a local socket and sends the PORT command with the
+/// address and port for the server to connect to.
+///
+/// # Arguments
+///
+/// * `ctrl` - The control connection transport.
+///
+/// # Returns
+///
+/// `Ok(())` on success.
+///
+/// # Errors
+///
+/// Returns `FtpCommandError` if the command fails or the local
+/// address is IPv6.
+pub fn enter_port(
+    ctrl: &mut dyn Transport<Error = io::Error>,
+) -> Result<(), FtpCommandError> {
+    let listener = TcpListenerBind::bind_any()?;
+    let local_addr = listener.socket.local_addr().map_err(FtpCommandError::Io)?;
+
+    match local_addr {
+        SocketAddr::V4(v4) => {
+            let octets = v4.ip().octets();
+            let port_hi = v4.port() / 256;
+            let port_lo = v4.port() % 256;
+            let cmd = format!(
+                "PORT {},{},{},{},{},{}",
+                octets[0], octets[1], octets[2], octets[3], port_hi, port_lo
+            );
+            FtpCommand::send(ctrl, &cmd)?;
+            FtpResponse::expect(ctrl, 200)?;
+            log::debug!("FTP PORT {}", cmd);
+            Ok(())
+        }
+        SocketAddr::V6(_) => {
+            Err(FtpCommandError::MalformedResponse(
+                "PORT command requires IPv4 address".into(),
+            ))
+        }
+    }
+}
