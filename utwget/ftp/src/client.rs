@@ -1251,3 +1251,10 @@ fn base_name(path: &str) -> String {
         path.to_string()
     }
 }
+
+impl Default for FtpClient {
+    /// Create a new FTP client with default settings.
+    fn default() -> Self {
+        Self::new()
+    }
+}
