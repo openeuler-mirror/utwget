@@ -49,3 +49,37 @@ impl Transport for std::net::TcpStream {
     fn write_all(&mut self, buf: &[u8]) -> Result<(), Self::Error> { std::io::Write::write_all(self, buf) }
     fn flush(&mut self) -> Result<(), Self::Error> { std::io::Write::flush(self) }
 }
+
+/// FTP command sender.
+///
+/// This struct provides methods for sending FTP commands over a transport.
+pub struct FtpCommand;
+
+impl FtpCommand {
+    /// Send an FTP command over the transport.
+    ///
+    /// The command is automatically terminated with CRLF if not already present.
+    ///
+    /// # Arguments
+    ///
+    /// * `transport` - The transport to send the command over.
+    /// * `cmd` - The FTP command string (without CRLF terminator).
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` on success.
+    ///
+    /// # Errors
+    ///
+    /// Returns `FtpCommandError::Io` if the write fails.
+    pub fn send(transport: &mut dyn Transport<Error = io::Error>, cmd: &str) -> Result<(), FtpCommandError> {
+        let mut full = String::from(cmd);
+        if !full.ends_with("\r\n") {
+            full.push_str("\r\n");
+        }
+        transport.write_all(full.as_bytes()).map_err(FtpCommandError::Io)?;
+        transport.flush().map_err(FtpCommandError::Io)?;
+        log::debug!("FTP CMD: {}", cmd.trim_end());
+        Ok(())
+    }
+}
