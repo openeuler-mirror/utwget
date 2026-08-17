@@ -108,3 +108,159 @@ pub struct FtpResponse {
     /// True for 5xx codes (permanent negative completion reply).
     pub is_permanent_negative: bool,
 }
+
+impl FtpResponse {
+    /// Classify a response code into its category flags.
+    ///
+    /// FTP response codes are classified by their first digit:
+    /// - 1xx: Positive preliminary
+    /// - 2xx: Positive completion
+    /// - 3xx: Positive intermediate
+    /// - 4xx: Transient negative
+    /// - 5xx: Permanent negative
+    fn classify(code: u16) -> (bool, bool, bool, bool, bool) {
+        (
+            (100..200).contains(&code),
+            (200..300).contains(&code),
+            (300..400).contains(&code),
+            (400..500).contains(&code),
+            (500..600).contains(&code),
+        )
+    }
+
+    /// Read a single line from the transport.
+    ///
+    /// Reads until a newline character is encountered.
+    ///
+    /// # Arguments
+    ///
+    /// * `transport` - The transport to read from.
+    ///
+    /// # Returns
+    ///
+    /// The line as a string (including the newline).
+    ///
+    /// # Errors
+    ///
+    /// Returns `FtpCommandError::Io` on read failure or unexpected EOF.
+    pub fn read_line_from(transport: &mut dyn Transport<Error = io::Error>) -> Result<String, FtpCommandError> {
+        let mut line_bytes = Vec::new();
+        let mut buf = [0u8; 1];
+        loop {
+            let n = transport.read(&mut buf).map_err(FtpCommandError::Io)?;
+            if n == 0 {
+                return Err(FtpCommandError::Io(io::Error::new(io::ErrorKind::UnexpectedEof, "connection closed")));
+            }
+            line_bytes.push(buf[0]);
+            if buf[0] == b'\n' {
+                break;
+            }
+        }
+        String::from_utf8(line_bytes).map_err(|e| FtpCommandError::Io(io::Error::new(io::ErrorKind::InvalidData, e.to_string())))
+    }
+
+    /// Read a complete FTP response from the transport.
+    ///
+    /// Handles both single-line and multi-line responses. Multi-line
+    /// responses use the format `code-text` for continuation lines
+    /// and `code text` for the final line.
+    ///
+    /// # Arguments
+    ///
+    /// * `transport` - The transport to read from.
+    ///
+    /// # Returns
+    ///
+    /// The parsed `FtpResponse`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `FtpCommandError::MalformedResponse` if the response
+    /// cannot be parsed.
+    pub fn read(transport: &mut dyn Transport<Error = io::Error>) -> Result<Self, FtpCommandError> {
+        let first_line = Self::read_line_from(transport)?;
+        let trimmed = first_line.trim_end();
+        if trimmed.len() < 3 {
+            return Err(FtpCommandError::MalformedResponse("response too short".into()));
+        }
+
+        let code: u16 = trimmed[..3].parse().map_err(|_| {
+            FtpCommandError::MalformedResponse(format!("invalid code: {}", &trimmed[..3]))
+        })?;
+
+        if trimmed.len() >= 4 && trimmed.as_bytes()[3] == b'-' {
+            let mut all_lines = vec![trimmed[4..].to_string()];
+            let end_marker = format!("{} ", code);
+            loop {
+                let line = Self::read_line_from(transport)?;
+                let t = line.trim_end();
+                if t.len() >= 4 && t[..4] == end_marker {
+                    all_lines.push(t[4..].to_string());
+                    break;
+                }
+                all_lines.push(t.to_string());
+            }
+            let text = all_lines.join("\n");
+            let (ppc, pco, pi, tn, pn) = Self::classify(code);
+            return Ok(FtpResponse {
+                code,
+                text,
+                lines: all_lines,
+                is_positive_preliminary: ppc,
+                is_positive_completion: pco,
+                is_positive_intermediate: pi,
+                is_transient_negative: tn,
+                is_permanent_negative: pn,
+            });
+        }
+
+        let text = if trimmed.len() > 4 { trimmed[4..].trim().to_string() } else { String::new() };
+        let text_clone = text.clone();
+        let (ppc, pco, pi, tn, pn) = Self::classify(code);
+        Ok(FtpResponse {
+            code,
+            text,
+            lines: vec![text_clone],
+            is_positive_preliminary: ppc,
+            is_positive_completion: pco,
+            is_positive_intermediate: pi,
+            is_transient_negative: tn,
+            is_permanent_negative: pn,
+        })
+    }
+
+    /// Read a response and verify it has the expected code.
+    ///
+    /// # Arguments
+    ///
+    /// * `transport` - The transport to read from.
+    /// * `expected_code` - The expected response code.
+    ///
+    /// # Returns
+    ///
+    /// The response text if the code matches.
+    ///
+    /// # Errors
+    ///
+    /// Returns `FtpCommandError::PermanentNegative` or `TransientNegative`
+    /// for error responses, or `UnexpectedCode` for other mismatches.
+    pub fn expect(transport: &mut dyn Transport<Error = io::Error>, expected_code: u16) -> Result<String, FtpCommandError> {
+        let resp = Self::read(transport)?;
+        if resp.code == expected_code {
+            Ok(resp.text)
+        } else if resp.is_permanent_negative {
+            Err(FtpCommandError::PermanentNegative { code: resp.code, message: resp.text })
+        } else if resp.is_transient_negative {
+            Err(FtpCommandError::TransientNegative { code: resp.code, message: resp.text })
+        } else {
+            Err(FtpCommandError::UnexpectedCode { expected: expected_code, actual: resp.code, message: resp.text })
+        }
+    }
+
+    /// Read a multi-line FTP response.
+    ///
+    /// This is an alias for `read()` which handles multi-line responses.
+    pub fn read_multiline(transport: &mut dyn Transport<Error = io::Error>) -> Result<Self, FtpCommandError> {
+        Self::read(transport)
+    }
+}
