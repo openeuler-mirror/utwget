@@ -83,3 +83,28 @@ impl FtpCommand {
         Ok(())
     }
 }
+
+/// FTP server response.
+///
+/// Represents a complete FTP response including the numeric code,
+/// response text, and classification flags based on the first digit
+/// of the response code.
+#[derive(Debug)]
+pub struct FtpResponse {
+    /// The three-digit FTP response code.
+    pub code: u16,
+    /// The response text (message part after the code).
+    pub text: String,
+    /// All lines of a multi-line response.
+    pub lines: Vec<String>,
+    /// True for 1xx codes (positive preliminary reply).
+    pub is_positive_preliminary: bool,
+    /// True for 2xx codes (positive completion reply).
+    pub is_positive_completion: bool,
+    /// True for 3xx codes (positive intermediate reply).
+    pub is_positive_intermediate: bool,
+    /// True for 4xx codes (transient negative completion reply).
+    pub is_transient_negative: bool,
+    /// True for 5xx codes (permanent negative completion reply).
+    pub is_permanent_negative: bool,
+}
