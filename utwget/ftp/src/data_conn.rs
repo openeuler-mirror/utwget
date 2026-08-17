@@ -221,3 +221,43 @@ pub fn enter_port(
         }
     }
 }
+
+/// Enter active mode using the EPRT command (IPv6-capable).
+///
+/// EPRT is the extended port command that works with both
+/// IPv4 and IPv6 addresses.
+///
+/// # Arguments
+///
+/// * `ctrl` - The control connection transport.
+///
+/// # Returns
+///
+/// `Ok(())` on success.
+///
+/// # Errors
+///
+/// Returns `FtpCommandError` if the command fails.
+pub fn enter_eprt(
+    ctrl: &mut dyn Transport<Error = io::Error>,
+) -> Result<(), FtpCommandError> {
+    let listener = TcpListenerBind::bind_any()?;
+    let local_addr = listener.socket.local_addr().map_err(FtpCommandError::Io)?;
+
+    match local_addr {
+        SocketAddr::V4(v4) => {
+            let cmd = format!("EPRT |1|{}|{}|", v4.ip(), v4.port());
+            FtpCommand::send(ctrl, &cmd)?;
+            FtpResponse::expect(ctrl, 200)?;
+            log::debug!("FTP EPRT {}", cmd);
+            Ok(())
+        }
+        SocketAddr::V6(v6) => {
+            let cmd = format!("EPRT |2|{}|{}|", v6.ip(), v6.port());
+            FtpCommand::send(ctrl, &cmd)?;
+            FtpResponse::expect(ctrl, 200)?;
+            log::debug!("FTP EPRT {}", cmd);
+            Ok(())
+        }
+    }
+}
