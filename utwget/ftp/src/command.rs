@@ -264,3 +264,23 @@ impl FtpResponse {
         Self::read(transport)
     }
 }
+
+/// Errors that can occur during FTP command processing.
+#[derive(Debug, thiserror::Error)]
+pub enum FtpCommandError {
+    /// An I/O error occurred.
+    #[error("FTP I/O error: {0}")]
+    Io(#[from] io::Error),
+    /// The server response was malformed.
+    #[error("malformed FTP response: {0}")]
+    MalformedResponse(String),
+    /// The response code did not match the expected value.
+    #[error("FTP unexpected response code: expected {expected}, got {actual}: {message}")]
+    UnexpectedCode { expected: u16, actual: u16, message: String },
+    /// The server returned a permanent negative reply (5xx).
+    #[error("FTP permanent negative reply {code}: {message}")]
+    PermanentNegative { code: u16, message: String },
+    /// The server returned a transient negative reply (4xx).
+    #[error("FTP transient negative reply {code}: {message}")]
+    TransientNegative { code: u16, message: String },
+}
