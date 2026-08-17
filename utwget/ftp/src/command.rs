@@ -24,3 +24,15 @@ pub trait Transport {
     /// Flush any buffered data to the transport.
     fn flush(&mut self) -> Result<(), Self::Error>;
 }
+
+/// Trait for transports that can be converted back to TcpStream.
+///
+/// This is used when upgrading a plain FTP connection to FTPS.
+pub trait IntoTcpStream {
+    /// Convert the transport back to a TcpStream.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the transport cannot be converted.
+    fn into_tcp_stream(self: Box<Self>) -> Result<std::net::TcpStream, io::Error>;
+}
