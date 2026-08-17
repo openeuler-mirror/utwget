@@ -36,3 +36,9 @@ pub trait IntoTcpStream {
     /// Returns an error if the transport cannot be converted.
     fn into_tcp_stream(self: Box<Self>) -> Result<std::net::TcpStream, io::Error>;
 }
+
+impl IntoTcpStream for std::net::TcpStream {
+    fn into_tcp_stream(self: Box<Self>) -> Result<std::net::TcpStream, io::Error> {
+        Ok(*self)
+    }
+}
