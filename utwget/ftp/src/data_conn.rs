@@ -67,3 +67,41 @@ pub fn enter_passive_mode(
 
     enter_pasv(ctrl)
 }
+
+/// Enter passive mode using the PASV command (IPv4 only).
+///
+/// Parses the server response to extract the IP address and port
+/// for the data connection.
+///
+/// # Arguments
+///
+/// * `ctrl` - The control connection transport.
+///
+/// # Returns
+///
+/// The established data connection.
+///
+/// # Errors
+///
+/// Returns `FtpCommandError` if the command fails or the response
+/// cannot be parsed.
+pub fn enter_pasv(
+    ctrl: &mut dyn Transport<Error = io::Error>,
+) -> Result<DataConnection, FtpCommandError> {
+    FtpCommand::send(ctrl, "PASV")?;
+    let resp = FtpResponse::read(ctrl)?;
+
+    if resp.is_positive_completion {
+        let addr = parse_pasv_response(&resp.text)?;
+        let stream = TcpStream::connect(addr).map_err(FtpCommandError::Io)?;
+        stream.set_nonblocking(false).ok();
+        log::debug!("FTP PASV data connection to {}", addr);
+        return Ok(DataConnection::new(Box::new(stream)));
+    }
+
+    Err(FtpCommandError::UnexpectedCode {
+        expected: 227,
+        actual: resp.code,
+        message: resp.text,
+    })
+}
