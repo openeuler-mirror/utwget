@@ -143,3 +143,36 @@ pub fn enter_epsv(
         message: resp.text,
     })
 }
+
+/// Enter active mode for data transfer.
+///
+/// If IPv6 is preferred, tries EPRT first, falling back to PORT.
+/// Otherwise, uses PORT directly.
+///
+/// Note: Active mode requires the client to listen for incoming
+/// connections, which is handled externally.
+///
+/// # Arguments
+///
+/// * `ctrl` - The control connection transport.
+/// * `prefer_ipv6` - Whether to prefer IPv6 (EPRT) over IPv4 (PORT).
+///
+/// # Returns
+///
+/// `Ok(())` on success.
+///
+/// # Errors
+///
+/// Returns `FtpCommandError` if the command fails.
+pub fn enter_active_mode(
+    ctrl: &mut dyn Transport<Error = io::Error>,
+    prefer_ipv6: bool,
+) -> Result<(), FtpCommandError> {
+    if prefer_ipv6 {
+        match enter_eprt(ctrl) {
+            Ok(()) => return Ok(()),
+            Err(_) => {}
+        }
+    }
+    enter_port(ctrl)
+}
