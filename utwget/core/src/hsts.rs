@@ -6,7 +6,6 @@
 use crate::error::{Result, WgetError};
 use crate::types::Scheme;
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -15,7 +14,7 @@ use std::path::Path;
 ///
 /// Represents a host that has advertised HSTS policy via the
 /// Strict-Transport-Security HTTP response header.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct HstsEntry {
     /// The hostname for which HSTS is active.
     pub host: String,
@@ -24,10 +23,8 @@ pub struct HstsEntry {
     /// The max-age directive value in seconds.
     pub max_age: u64,
     /// When this entry was created.
-    #[serde(with = "ts_seconds")]
     pub created: DateTime<Utc>,
     /// When this entry expires.
-    #[serde(with = "ts_seconds")]
     pub expires: DateTime<Utc>,
 }
 
@@ -64,30 +61,12 @@ impl HstsEntry {
     }
 }
 
-/// Serde helpers for timestamp serialization.
-mod ts_seconds {
-    use chrono::{DateTime, TimeZone, Utc};
-    use serde::{self, Deserialize, Deserializer, Serializer};
-
-    /// Serializes a DateTime as a Unix timestamp.
-    pub fn serialize<S: Serializer>(dt: &DateTime<Utc>, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_i64(dt.timestamp())
-    }
-
-    /// Deserializes a Unix timestamp to a DateTime.
-    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<DateTime<Utc>, D::Error> {
-        let ts = i64::deserialize(d)?;
-        Utc.timestamp_opt(ts, 0)
-            .single()
-            .ok_or_else(|| serde::de::Error::custom("invalid timestamp"))
-    }
-}
-
 /// HSTS cache store.
 ///
 /// Maintains a collection of HSTS entries and provides lookup
-/// and persistence functionality.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// and persistence functionality. Uses the GNU wget tab-separated
+/// text format for on-disk storage to maintain file compatibility.
+#[derive(Debug, Clone)]
 pub struct HstsStore {
     /// HSTS entries keyed by hostname.
     entries: HashMap<String, HstsEntry>,
@@ -205,8 +184,45 @@ impl HstsStore {
             return Ok(());
         }
         let data = fs::read_to_string(path).map_err(|e| WgetError::Other(e.to_string()))?;
-        let loaded: HstsStore = serde_json::from_str(&data).map_err(|e| WgetError::Other(e.to_string()))?;
-        self.entries = loaded.entries;
+
+        // GNU wget tab-separated format:
+        //   # comment
+        //   <hostname>\t<port>\t<incl. subdomains>\t<created>\t<max-age>
+        self.entries = HashMap::new();
+        for line in data.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let parts: Vec<&str> = line.split('\t').collect();
+            if parts.len() < 5 {
+                continue; // skip malformed lines
+            }
+            let host = parts[0].to_ascii_lowercase();
+            // parts[1] is port (ignored: utwget doesn't track port-specific HSTS)
+            let include_subdomains = parts[2].parse::<i32>().unwrap_or(0) != 0;
+            let created_ts: i64 = parts[3].parse().unwrap_or(0);
+            let max_age: u64 = parts[4].parse().unwrap_or(0);
+
+            let created = chrono::TimeZone::timestamp_opt(&chrono::Utc, created_ts, 0)
+                .single()
+                .unwrap_or_else(chrono::Utc::now);
+            let expires_ts = created_ts.saturating_add(max_age as i64);
+            let expires = chrono::TimeZone::timestamp_opt(&chrono::Utc, expires_ts, 0)
+                .single()
+                .unwrap_or_else(chrono::Utc::now);
+
+            let entry = HstsEntry {
+                host: host.clone(),
+                include_subdomains,
+                max_age,
+                created,
+                expires,
+            };
+            if !entry.is_expired() {
+                self.entries.insert(host, entry);
+            }
+        }
         self.entries.retain(|_, e| !e.is_expired());
         Ok(())
     }
@@ -250,14 +266,21 @@ impl HstsStore {
         }
     }
 
-    /// Saves HSTS entries to a JSON file.
+    /// Saves HSTS entries to a file in GNU wget tab-separated format.
     ///
     /// Only non-expired entries are saved. Creates parent directories
-    /// if they don't exist.
+    /// if they don't exist. The format is compatible with GNU wget 1.21.4:
+    ///
+    /// ```text
+    /// # HSTS 1.0 Known Hosts database for GNU Wget.
+    /// # Edit at your own risk.
+    /// # <hostname>\t<port>\t<incl. subdomains>\t<created>\t<max-age>
+    /// example.com\t0\t1\t1718123456\t31536000
+    /// ```
     ///
     /// # Arguments
     ///
-    /// * `path` - Path to the JSON file.
+    /// * `path` - Path to the HSTS file.
     ///
     /// # Returns
     ///
@@ -271,38 +294,55 @@ impl HstsStore {
         to_save.entries.retain(|_, e| !e.is_expired());
 
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|e| WgetError::CannotCreateDir(e.to_string().into()))?;
+            fs::create_dir_all(parent)
+                .map_err(|e| WgetError::CannotCreateDir(e.to_string().into()))?;
         }
-        let data = serde_json::to_string_pretty(&to_save).map_err(|e| WgetError::Other(e.to_string()))?;
-        fs::write(path, data).map_err(WgetError::WriteError)?;
+
+        // GNU wget tab-separated format for compatibility.
+        let mut content = String::new();
+        content.push_str("# HSTS 1.0 Known Hosts database for GNU Wget.\n");
+        content.push_str("# Edit at your own risk.\n");
+        content.push_str("# <hostname>\t<port>\t<incl. subdomains>\t<created>\t<max-age>\n");
+        for entry in to_save.entries.values() {
+            // port is 0 (utwget doesn't track port-specific HSTS; GNU wget uses 0
+            // for default port as well).
+            let port = 0;
+            let inc_sub = if entry.include_subdomains { 1 } else { 0 };
+            let created_ts = entry.created.timestamp();
+            content.push_str(&format!(
+                "{}\t{}\t{}\t{}\t{}\n",
+                entry.host, port, inc_sub, created_ts, entry.max_age
+            ));
+        }
+        fs::write(path, content).map_err(WgetError::WriteError)?;
         Ok(())
     }
 
     /// Merges persisted entries from a file.
     ///
     /// Entries from the file are merged with current entries,
-    /// preferring entries with later expiration times.
+    /// preferring entries with later expiration times. Uses the GNU wget
+    /// tab-separated format (same as [`load_from_file`]).
     ///
     /// # Arguments
     ///
-    /// * `path` - Path to the JSON file.
+    /// * `path` - Path to the HSTS file.
     pub fn merge_persisted(&mut self, path: &Path) {
-        if let Ok(data) = fs::read_to_string(path) {
-            if let Ok(loaded) = serde_json::from_str::<HstsStore>(&data) {
-                for (host, entry) in loaded.entries {
-                    if entry.is_expired() {
-                        continue;
+        let mut other = HstsStore::new();
+        if other.load_from_file(path).is_ok() {
+            for (host, entry) in other.entries {
+                if entry.is_expired() {
+                    continue;
+                }
+                let existing = self.entries.get(&host);
+                match existing {
+                    Some(current) if current.expires < entry.expires => {
+                        self.entries.insert(host, entry);
                     }
-                    let existing = self.entries.get(&host);
-                    match existing {
-                        Some(current) if current.expires < entry.expires => {
-                            self.entries.insert(host, entry);
-                        }
-                        None => {
-                            self.entries.insert(host, entry);
-                        }
-                        _ => {}
+                    None => {
+                        self.entries.insert(host, entry);
                     }
+                    _ => {}
                 }
             }
         }
