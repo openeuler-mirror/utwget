@@ -36,3 +36,38 @@ pub enum ListingFormat {
     /// The listing format could not be determined from the available content.
     Unknown,
 }
+
+/// Parse an FTP directory listing string and return a vector of [`FtpEntry`] items.
+///
+/// The listing format (Unix, Windows, or VMS) is automatically detected
+/// from the content by sampling the first lines. If detection is ambiguous,
+/// all parser strategies are attempted on each line.
+///
+/// # Arguments
+/// * `raw` - The raw text of the FTP directory listing.
+///
+/// # Returns
+/// A vector of parsed [`FtpEntry`] values for all recognized lines.
+pub fn parse_listing(raw: &str) -> Vec<FtpEntry> {
+    let lines: Vec<&str> = raw.lines()
+        .map(|l| l.trim_end())
+        .filter(|l| !l.is_empty())
+        .collect();
+
+    if lines.is_empty() {
+        return Vec::new();
+    }
+
+    let format = detect_format(&lines);
+
+    match format {
+        ListingFormat::Unix => lines.iter().filter_map(|l| parse_unix_entry(l)).collect(),
+        ListingFormat::Windows => lines.iter().filter_map(|l| parse_windows_entry(l)).collect(),
+        ListingFormat::Vms => lines.iter().filter_map(|l| parse_vms_entry(l)).collect(),
+        ListingFormat::Unknown => lines.iter().filter_map(|l| {
+            parse_unix_entry(l)
+                .or_else(|| parse_windows_entry(l))
+                .or_else(|| parse_vms_entry(l))
+        }).collect(),
+    }
+}
