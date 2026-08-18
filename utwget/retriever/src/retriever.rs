@@ -1095,8 +1095,17 @@ impl Retriever {
         };
 
         if use_ftps {
-            // Use FTPS client
-            let mut ftps_client = ut_ftp::FtpsClient::new();
+            // Use FTPS client. Propagate --secure-protocol and --no-check-certificate
+            // from the TLS config so FTPS honors them like the HTTPS path.
+            let ftps_cfg = ut_ftp::FtpsConfig {
+                verify_certificate: self.config.tls.check_certificate != ut_core::types::CheckCertMode::Off,
+                ca_cert: self.config.tls.ca_cert.clone(),
+                client_cert: self.config.tls.cert_file.clone(),
+                client_key: self.config.tls.private_key.clone(),
+                require_data_tls: true,
+                secure_protocol: self.config.tls.secure_protocol,
+            };
+            let mut ftps_client = ut_ftp::FtpsClient::with_config(ftps_cfg);
 
             if self.config.ftp.ftps_implicit {
                 // Implicit FTPS: connect with TLS from the start
@@ -1339,7 +1348,15 @@ impl Retriever {
 
         // Collect matching filenames via a directory listing.
         let matches: Vec<String> = if use_ftps {
-            let mut ftps = ut_ftp::FtpsClient::new();
+            let ftps_cfg = ut_ftp::FtpsConfig {
+                verify_certificate: self.config.tls.check_certificate != ut_core::types::CheckCertMode::Off,
+                ca_cert: self.config.tls.ca_cert.clone(),
+                client_cert: self.config.tls.cert_file.clone(),
+                client_key: self.config.tls.private_key.clone(),
+                require_data_tls: true,
+                secure_protocol: self.config.tls.secure_protocol,
+            };
+            let mut ftps = ut_ftp::FtpsClient::with_config(ftps_cfg);
             if self.config.ftp.ftps_implicit {
                 ftps.connect_implicit(&url.host, port)
                     .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("FTPS connect error: {}", e))))?;
