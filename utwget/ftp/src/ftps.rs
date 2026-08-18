@@ -645,3 +645,10 @@ impl Default for FtpsClient {
         Self::new()
     }
 }
+
+impl Drop for FtpsClient {
+    /// Automatically close the connection when dropped.
+    fn drop(&mut self) {
+        let _ = self.quit();
+    }
+}
