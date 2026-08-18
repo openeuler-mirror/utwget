@@ -681,9 +681,9 @@ pub struct Args {
     #[arg(long = "bind-address")]
     pub bind_address: Option<String>,
 
-    /// Enable compression (Accept-Encoding: gzip, deflate).
+    /// Compression type (auto, gzip, none).
     #[arg(long = "compression")]
-    pub compression: bool,
+    pub compression: Option<String>,
 
     /// Disable compression.
     #[arg(long = "no-compression")]
