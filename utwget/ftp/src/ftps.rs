@@ -63,3 +63,27 @@ struct TlsConnection {
     stream: TcpStream,
     conn: ClientConnection,
 }
+
+impl TlsConnection {
+    fn complete_handshake(&mut self) -> io::Result<()> {
+        loop {
+            if self.conn.wants_write() {
+                self.conn.write_tls(&mut self.stream)?;
+                continue;
+            }
+
+            if self.conn.wants_read() {
+                match self.conn.read_tls(&mut self.stream)? {
+                    0 => return Err(io::Error::new(io::ErrorKind::ConnectionReset, "connection closed")),
+                    _ => {}
+                }
+                self.conn.process_new_packets()
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+                continue;
+            }
+
+            break;
+        }
+        Ok(())
+    }
+}
