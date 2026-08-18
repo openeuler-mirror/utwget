@@ -261,3 +261,9 @@ pub fn enter_eprt(
         }
     }
 }
+
+/// Helper for binding a TCP listener on an arbitrary port.
+struct TcpListenerBind {
+    /// The bound TCP listener socket.
+    socket: std::net::TcpListener,
+}
