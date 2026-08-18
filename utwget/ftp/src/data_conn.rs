@@ -279,3 +279,35 @@ impl TcpListenerBind {
         Ok(TcpListenerBind { socket })
     }
 }
+
+/// Parse a PASV response to extract the data connection address.
+///
+/// The response format is: `227 Entering Passive Mode (h1,h2,h3,h4,p1,p2)`
+/// where the IP is h1.h2.h3.h4 and the port is p1*256 + p2.
+fn parse_pasv_response(text: &str) -> Result<SocketAddr, FtpCommandError> {
+    let text = text.trim();
+    let start = text.find('(').ok_or_else(|| {
+        FtpCommandError::MalformedResponse("PASV: no opening parenthesis".into())
+    })?;
+    let end = text.find(')').ok_or_else(|| {
+        FtpCommandError::MalformedResponse("PASV: no closing parenthesis".into())
+    })?;
+    let inner = &text[start + 1..end];
+    let parts: Vec<&str> = inner.split(',').collect();
+    if parts.len() != 6 {
+        return Err(FtpCommandError::MalformedResponse(
+            format!("PASV: expected 6 comma-separated values, got {}", parts.len()),
+        ));
+    }
+
+    let nums: Vec<u8> = parts
+        .iter()
+        .map(|p| p.trim().parse::<u8>().map_err(|_| {
+            FtpCommandError::MalformedResponse(format!("PASV: invalid number: {}", p.trim()))
+        }))
+        .collect::<Result<_, _>>()?;
+
+    let ip = Ipv4Addr::new(nums[0], nums[1], nums[2], nums[3]);
+    let port = (nums[4] as u16) * 256 + (nums[5] as u16);
+    Ok(SocketAddr::V4(SocketAddrV4::new(ip, port)))
+}
