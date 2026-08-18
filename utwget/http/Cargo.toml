@@ -8,7 +8,7 @@ description = "HTTP/1.1 protocol stack for utwget: request/response, auth, chunk
 default = ["compression", "auth-digest", "auth-ntlm", "http2"]
 compression = ["dep:flate2"]
 auth-digest = []
-auth-ntlm = []
+auth-ntlm = ["dep:des"]
 http2 = ["dep:h2", "dep:tokio", "dep:hyper-util", "dep:tokio-rustls", "dep:rustls", "dep:webpki-roots"]
 
 [dependencies]
@@ -23,6 +23,7 @@ rand = "0.8"
 log = "0.4"
 bytes = "1"
 http = "1"
+des = { version = "0.8", optional = true }
 h2 = { version = "0.4", optional = true }
 tokio = { version = "1", features = ["net", "io-util", "time", "rt-multi-thread"], optional = true }
 hyper-util = { version = "0.1", features = ["tokio", "http1", "http2"], optional = true }
