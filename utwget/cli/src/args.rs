@@ -109,6 +109,10 @@ pub struct Args {
     #[arg(long = "config")]
     pub config_file: Option<PathBuf>,
 
+    /// Disable loading of any configuration file.
+    #[arg(long = "no-config")]
+    pub no_config: bool,
+
     /// Enable recursive downloading.
     #[arg(short = 'r', long = "recursive")]
     pub recursive: bool,
