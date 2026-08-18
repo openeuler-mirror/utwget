@@ -57,3 +57,9 @@ pub struct FtpsClient {
     config: FtpsConfig,
     is_tls: bool,
 }
+
+/// Wrapper for TLS connection
+struct TlsConnection {
+    stream: TcpStream,
+    conn: ClientConnection,
+}
