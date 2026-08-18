@@ -638,3 +638,10 @@ impl FtpsClient {
         Ok(total_bytes)
     }
 }
+
+impl Default for FtpsClient {
+    /// Create a new FTPS client with default settings.
+    fn default() -> Self {
+        Self::new()
+    }
+}
