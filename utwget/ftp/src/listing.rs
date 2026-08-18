@@ -263,3 +263,20 @@ fn parse_unix_date(s: &str) -> Option<DateTime<Utc>> {
         Some(file_date)
     }
 }
+
+/// Convert a three-letter English month abbreviation to its numeric value (1-12).
+///
+/// # Arguments
+/// * `s` - The month abbreviation (case-insensitive), e.g. `"Jan"`, `"FEB"`, `"mar"`.
+///
+/// # Returns
+/// `Some(u32)` between 1 and 12, or `None` if the abbreviation is not recognised.
+fn month_to_num(s: &str) -> Option<u32> {
+    match s.to_ascii_lowercase().as_str() {
+        "jan" => Some(1), "feb" => Some(2), "mar" => Some(3),
+        "apr" => Some(4), "may" => Some(5), "jun" => Some(6),
+        "jul" => Some(7), "aug" => Some(8), "sep" => Some(9),
+        "oct" => Some(10), "nov" => Some(11), "dec" => Some(12),
+        _ => None,
+    }
+}
