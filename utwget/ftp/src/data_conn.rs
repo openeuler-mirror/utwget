@@ -311,3 +311,50 @@ fn parse_pasv_response(text: &str) -> Result<SocketAddr, FtpCommandError> {
     let port = (nums[4] as u16) * 256 + (nums[5] as u16);
     Ok(SocketAddr::V4(SocketAddrV4::new(ip, port)))
 }
+
+/// Parse an EPSV response to extract the data connection address.
+///
+/// The response format is: `229 Entering Extended Passive Mode (|||port|)`
+/// where the protocol and address fields are empty (meaning use the
+/// same as the control connection).
+fn parse_epsv_response(text: &str) -> Result<SocketAddr, FtpCommandError> {
+    let text = text.trim();
+    let start = text.find('(').ok_or_else(|| {
+        FtpCommandError::MalformedResponse("EPSV: no opening parenthesis".into())
+    })?;
+    let end = text.find(')').ok_or_else(|| {
+        FtpCommandError::MalformedResponse("EPSV: no closing parenthesis".into())
+    })?;
+    let inner = &text[start + 1..end];
+    let parts: Vec<&str> = inner.split('|').collect();
+    if parts.len() < 4 {
+        return Err(FtpCommandError::MalformedResponse(
+            format!("EPSV: expected |proto|addr|port|, got {}", inner),
+        ));
+    }
+
+    let proto = parts[1].trim();
+    let addr_str = parts[2].trim();
+    let port_str = parts[3].trim();
+    let port: u16 = port_str.parse().map_err(|_| {
+        FtpCommandError::MalformedResponse(format!("EPSV: invalid port: {}", port_str))
+    })?;
+
+    match proto {
+        "1" => {
+            let ip: Ipv4Addr = addr_str.parse().map_err(|_| {
+                FtpCommandError::MalformedResponse(format!("EPSV: invalid IPv4: {}", addr_str))
+            })?;
+            Ok(SocketAddr::V4(SocketAddrV4::new(ip, port)))
+        }
+        "2" => {
+            let ip: Ipv6Addr = addr_str.parse().map_err(|_| {
+                FtpCommandError::MalformedResponse(format!("EPSV: invalid IPv6: {}", addr_str))
+            })?;
+            Ok(SocketAddr::V6(SocketAddrV6::new(ip, port, 0, 0)))
+        }
+        other => Err(FtpCommandError::MalformedResponse(
+            format!("EPSV: unsupported protocol: {}", other),
+        )),
+    }
+}
