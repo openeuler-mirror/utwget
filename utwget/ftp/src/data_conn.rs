@@ -93,6 +93,37 @@ pub fn enter_pasv(
 
     if resp.is_positive_completion {
         let addr = parse_pasv_response(&resp.text)?;
+
+        // FTP bounce attack mitigation: a malicious server can instruct the
+        // client to connect to an arbitrary third-party IP:port via PASV,
+        // enabling port scanning or abuse of trust relationships. We compare
+        // the PASV-advertised IP against the control connection's peer IP and
+        // refuse the connection if they differ. This is stricter than GNU
+        // wget (which only warns) but prevents the attack entirely. Legitimate
+        // setups where the data server legitimately differs from the control
+        // server should use EPSV or configure the firewall accordingly.
+        match ctrl.peer_addr() {
+            Ok(peer) => {
+                let pasv_ip = match addr {
+                    SocketAddr::V4(v4) => std::net::IpAddr::V4(*v4.ip()),
+                    SocketAddr::V6(v6) => std::net::IpAddr::V6(*v6.ip()),
+                };
+                if peer.ip() != pasv_ip {
+                    return Err(FtpCommandError::Io(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        format!(
+                            "PASV advertises {} but control connection peer is {}; refusing to connect (possible FTP bounce attack)",
+                            pasv_ip, peer.ip()
+                        ),
+                    )));
+                }
+            }
+            Err(e) => {
+                // If we can't determine the peer, proceed but log a warning.
+                log::warn!("cannot determine control connection peer for PASV validation: {}", e);
+            }
+        }
+
         let stream = TcpStream::connect(addr).map_err(FtpCommandError::Io)?;
         stream.set_nonblocking(false).ok();
         // Set timeout to prevent indefinite hang if server stops mid-transfer
