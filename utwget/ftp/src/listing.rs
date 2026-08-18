@@ -178,3 +178,45 @@ pub fn parse_unix_listing(raw: &str) -> Vec<FtpEntry> {
         .filter_map(parse_unix_entry)
         .collect()
 }
+
+/// Parse a single line of a Unix-style FTP listing into an [`FtpEntry`].
+///
+/// Expects the standard `ls -l` format with at least 8 whitespace-separated tokens:
+/// `permissions links owner group size month day [year|time] filename`.
+///
+/// # Arguments
+/// * `line` - A single Unix listing line.
+///
+/// # Returns
+/// `Some(FtpEntry)` if the line could be parsed, or `None` if it is malformed.
+fn parse_unix_entry(line: &str) -> Option<FtpEntry> {
+    let parts: Vec<&str> = line.split_whitespace().collect();
+    if parts.len() < 8 {
+        return None;
+    }
+
+    let perms = parts[0].to_string();
+    let is_dir = perms.as_bytes()[0] == b'd';
+    let owner = parts[2].to_string();
+    let group = parts[3].to_string();
+    let size: u64 = parts[4].parse().ok()?;
+
+    let date_str = format!("{} {} {}", parts[5], parts[6], parts[7]);
+    let date = parse_unix_date(&date_str);
+
+    let name: String = if parts.len() > 9 && parts[8] == "->" {
+        parts[9..].join(" ")
+    } else {
+        parts[8..].join(" ")
+    };
+
+    Some(FtpEntry {
+        name,
+        is_dir,
+        size: Some(size),
+        date,
+        perms: Some(perms),
+        owner: Some(owner),
+        group: Some(group),
+    })
+}
