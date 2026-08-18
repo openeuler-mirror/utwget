@@ -352,3 +352,50 @@ fn parse_windows_entry(line: &str) -> Option<FtpEntry> {
         group: None,
     })
 }
+
+/// Parse a Windows date and time string into a UTC [`DateTime`].
+///
+/// Date format: `MM-DD-YYYY`. Time format: `HH:MM[AP]M` (12-hour clock with AM/PM).
+///
+/// # Arguments
+/// * `date_str` - The date portion, e.g. `"01-15-2025"`.
+/// * `time_str` - The time portion, e.g. `"10:30AM"`.
+///
+/// # Returns
+/// `Some(DateTime<Utc>)` if both strings are valid, `None` otherwise.
+fn parse_windows_datetime(date_str: &str, time_str: &str) -> Option<DateTime<Utc>> {
+    // Date format: MM-DD-YYYY
+    let date_parts: Vec<&str> = date_str.split('-').collect();
+    if date_parts.len() != 3 {
+        return None;
+    }
+
+    let month: u32 = date_parts[0].parse().ok()?;
+    let day: u32 = date_parts[1].parse().ok()?;
+    let year: i32 = date_parts[2].parse().ok()?;
+
+    // Time format: HH:MM[AP]M or HH:MM:SS[AP]M
+    let time_upper = time_str.to_ascii_uppercase();
+    let is_pm = time_upper.ends_with("PM");
+    let is_am = time_upper.ends_with("AM");
+
+    let time_clean = time_upper.trim_end_matches("AM").trim_end_matches("PM");
+    let time_parts: Vec<&str> = time_clean.split(':').collect();
+
+    if time_parts.is_empty() {
+        return None;
+    }
+
+    let hour_raw: u32 = time_parts.get(0)?.parse().ok()?;
+    let minute: u32 = time_parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+
+    let hour = if is_pm && hour_raw != 12 {
+        hour_raw + 12
+    } else if is_am && hour_raw == 12 {
+        0
+    } else {
+        hour_raw
+    };
+
+    Utc.with_ymd_and_hms(year, month, day, hour, minute, 0).single()
+}
