@@ -71,3 +71,34 @@ pub fn parse_listing(raw: &str) -> Vec<FtpEntry> {
         }).collect(),
     }
 }
+
+/// Detect the listing format by examining a sample of the first lines.
+///
+/// Each line is scored against heuristics for Unix, Windows, and VMS formats.
+/// The format with the highest score (most matching lines) is returned.
+///
+/// # Arguments
+/// * `lines` - Slice of non-empty lines from the listing.
+///
+/// # Returns
+/// The most likely [`ListingFormat`].
+fn detect_format(lines: &[&str]) -> ListingFormat {
+    let sample_size = lines.len().min(10);
+    let mut unix = 0usize;
+    let mut windows = 0usize;
+    let mut vms = 0usize;
+
+    for line in &lines[..sample_size] {
+        if looks_like_unix(*line) { unix += 1; }
+        if looks_like_windows(*line) { windows += 1; }
+        if looks_like_vms(*line) { vms += 1; }
+    }
+
+    let max = unix.max(windows).max(vms);
+    if max == 0 {
+        return ListingFormat::Unknown;
+    }
+    if unix == max { ListingFormat::Unix }
+    else if windows == max { ListingFormat::Windows }
+    else { ListingFormat::Vms }
+}
