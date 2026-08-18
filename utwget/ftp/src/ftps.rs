@@ -30,3 +30,15 @@ pub struct FtpsConfig {
     /// Whether to require TLS for data connection
     pub require_data_tls: bool,
 }
+
+impl Default for FtpsConfig {
+    fn default() -> Self {
+        Self {
+            verify_certificate: true,
+            ca_cert: None,
+            client_cert: None,
+            client_key: None,
+            require_data_tls: false,
+        }
+    }
+}
