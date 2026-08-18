@@ -820,6 +820,15 @@ impl FtpsClient {
         // Connect to data port
         let mut data_tcp = TcpStream::connect(format!("{}:{}", data_host, data_port))
             .map_err(|e| FtpError::DataConnectFailed(e.to_string()))?;
+        // Apply 60s read/write timeouts to the data connection, matching the
+        // plain-FTP data_conn.rs behaviour. Without this, a server that stops
+        // sending but keeps the socket open would block indefinitely.
+        data_tcp
+            .set_read_timeout(Some(Duration::from_secs(60)))
+            .map_err(FtpError::Io)?;
+        data_tcp
+            .set_write_timeout(Some(Duration::from_secs(60)))
+            .map_err(FtpError::Io)?;
 
         // Wrap with TLS if PROT P was negotiated
         if self.config.require_data_tls {
@@ -899,6 +908,13 @@ impl FtpsClient {
 
         let mut data_tcp = TcpStream::connect(format!("{}:{}", data_host, data_port))
             .map_err(|e| FtpError::DataConnectFailed(e.to_string()))?;
+        // Apply 60s read/write timeouts, matching plain-FTP data_conn.rs.
+        data_tcp
+            .set_read_timeout(Some(Duration::from_secs(60)))
+            .map_err(FtpError::Io)?;
+        data_tcp
+            .set_write_timeout(Some(Duration::from_secs(60)))
+            .map_err(FtpError::Io)?;
 
         let mut data = Vec::new();
         const MAX_NLST_SIZE: usize = 64 * 1024 * 1024; // 64MB limit
