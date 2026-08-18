@@ -102,3 +102,26 @@ fn detect_format(lines: &[&str]) -> ListingFormat {
     else if windows == max { ListingFormat::Windows }
     else { ListingFormat::Vms }
 }
+
+/// Check whether a line appears to be from a Unix-style FTP listing.
+///
+/// Heuristic: the first whitespace-separated token is at least 10 characters
+/// long and starts with a character typical of Unix permission strings
+/// (`-`, `d`, `l`, `c`, `b`, `p`, `s`).
+///
+/// # Arguments
+/// * `line` - A single line from the listing.
+///
+/// # Returns
+/// `true` if the line looks like a Unix-style entry.
+fn looks_like_unix(line: &str) -> bool {
+    let parts: Vec<&str> = line.split_whitespace().collect();
+    if parts.len() < 4 {
+        return false;
+    }
+    let perms = parts[0];
+    if perms.len() < 10 {
+        return false;
+    }
+    matches!(perms.as_bytes()[0], b'-' | b'd' | b'l' | b'c' | b'b' | b'p' | b's')
+}
