@@ -267,3 +267,15 @@ struct TcpListenerBind {
     /// The bound TCP listener socket.
     socket: std::net::TcpListener,
 }
+
+impl TcpListenerBind {
+    /// Bind a TCP listener on any available port.
+    ///
+    /// Tries IPv4 first, falling back to IPv6 if needed.
+    fn bind_any() -> Result<Self, FtpCommandError> {
+        let socket = std::net::TcpListener::bind("0.0.0.0:0")
+            .or_else(|_| std::net::TcpListener::bind("[::]:0"))
+            .map_err(FtpCommandError::Io)?;
+        Ok(TcpListenerBind { socket })
+    }
+}
