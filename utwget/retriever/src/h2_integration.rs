@@ -223,10 +223,23 @@ impl H2Retriever {
                 )))?;
         }
 
-        // Send CONNECT request with proxy authentication if configured
+        // Send CONNECT request with proxy authentication if configured.
+        // Sanitize the host (strip CR/LF/control chars) and bracket IPv6
+        // literals so the request line cannot be split (header injection)
+        // and IPv6 targets are well-formed. Mirrors the H1 path in
+        // retriever.rs::connect_via_proxy.
+        let clean_host: String = host
+            .chars()
+            .filter(|&c| c != '\r' && c != '\n' && !c.is_ascii_control())
+            .collect();
+        let target = if clean_host.contains(':') {
+            format!("[{}]:{}", clean_host, port)
+        } else {
+            format!("{}:{}", clean_host, port)
+        };
         let mut connect_req = format!(
-            "CONNECT {}:{} HTTP/1.1\r\nHost: {}:{}\r\n",
-            host, port, host, port
+            "CONNECT {} HTTP/1.1\r\nHost: {}\r\n",
+            target, target
         );
         if let (Some(user), Some(pass)) = (&config.proxy.proxy_user, &config.proxy.proxy_password) {
             use base64::Engine;
@@ -264,11 +277,17 @@ impl H2Retriever {
             }
         }
 
-        // Check CONNECT response
+        // Check CONNECT response. Parse the status code precisely instead of
+        // substring-matching "200" (which would falsely match "1200" etc.).
         let status_line = response.lines().next().unwrap_or("");
         debug!("CONNECT response: {}", status_line);
 
-        if !status_line.contains("200") {
+        // Status line format: "HTTP/1.1 <code> <reason>"
+        let status_code = status_line
+            .split_whitespace()
+            .nth(1)
+            .and_then(|s| s.parse::<u16>().ok());
+        if status_code != Some(200) {
             return Err(RetrieveError::Protocol(WgetError::Other(format!(
                 "proxy CONNECT failed: {}",
                 status_line
