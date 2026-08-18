@@ -125,3 +125,23 @@ fn looks_like_unix(line: &str) -> bool {
     }
     matches!(perms.as_bytes()[0], b'-' | b'd' | b'l' | b'c' | b'b' | b'p' | b's')
 }
+
+/// Check whether a line appears to be from a Windows-style FTP listing.
+///
+/// Heuristic: the line starts with a date in `MM-DD-YYYY` format (hyphens at
+/// positions 2 and 5) followed by a space before the time portion.
+///
+/// # Arguments
+/// * `line` - A single line from the listing.
+///
+/// # Returns
+/// `true` if the line looks like a Windows-style entry.
+fn looks_like_windows(line: &str) -> bool {
+    let trimmed = line.trim();
+    if trimmed.len() < 18 {
+        return false;
+    }
+    let bytes = trimmed.as_bytes();
+    (bytes[2] == b'-' || bytes[5] == b'-')
+        && (bytes[10] == b' ' || bytes[11] == b' ')
+}
