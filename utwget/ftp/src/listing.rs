@@ -145,3 +145,19 @@ fn looks_like_windows(line: &str) -> bool {
     (bytes[2] == b'-' || bytes[5] == b'-')
         && (bytes[10] == b' ' || bytes[11] == b' ')
 }
+
+/// Check whether a line appears to be from a VMS-style FTP listing.
+///
+/// Heuristic: the line contains a `;` (version separator) together with
+/// brackets (`[` or `]`) or the word "Directory".
+///
+/// # Arguments
+/// * `line` - A single line from the listing.
+///
+/// # Returns
+/// `true` if the line looks like a VMS-style entry.
+fn looks_like_vms(line: &str) -> bool {
+    let trimmed = line.trim();
+    trimmed.contains(';') && (trimmed.contains('[') || trimmed.contains(']'))
+        || trimmed.contains("Directory")
+}
