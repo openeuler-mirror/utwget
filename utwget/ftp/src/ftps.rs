@@ -42,3 +42,18 @@ impl Default for FtpsConfig {
         }
     }
 }
+
+/// FTPS client supporting FTP over TLS/SSL
+pub struct FtpsClient {
+    /// Raw TCP stream (before TLS upgrade)
+    raw_stream: Option<TcpStream>,
+    /// TLS connection (after TLS upgrade)
+    ctrl_tls: Option<TlsConnection>,
+    host: Option<String>,
+    passive: bool,
+    _is_ipv6: bool,
+    binary: bool,
+    current_dir: String,
+    config: FtpsConfig,
+    is_tls: bool,
+}
