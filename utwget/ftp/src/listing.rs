@@ -20,3 +20,19 @@ pub struct FtpEntry {
     /// The group of the entry, if available from the listing.
     pub group: Option<String>,
 }
+
+/// Identifies the format style of an FTP directory listing.
+///
+/// FTP servers return listings in various formats depending on the server platform.
+/// This enum is used to select the appropriate parser.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ListingFormat {
+    /// Unix-style listing (e.g., `-rw-r--r--  1 user group 1024 Jan 15 10:30 file.txt`).
+    Unix,
+    /// Windows-style listing (e.g., `01-15-2025  10:30AM       <DIR>          docs`).
+    Windows,
+    /// VMS-style listing (e.g., `FILE.TXT;1 1024 15-JAN-2025 10:30`).
+    Vms,
+    /// The listing format could not be determined from the available content.
+    Unknown,
+}
