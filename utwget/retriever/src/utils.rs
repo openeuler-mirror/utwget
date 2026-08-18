@@ -15,6 +15,52 @@ use ut_http::request::HttpRequest;
 
 use crate::types::RetrieveError;
 
+/// Headers whose values may carry credentials or session tokens. When logging
+/// raw HTTP requests for `--debug`, these values are replaced with a placeholder
+/// so that sharing debug logs does not leak credentials (Basic/Digest/NTLM auth,
+/// cookies, proxy auth).
+const SENSITIVE_HEADER_NAMES: &[&str] = &[
+    "authorization",
+    "proxy-authorization",
+    "cookie",
+    "set-cookie",
+];
+
+/// Redact sensitive header values in a serialized HTTP request/response string
+/// for safe `--debug` logging.
+///
+/// Each sensitive header line has its value replaced with `<redacted>`. Header
+/// names and structure (CRLF, leading/trailing lines) are preserved so the log
+/// remains useful for debugging request shape.
+pub(crate) fn redact_sensitive_headers(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for line in text.split_inclusive('\n') {
+        // A header line looks like "Name: value\r\n". Split on the first ':'.
+        // Be tolerant of leading whitespace (obs-fold), but only redact when the
+        // trimmed name matches a known sensitive header.
+        if let Some(colon) = line.find(':') {
+            let name = line[..colon].trim().to_ascii_lowercase();
+            if SENSITIVE_HEADER_NAMES.contains(&name.as_str()) {
+                // Preserve line ending if present.
+                let ending = if line.ends_with("\r\n") {
+                    "\r\n"
+                } else if line.ends_with('\n') {
+                    "\n"
+                } else {
+                    ""
+                };
+                out.push_str(&line[..=colon]);
+                out.push(' ');
+                out.push_str("<redacted>");
+                out.push_str(ending);
+                continue;
+            }
+        }
+        out.push_str(line);
+    }
+    out
+}
+
 /// Information about a proxy server.
 pub(crate) struct ProxyInfo {
     /// Proxy hostname.
@@ -280,6 +326,70 @@ mod adjust_ext_tests {
             compute_adjusted_path(std::path::Path::new("style"), ".css"),
             Some(std::path::PathBuf::from("style.css"))
         );
+    }
+}
+
+#[cfg(test)]
+mod redact_tests {
+    use super::redact_sensitive_headers;
+
+    #[test]
+    fn redacts_authorization_basic() {
+        let req = "GET / HTTP/1.1\r\nAuthorization: Basic dXNlcjpwYXNz\r\nHost: x\r\n\r\n";
+        let out = redact_sensitive_headers(req);
+        assert!(out.contains("Authorization: <redacted>"));
+        assert!(!out.contains("dXNlcjpwYXNz"));
+        // Non-sensitive headers preserved
+        assert!(out.contains("Host: x"));
+    }
+
+    #[test]
+    fn redacts_cookie_and_proxy_authorization() {
+        let req = "CONNECT host:443 HTTP/1.1\r\nProxy-Authorization: Basic abc==\r\nCookie: session=secret\r\n\r\n";
+        let out = redact_sensitive_headers(req);
+        assert!(out.contains("Proxy-Authorization: <redacted>"));
+        assert!(out.contains("Cookie: <redacted>"));
+        assert!(!out.contains("abc=="));
+        assert!(!out.contains("session=secret"));
+    }
+
+    #[test]
+    fn case_insensitive_header_name() {
+        let req = "AUTHORIZATION: Bearer xyz\r\n\r\n";
+        let out = redact_sensitive_headers(req);
+        assert!(out.contains("AUTHORIZATION: <redacted>"));
+        assert!(!out.contains("xyz"));
+    }
+
+    #[test]
+    fn preserves_line_endings_and_structure() {
+        let req = "GET / HTTP/1.1\r\nAuthorization: secret\r\n\r\n";
+        let out = redact_sensitive_headers(req);
+        // CRLF preserved
+        assert!(out.ends_with("\r\n\r\n"));
+    }
+
+    #[test]
+    fn leaves_non_sensitive_headers_untouched() {
+        let req = "GET / HTTP/1.1\r\nUser-Agent: wget\r\nAccept: */*\r\n\r\n";
+        let out = redact_sensitive_headers(req);
+        assert_eq!(out, req);
+    }
+
+    #[test]
+    fn handles_lf_only_line_endings() {
+        let req = "GET / HTTP/1.1\nAuthorization: secret\n\n";
+        let out = redact_sensitive_headers(req);
+        assert!(out.contains("Authorization: <redacted>\n"));
+        assert!(!out.contains("secret"));
+    }
+
+    #[test]
+    fn handles_set_cookie() {
+        let req = "HTTP/1.1 200 OK\r\nSet-Cookie: id=a1b2c3; Path=/\r\n\r\n";
+        let out = redact_sensitive_headers(req);
+        assert!(out.contains("Set-Cookie: <redacted>"));
+        assert!(!out.contains("a1b2c3"));
     }
 }
 

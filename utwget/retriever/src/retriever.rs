@@ -1680,7 +1680,7 @@ impl Retriever {
 
                 // Send request over TLS
                 let serialized = request.serialize().map_err(RetrieveError::Io)?;
-                debug!("HTTPS request over proxy tunnel:\n{}", String::from_utf8_lossy(&serialized));
+                debug!("HTTPS request over proxy tunnel:\n{}", crate::utils::redact_sensitive_headers(&String::from_utf8_lossy(&serialized)));
                 tls_stream.write(&serialized).map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("write error: {}", e))))?;
 
                 let (response, leftover) = {
@@ -1728,7 +1728,7 @@ impl Retriever {
                 };
 
                 let serialized = request.serialize().map_err(RetrieveError::Io)?;
-                debug!("HTTPS request:\n{}", String::from_utf8_lossy(&serialized));
+                debug!("HTTPS request:\n{}", crate::utils::redact_sensitive_headers(&String::from_utf8_lossy(&serialized)));
                 tls_stream.write(&serialized).map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("write error: {}", e))))?;
 
                 let (response, leftover) = {
@@ -1742,7 +1742,7 @@ impl Retriever {
             } else {
                 let mut stream = self.create_tcp_stream(host, port)?;
                 let serialized = request.serialize().map_err(RetrieveError::Io)?;
-                debug!("HTTP request:\n{}", String::from_utf8_lossy(&serialized));
+                debug!("HTTP request:\n{}", crate::utils::redact_sensitive_headers(&String::from_utf8_lossy(&serialized)));
                 stream.write_all(&serialized).map_err(RetrieveError::Io)?;
                 stream.flush().map_err(RetrieveError::Io)?;
 
@@ -1803,7 +1803,7 @@ impl Retriever {
             connect_req.push_str(&format!("Proxy-Authorization: Basic {}\r\n", encoded));
         }
         connect_req.push_str("\r\n");
-        debug!("CONNECT request: {}", connect_req);
+        debug!("CONNECT request: {}", crate::utils::redact_sensitive_headers(&connect_req));
         stream.write_all(connect_req.as_bytes()).map_err(RetrieveError::Io)?;
         stream.flush().map_err(RetrieveError::Io)?;
 
