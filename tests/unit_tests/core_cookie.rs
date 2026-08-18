@@ -338,3 +338,68 @@ fn test_domain_matching_case_insensitive() {
     let cookies = jar.match_request("example.com", "/", Scheme::Http);
     assert_eq!(cookies.len(), 1);
 }
+
+// ============================================================================
+// Public Suffix List (PSL) Tests
+// ============================================================================
+
+#[test]
+fn test_psl_rejects_cookie_for_public_suffix_com() {
+    let mut jar = CookieJar::new();
+    // A server on example.com cannot set a cookie for Domain="com" (a public
+    // suffix). The cookie must be rejected.
+    jar.parse_set_cookie("id=evil; Domain=com", "example.com", "/");
+    assert_eq!(jar.len(), 0, "cookie with Domain=com must be rejected");
+}
+
+#[test]
+fn test_psl_rejects_cookie_for_public_suffix_co_uk() {
+    let mut jar = CookieJar::new();
+    // "co.uk" is a public suffix; setting a cookie for it would leak across
+    // all *.co.uk sites.
+    jar.parse_set_cookie("id=evil; Domain=co.uk", "example.co.uk", "/");
+    assert_eq!(jar.len(), 0, "cookie with Domain=co.uk must be rejected");
+}
+
+#[test]
+fn test_psl_rejects_cookie_with_leading_dot_public_suffix() {
+    let mut jar = CookieJar::new();
+    // Leading dot variant must also be rejected.
+    jar.parse_set_cookie("id=evil; Domain=.com", "example.com", "/");
+    assert_eq!(jar.len(), 0, "cookie with Domain=.com must be rejected");
+}
+
+#[test]
+fn test_psl_accepts_cookie_for_regular_domain() {
+    let mut jar = CookieJar::new();
+    // "example.com" is not a public suffix; setting a cookie for it is fine.
+    jar.parse_set_cookie("id=ok; Domain=example.com", "www.example.com", "/");
+    assert_eq!(jar.len(), 1, "cookie with Domain=example.com should be accepted");
+}
+
+#[test]
+fn test_psl_accepts_cookie_without_domain() {
+    let mut jar = CookieJar::new();
+    // No Domain attribute → defaults to host-only; no PSL check applies.
+    jar.parse_set_cookie("id=ok", "example.com", "/");
+    assert_eq!(jar.len(), 1);
+}
+
+#[test]
+fn test_psl_accepts_cookie_for_intranet_host() {
+    let mut jar = CookieJar::new();
+    // A hostname not in the PSL (e.g. "corp-example-12345") is treated as a
+    // regular registrable domain and should be accepted. Note: many common
+    // intranet names like "internal", "localhost", "lan", "local" are
+    // actually in the PSL as private/special suffixes and would be rejected.
+    jar.parse_set_cookie("id=ok; Domain=corp-example-12345", "www.corp-example-12345", "/");
+    assert_eq!(jar.len(), 1);
+}
+
+#[test]
+fn test_psl_ip_address_exempt() {
+    let mut jar = CookieJar::new();
+    // IP addresses bypass PSL checks.
+    jar.parse_set_cookie("id=ok; Domain=127.0.0.1", "127.0.0.1", "/");
+    assert_eq!(jar.len(), 1, "IP-address cookies should bypass PSL");
+}

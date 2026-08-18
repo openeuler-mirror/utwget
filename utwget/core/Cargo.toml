@@ -24,3 +24,7 @@ sha2 = "0.10"
 base64 = "0.22"
 log = "0.4"
 env_logger = "0.11"
+# Public Suffix List for cookie domain acceptance checks (mirrors GNU wget's
+# libpsl usage in cookies.c). The `psl` crate bundles the Mozilla PSL at
+# compile time, so no runtime list file is required.
+psl = "2.1"
