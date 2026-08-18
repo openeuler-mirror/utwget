@@ -297,3 +297,58 @@ pub fn parse_windows_listing(raw: &str) -> Vec<FtpEntry> {
         .filter_map(parse_windows_entry)
         .collect()
 }
+
+/// Parse a single line of a Windows-style FTP listing into an [`FtpEntry`].
+///
+/// Expects the format: `MM-DD-YYYY  HH:MM[AP]M  [<DIR> | <size>]  name`.
+///
+/// # Arguments
+/// * `line` - A single Windows listing line.
+///
+/// # Returns
+/// `Some(FtpEntry)` if the line could be parsed, or `None` if it is malformed.
+fn parse_windows_entry(line: &str) -> Option<FtpEntry> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    // Windows format: MM-DD-YYYY  HH:MM[AP]M  [size or <DIR>]  name
+    // Example: 01-15-2025  10:30AM       <DIR>          docs
+    let parts: Vec<&str> = trimmed.split_whitespace().collect();
+    if parts.len() < 3 {
+        return None;
+    }
+
+    let date_str = parts.get(0)?;
+    let time_str = parts.get(1)?;
+
+    // Check if it's a directory
+    let is_dir = parts.get(2).map(|s| *s == "<DIR>").unwrap_or(false);
+
+    let (name, size) = if is_dir {
+        let name = parts.get(3..).map(|s| s.join(" ")).unwrap_or_default();
+        (name, None)
+    } else {
+        // File: size is in position 2, name starts from position 3
+        let size: Option<u64> = parts.get(2).and_then(|s| s.parse().ok());
+        let name = parts.get(3..).map(|s| s.join(" ")).unwrap_or_default();
+        (name, size)
+    };
+
+    if name.is_empty() {
+        return None;
+    }
+
+    let date = parse_windows_datetime(date_str, time_str);
+
+    Some(FtpEntry {
+        name,
+        is_dir,
+        size,
+        date,
+        perms: None,
+        owner: None,
+        group: None,
+    })
+}
