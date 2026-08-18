@@ -120,12 +120,20 @@ impl HstsStore {
     ///
     /// If `max_age` is 0, the entry is removed instead (HSTS deletion).
     ///
+    /// Per RFC 6797 §8.1, HSTS is not applicable to IP-address hosts. Such
+    /// add() calls are silently ignored to mirror GNU wget's
+    /// `hsts_is_host_name_valid` check.
+    ///
     /// # Arguments
     ///
     /// * `host` - The hostname.
     /// * `include_subdomains` - Whether to include subdomains.
     /// * `max_age` - The max-age in seconds.
     pub fn add(&mut self, host: &str, include_subdomains: bool, max_age: u64) {
+        // RFC 6797 §8.1: HSTS only applies to hostnames, not IP literals.
+        if host.parse::<std::net::IpAddr>().is_ok() {
+            return;
+        }
         let host_lc = host.to_ascii_lowercase();
         if max_age == 0 {
             self.remove(host);
@@ -240,6 +248,14 @@ impl HstsStore {
     /// * `host` - The hostname that sent the header.
     /// * `header_value` - The raw `Strict-Transport-Security` header value.
     pub fn add_from_header(&mut self, host: &str, header_value: &str) {
+        // RFC 6797 §8.1: HSTS is not applicable to IP-address hosts. The
+        // caller (retriever) already gates this on scheme == HTTPS, but IP
+        // addresses must be rejected here as well (defense in depth), matching
+        // GNU wget's hsts_is_host_name_valid() check.
+        if host.parse::<std::net::IpAddr>().is_ok() {
+            return;
+        }
+
         let mut max_age: Option<u64> = None;
         let mut include_subdomains = false;
 

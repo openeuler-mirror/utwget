@@ -292,3 +292,48 @@ fn test_update_existing() {
     assert!(result.is_some());
     assert!(result.unwrap()); // Should have updated include_subdomains
 }
+
+// ============================================================================
+// HSTS IP Address Rejection Tests (RFC 6797 §8.1)
+// ============================================================================
+
+#[test]
+fn test_add_rejects_ipv4_address() {
+    let mut store = HstsStore::new();
+    store.add("192.168.1.1", false, 86400);
+    // IP addresses must not be stored (RFC 6797 §8.1)
+    assert!(store.lookup("192.168.1.1").is_none());
+    assert!(store.is_empty());
+}
+
+#[test]
+fn test_add_rejects_ipv6_address() {
+    let mut store = HstsStore::new();
+    store.add("::1", false, 86400);
+    assert!(store.lookup("::1").is_none());
+    assert!(store.is_empty());
+}
+
+#[test]
+fn test_add_rejects_ipv6_full_address() {
+    let mut store = HstsStore::new();
+    store.add("2001:db8::1", true, 86400);
+    assert!(store.lookup("2001:db8::1").is_none());
+    assert!(store.is_empty());
+}
+
+#[test]
+fn test_add_from_header_rejects_ip_address() {
+    let mut store = HstsStore::new();
+    store.add_from_header("10.0.0.1", "max-age=31536000; includeSubDomains");
+    // Should be silently rejected
+    assert!(store.lookup("10.0.0.1").is_none());
+    assert!(store.is_empty());
+}
+
+#[test]
+fn test_add_from_header_accepts_hostname() {
+    let mut store = HstsStore::new();
+    store.add_from_header("example.com", "max-age=31536000");
+    assert!(store.lookup("example.com").is_some());
+}
