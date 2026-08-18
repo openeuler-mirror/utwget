@@ -153,7 +153,52 @@ impl H2Client {
         })
     }
 
+    /// Read the response body up to a maximum size to prevent OOM on huge
+    /// responses (e.g. multi-GB ISO downloads over HTTP/2). The HTTP/1.x
+    /// path streams the body to disk chunk-by-chunk, but the H2 path
+    /// accumulates into a Vec. We cap accumulation at `max_bytes` and return
+    /// an error if exceeded, so the caller can fall back to HTTP/1.1 or report
+    /// a clear error instead of being OOM-killed.
+    ///
+    /// # Arguments
+    ///
+    /// * `stream` - The response body stream.
+    /// * `max_bytes` - Maximum body size in bytes. If the body exceeds this,
+    ///   returns an error.
+    ///
+    /// # Returns
+    ///
+    /// The response body as bytes, or an error if the body exceeds `max_bytes`.
+    pub fn read_body_limited(
+        &self,
+        stream: &mut RecvStream,
+        max_bytes: usize,
+    ) -> Result<Bytes, Box<dyn std::error::Error>> {
+        self.runtime.block_on(async {
+            let mut body = Vec::new();
+            while let Some(chunk_result) = stream.data().await {
+                let chunk = chunk_result?;
+                if body.len().saturating_add(chunk.len()) > max_bytes {
+                    return Err(Box::new(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!(
+                            "HTTP/2 response body exceeds {} byte limit; use HTTP/1.1 for large downloads (or increase --quota)",
+                            max_bytes
+                        ),
+                    ))
+                        as Box<dyn std::error::Error>);
+                }
+                body.extend_from_slice(&chunk);
+            }
+            Ok(Bytes::from(body))
+        })
+    }
+
     /// Read the entire response body.
+    ///
+    /// **Warning**: This reads the entire body into memory. For large
+    /// downloads use [`Self::read_body_limited`] with a cap, or prefer the
+    /// HTTP/1.x path which streams to disk.
     ///
     /// # Arguments
     ///

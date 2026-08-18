@@ -133,6 +133,11 @@ pub struct H2Retriever {
     port: u16,
     /// Whether the connection is still considered reusable (no error occurred).
     reusable: bool,
+    /// Maximum response body size in bytes to accumulate in memory. The HTTP/2
+    /// path buffers the entire body, so we cap it to prevent OOM on huge
+    /// downloads (e.g. multi-GB ISOs). The HTTP/1.x path streams to disk and is
+    /// not subject to this limit.
+    max_body_size: usize,
 }
 
 impl H2Retriever {
@@ -162,6 +167,7 @@ impl H2Retriever {
                 host,
                 port,
                 reusable: true,
+                max_body_size: max_body_size_for(config),
             });
         }
 
@@ -194,6 +200,7 @@ impl H2Retriever {
             host: host.to_string(),
             port,
             reusable: true,
+            max_body_size: max_body_size_for(config),
         })
     }
 
@@ -350,6 +357,7 @@ impl H2Retriever {
             host: host.to_string(),
             port,
             reusable: true,
+            max_body_size: max_body_size_for(config),
         })
     }
 
@@ -436,8 +444,10 @@ impl H2Retriever {
             }
         }
 
-        // Read response body
-        let body = client.read_body(&mut response.into_body())
+        // Read response body with a size cap to prevent OOM on huge downloads
+        // (HTTP/2 path buffers the entire body, unlike HTTP/1.x which streams
+        // to disk). If --quota is set we honor it; otherwise default to 512MB.
+        let body = client.read_body_limited(&mut response.into_body(), self.max_body_size)
             .map_err(|e| {
                 self.reusable = false;
                 RetrieveError::Protocol(WgetError::Other(format!("HTTP/2 body read failed: {}", e)))
@@ -584,5 +594,22 @@ pub async fn download_with_http2(
     );
 
     retriever.send_request(&request)
+}
+
+/// Compute the maximum HTTP/2 response body size to accumulate in memory.
+///
+/// Honors `--quota` if set, otherwise defaults to 512 MiB. The HTTP/2 path
+/// buffers the whole body before writing to disk (unlike HTTP/1.x which
+/// streams), so we cap it to prevent OOM on multi-GB downloads. When the body
+/// exceeds this limit, `read_body_limited` returns an error and the caller
+/// should fall back to HTTP/1.1.
+fn max_body_size_for(config: &Config) -> usize {
+    const DEFAULT_MAX_BODY_BYTES: usize = 512 * 1024 * 1024;
+    if let Some(q) = config.quota {
+        // quota is in bytes; clamp to a reasonable minimum of 1 KiB.
+        q.max(1024) as usize
+    } else {
+        DEFAULT_MAX_BODY_BYTES
+    }
 }
 
