@@ -220,3 +220,46 @@ fn parse_unix_entry(line: &str) -> Option<FtpEntry> {
         group: Some(group),
     })
 }
+
+/// Parse a Unix date/time string (e.g., `"Jan 15 10:30"` or `"Jan 15 2025"`) into a UTC [`DateTime`].
+///
+/// If the token after the day is a four-digit year, it is used directly.
+/// Otherwise it is treated as `HH:MM` and the current year is assumed, with a
+/// one-year rollback if the resulting date is in the future.
+///
+/// # Arguments
+/// * `s` - A three-part date string (`Mon DD YYYY` or `Mon DD HH:MM`).
+///
+/// # Returns
+/// `Some(DateTime<Utc>)` on success, `None` if the string is malformed.
+fn parse_unix_date(s: &str) -> Option<DateTime<Utc>> {
+    let parts: Vec<&str> = s.split_whitespace().collect();
+    if parts.len() != 3 {
+        return None;
+    }
+
+    let month = month_to_num(parts[0])?;
+    let day: u32 = parts[1].parse().ok()?;
+
+    if let Ok(year) = parts[2].parse::<i32>() {
+        return Utc.with_ymd_and_hms(year, month, day, 0, 0, 0).single();
+    }
+
+    let time_parts: Vec<&str> = parts[2].split(':').collect();
+    if time_parts.len() != 2 {
+        return None;
+    }
+    let hour: u32 = time_parts[0].parse().ok()?;
+    let minute: u32 = time_parts[1].parse().ok()?;
+
+    let now = Utc::now();
+    let mut year = now.year();
+    let file_date = Utc.with_ymd_and_hms(year, month, day, hour, minute, 0).single()?;
+
+    if file_date > now {
+        year -= 1;
+        Utc.with_ymd_and_hms(year, month, day, hour, minute, 0).single()
+    } else {
+        Some(file_date)
+    }
+}
