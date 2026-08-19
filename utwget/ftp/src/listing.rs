@@ -399,3 +399,20 @@ fn parse_windows_datetime(date_str: &str, time_str: &str) -> Option<DateTime<Utc
 
     Utc.with_ymd_and_hms(year, month, day, hour, minute, 0).single()
 }
+
+/// Parse a VMS-style FTP directory listing and return a vector of [`FtpEntry`] items.
+///
+/// This is a convenience wrapper around [`parse_vms_entry`] that processes all non-empty lines.
+///
+/// # Arguments
+/// * `raw` - The raw text of a VMS-style FTP listing.
+///
+/// # Returns
+/// A vector of parsed [`FtpEntry`] values.
+pub fn parse_vms_listing(raw: &str) -> Vec<FtpEntry> {
+    raw.lines()
+        .map(|l| l.trim_end())
+        .filter(|l| !l.is_empty())
+        .filter_map(parse_vms_entry)
+        .collect()
+}
