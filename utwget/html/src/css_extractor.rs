@@ -77,3 +77,86 @@ fn try_parse_url_token(parser: &mut Parser) -> Option<String> {
     });
     result.ok().flatten()
 }
+
+/// Recursively extracts URLs from CSS content.
+///
+/// Walks through CSS tokens and extracts URLs from:
+/// - Unquoted URL tokens (`url(path)`)
+/// - Quoted URL function values (`url("path")`)
+/// - Handles `@import` rules specially to mark imported stylesheets
+///
+/// # Arguments
+///
+/// * `parser` - The CSS parser to read tokens from.
+/// * `results` - Vector to append extracted URL positions to.
+/// * `at_import_found` - Flag indicating if the previous token was `@import`.
+fn extract_urls_recursive(
+    parser: &mut Parser,
+    results: &mut Vec<UrlPosition>,
+    at_import_found: &mut bool,
+) {
+    while let Ok(token) = parser.next_including_whitespace_and_comments() {
+        match token {
+            Token::UnquotedUrl(ref url) => {
+                let url = url.to_string();
+                if !is_skippable_url(&url) {
+                    results.push(UrlPosition {
+                        url,
+                        link_type: if *at_import_found {
+                            *at_import_found = false;
+                            LinkType::CssImport
+                        } else {
+                            LinkType::Relative
+                        },
+                        inline: false,
+                        attr_name: None,
+                        expect_html: false,
+                        expect_css: true,
+                        meta_disallow_follow: false,
+                    });
+                }
+                *at_import_found = false;
+            }
+            Token::Function(ref name) if name.eq_ignore_ascii_case("url") => {
+                let url = try_parse_url_token(parser);
+                if let Some(url) = url {
+                    if !is_skippable_url(&url) {
+                        results.push(UrlPosition {
+                            url,
+                            link_type: if *at_import_found {
+                                *at_import_found = false;
+                                LinkType::CssImport
+                            } else {
+                                LinkType::Relative
+                            },
+                            inline: false,
+                            attr_name: None,
+                            expect_html: false,
+                            expect_css: true,
+                            meta_disallow_follow: false,
+                        });
+                    }
+                }
+                *at_import_found = false;
+            }
+            Token::AtKeyword(ref keyword) if keyword.eq_ignore_ascii_case("import") => {
+                *at_import_found = true;
+            }
+            Token::CurlyBracketBlock | Token::ParenthesisBlock | Token::SquareBracketBlock => {
+                let _: Result<(), ParseError<()>> = parser.parse_nested_block(|inner| {
+                    extract_urls_recursive(inner, results, at_import_found);
+                    Ok(())
+                });
+                *at_import_found = false;
+            }
+            Token::Function(_) => {
+                let _: Result<(), ParseError<()>> = parser.parse_nested_block(|inner| {
+                    extract_urls_recursive(inner, results, at_import_found);
+                    Ok(())
+                });
+                *at_import_found = false;
+            }
+            _ => {}
+        }
+    }
+}
