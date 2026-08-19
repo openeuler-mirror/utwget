@@ -227,3 +227,33 @@ fn md4_reduce(state: &[u8]) -> Vec<u8> {
 fn md5_reduce(state: &[u8]) -> Vec<u8> {
     fold_bytes(state, 16)
 }
+
+/// SHA-1 reduction function for OPIE.
+fn sha1_reduce(state: &[u8]) -> Vec<u8> {
+    fold_bytes(state, 20)
+}
+
+/// Fold bytes to produce the final hash output.
+///
+/// This implements the OPIE byte folding operation.
+fn fold_bytes(state: &[u8], output_len: usize) -> Vec<u8> {
+    let mut result = vec![0u8; output_len];
+    let block = state.chunks(64).last().unwrap_or(state);
+
+    for i in 0..output_len {
+        result[i] = block[i % block.len()];
+    }
+
+    for _ in 0..16 {
+        let mut next = vec![0u8; output_len];
+        for i in 0..output_len {
+            let a = result[i].wrapping_add(result[(i + 1) % output_len]);
+            let b = result[i].wrapping_add(a);
+            let c = (result[i] as u32).rotate_left(1) as u8;
+            next[i] = a ^ b ^ c;
+        }
+        result = next;
+    }
+
+    result
+}
