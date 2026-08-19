@@ -84,10 +84,18 @@ fn parse_proxy_url(proxy: &str) -> (String, u16) {
         .or_else(|| proxy.strip_prefix("https://"))
         .or_else(|| proxy.strip_prefix("socks5://"))
         .unwrap_or(proxy);
-    
-    // Parse host:port
+
+    // Parse host:port. Strip trailing slash from port (e.g. "host:8080/").
+    let addr = addr.trim_end_matches('/');
+
     if let Some((host, port_str)) = addr.rsplit_once(':') {
-        let port = port_str.parse::<u16>().unwrap_or(8080);
+        // If the part after ':' looks like a port (all digits), parse it.
+        // If parsing fails (non-numeric), fall back to the default proxy port
+        // 8080 rather than silently connecting to the wrong port.
+        let port = port_str.parse::<u16>().unwrap_or_else(|_| {
+            log::warn!("proxy URL has invalid port '{}', using default 8080", port_str);
+            8080
+        });
         (host.to_string(), port)
     } else {
         (addr.to_string(), 8080)
@@ -564,31 +572,10 @@ pub(crate) fn build_proxy_request(
     proxy_req
 }
 
-/// Simple base64 encoding for proxy authentication.
+/// Base64 encoding for proxy authentication. Uses the `base64` crate
+/// instead of a hand-rolled implementation (avoids "don't roll your own
+/// crypto" concerns and is well-tested).
 pub(crate) fn base64_encode(input: &str) -> String {
-    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let bytes = input.as_bytes();
-    let mut result = String::with_capacity((bytes.len() + 2) / 3 * 4);
-    
-    for chunk in bytes.chunks(3) {
-        let b0 = chunk[0] as u32;
-        let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
-        let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
-        let triple = (b0 << 16) | (b1 << 8) | b2;
-        
-        result.push(CHARS[((triple >> 18) & 0x3F) as usize] as char);
-        result.push(CHARS[((triple >> 12) & 0x3F) as usize] as char);
-        if chunk.len() > 1 {
-            result.push(CHARS[((triple >> 6) & 0x3F) as usize] as char);
-        } else {
-            result.push('=');
-        }
-        if chunk.len() > 2 {
-            result.push(CHARS[(triple & 0x3F) as usize] as char);
-        } else {
-            result.push('=');
-        }
-    }
-    
-    result
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD.encode(input.as_bytes())
 }

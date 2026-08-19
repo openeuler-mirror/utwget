@@ -183,10 +183,14 @@ impl<'a, T: Read> ChunkedReader<'a, T> {
         let line_str = std::str::from_utf8(line)
             .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "chunk size not valid utf8"))?;
 
+        // Split off chunk extensions (RFC 7230 §4.1.1: chunk-size [chunk-ext]).
+        // `split(';').next()` always returns Some (split yields at least one
+        // element even for empty input), so unwrap_or("") is unreachable dead
+        // code. Use expect with a clear message instead.
         let hex_str = line_str
             .split(';')
             .next()
-            .unwrap_or("")
+            .expect("split always yields at least one element")
             .trim();
 
         let size = usize::from_str_radix(hex_str, 16).map_err(|_| {

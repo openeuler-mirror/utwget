@@ -186,7 +186,14 @@ impl HttpResponse {
     pub fn keep_alive(&self) -> bool {
         let conn = self.headers.get(headers::CONNECTION);
         match conn {
-            Some(v) => !v.eq_ignore_ascii_case("close"),
+            // RFC 7230 §6.1: "close" is a comma-separated list of connection
+            // options. If any token is "close" (case-insensitive), the
+            // connection must NOT be reused. E.g. "keep-alive, close" → close.
+            Some(v) => {
+                !v.split(',')
+                    .map(|t| t.trim().eq_ignore_ascii_case("close"))
+                    .any(|x| x)
+            }
             None => self.version == "HTTP/1.1",
         }
     }
