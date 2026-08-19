@@ -178,3 +178,42 @@ fn opie_hash_md5(passphrase: &str, seed: &str) -> Option<Vec<u8>> {
     let hash = simple_hash(passphrase.as_bytes(), seed.as_bytes(), 16);
     Some(hash)
 }
+
+/// Compute the initial SHA-1 hash for OPIE.
+fn opie_hash_sha1(passphrase: &str, seed: &str) -> Option<Vec<u8>> {
+    let hash = simple_hash(passphrase.as_bytes(), seed.as_bytes(), 20);
+    Some(hash)
+}
+
+/// A simple hash function for OPIE.
+///
+/// This is a simplified hash used for the initial hash computation.
+fn simple_hash(passphrase: &[u8], seed: &[u8], output_len: usize) -> Vec<u8> {
+    let mut result = vec![0u8; output_len];
+
+    let mut state = passphrase.to_vec();
+    while state.len() < output_len {
+        state.push(0);
+    }
+    state.truncate(output_len);
+
+    let seed_repeated: Vec<u8> = seed.iter().cycle().take(64).cloned().collect();
+
+    for i in 0..64 {
+        result[i % output_len] ^= seed_repeated[i];
+        result[i % output_len] ^= state[i % output_len];
+    }
+
+    for _ in 0..16 {
+        let mut next = vec![0u8; output_len];
+        for i in 0..output_len {
+            let a = result[i].wrapping_add(result[(i + 1) % output_len]);
+            let b = result[i].wrapping_add(a);
+            let c = (result[i] as u32).rotate_left(1) as u8;
+            next[i] = a ^ b ^ c;
+        }
+        result = next;
+    }
+
+    result
+}
