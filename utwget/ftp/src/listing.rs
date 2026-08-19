@@ -525,3 +525,23 @@ fn parse_vms_date_token(s: &str) -> Option<(i32, u32, u32)> {
     let year: i32 = parts[2].parse().ok()?;
     Some((year, month, day))
 }
+
+/// Parse a VMS time token in `HH:MM` format.
+///
+/// Leading and trailing colons are stripped before parsing.
+///
+/// # Arguments
+/// * `s` - A token such as `"10:30"`.
+///
+/// # Returns
+/// `Some((hour, minute))` on success, or `None` if the token is malformed.
+fn parse_vms_time_token(s: &str) -> Option<(u32, u32)> {
+    let s = s.trim_matches(':');
+    let parts: Vec<&str> = s.split(':').collect();
+    if parts.len() != 2 {
+        return None;
+    }
+    let hour: u32 = parts[0].parse().ok()?;
+    let minute: u32 = parts[1].parse().ok()?;
+    Some((hour, minute))
+}
