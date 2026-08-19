@@ -69,3 +69,14 @@ pub struct ConvertOptions {
     /// before being modified.
     pub backup_converted: bool,
 }
+
+impl Default for ConvertOptions {
+    fn default() -> Self {
+        Self {
+            convert_to_relative: true,
+            convert_file_only: false,
+            nullify_base: true,
+            backup_converted: false,
+        }
+    }
+}
