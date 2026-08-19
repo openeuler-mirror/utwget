@@ -506,3 +506,22 @@ fn parse_vms_date(s: &str) -> Option<DateTime<Utc>> {
 
     None
 }
+
+/// Parse a VMS date token in `DD-Mon-YYYY` format.
+///
+/// # Arguments
+/// * `s` - A token such as `"15-JAN-2025"`.
+///
+/// # Returns
+/// `Some((year, month, day))` on success, or `None` if the token is malformed.
+fn parse_vms_date_token(s: &str) -> Option<(i32, u32, u32)> {
+    let parts: Vec<&str> = s.split('-').collect();
+    if parts.len() != 3 {
+        return None;
+    }
+
+    let day: u32 = parts[0].parse().ok()?;
+    let month = month_abbrev_to_num(parts[1])?;
+    let year: i32 = parts[2].parse().ok()?;
+    Some((year, month, day))
+}
