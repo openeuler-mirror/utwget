@@ -217,3 +217,13 @@ fn simple_hash(passphrase: &[u8], seed: &[u8], output_len: usize) -> Vec<u8> {
 
     result
 }
+
+/// MD4 reduction function for OPIE.
+fn md4_reduce(state: &[u8]) -> Vec<u8> {
+    fold_bytes(state, 16)
+}
+
+/// MD5 reduction function for OPIE.
+fn md5_reduce(state: &[u8]) -> Vec<u8> {
+    fold_bytes(state, 16)
+}
