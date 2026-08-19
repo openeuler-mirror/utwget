@@ -20,3 +20,26 @@ use crate::url_position::{ExtractOptions, LinkType, UrlPosition};
 const INLINE_TAGS: &[&str] = &[
     "img", "script", "link", "embed", "object", "source", "video",
 ];
+
+/// Mapping of HTML element names to their URL-containing attributes.
+///
+/// Each tuple represents (tag_name, attribute_name) where the attribute
+/// contains a URL that should be extracted.
+const URL_ATTR_MAP: &[(&str, &str)] = &[
+    ("a", "href"),
+    ("area", "href"),
+    ("link", "href"),
+    ("img", "src"),
+    ("script", "src"),
+    ("iframe", "src"),
+    ("frame", "src"),
+    ("embed", "src"),
+    ("object", "data"),
+    ("source", "src"),
+    ("track", "src"),
+    ("video", "poster"),
+    ("body", "background"),
+    ("applet", "codebase"),
+    ("meta", "content"),
+    ("base", "href"),
+];
