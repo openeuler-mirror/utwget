@@ -1,13 +1,17 @@
 //! Connection management module.
 //!
-//! This module provides connection pooling, DNS caching, and unified connection
+//! This module provides connection pooling and unified connection
 //! management for both plain TCP and TLS connections. It supports:
 //!
 //! - Idle connection reuse for improved performance
-//! - DNS result caching with configurable TTL
 //! - Automatic connection cleanup for expired idle connections
 //! - Support for both direct and proxy connections
 //! - TLS upgrade with configurable options
+//!
+//! Note: DNS result caching is implemented at the retriever level
+//! (retriever.rs `dns_cache()`), not in ConnectionManager. The
+//! `--dns-timeout` option is honored by the retriever's DNS resolution
+//! path, not by ConnectionManager directly.
 
 use std::collections::HashMap;
 use std::io;
