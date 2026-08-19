@@ -142,20 +142,16 @@ impl OpieChallenge {
     ///
     /// `Some(OpieResponse)` containing the one-time password,
     /// or `None` if the computation fails.
-    pub fn compute_response(&self, passphrase: &str) -> Option<OpieResponse> {
-        let hash = match self.algorithm {
-            OpieAlgorithm::Md4 => opie_hash_md4(passphrase, &self.seed),
-            OpieAlgorithm::Md5 => opie_hash_md5(passphrase, &self.seed),
-            OpieAlgorithm::Sha1 => opie_hash_sha1(passphrase, &self.seed),
-        };
-
-        let initial = hash?;
-
-        let final_hash = opie_reduce(&initial, self.sequence, self.algorithm);
-
-        let response = opie_format_response(&final_hash);
-
-        Some(OpieResponse { response_hex: response })
+    pub fn compute_response(&self, _passphrase: &str) -> Option<OpieResponse> {
+        // OPIE one-time password computation requires real MD4/MD5/SHA-1
+        // per RFC 2289. The previous implementation used a custom hash
+        // (`simple_hash`) that is NOT a real cryptographic hash, so the
+        // computed response would always be rejected by the server.
+        // Rather than silently producing wrong credentials, return None
+        // (authentication not supported) until a proper implementation is
+        // available. This matches the security principle of failing closed.
+        log::warn!("OPIE/S/Key authentication is not implemented (requires real MD4/MD5/SHA-1)");
+        None
     }
 }
 
