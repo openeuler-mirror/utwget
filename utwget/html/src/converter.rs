@@ -38,3 +38,34 @@ pub enum ConvertError {
     #[error("backup failed: {0}")]
     BackupFailed(String),
 }
+
+/// Options controlling link conversion behavior.
+///
+/// These options determine how URLs in HTML documents are transformed
+/// during the link conversion process.
+#[derive(Debug, Clone)]
+pub struct ConvertOptions {
+    /// Convert absolute URLs to relative paths.
+    ///
+    /// When true, absolute URLs pointing to downloaded resources are
+    /// converted to relative paths for offline browsing.
+    pub convert_to_relative: bool,
+
+    /// Only convert the file portion of URLs, keeping the host intact.
+    ///
+    /// When true, only the path component of URLs is converted,
+    /// preserving the original host and scheme.
+    pub convert_file_only: bool,
+
+    /// Remove `<base>` elements from the document.
+    ///
+    /// When true, `<base href="...">` elements are removed to prevent
+    /// conflicts with converted relative paths.
+    pub nullify_base: bool,
+
+    /// Create backup files before conversion.
+    ///
+    /// When true, original files are backed up with a `.orig` extension
+    /// before being modified.
+    pub backup_converted: bool,
+}
