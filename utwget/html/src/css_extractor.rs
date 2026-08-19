@@ -53,3 +53,27 @@ fn is_skippable_url(url: &str) -> bool {
         || url.starts_with('#')
         || url.starts_with("blob:")
 }
+
+/// Attempts to parse a URL from a CSS `url()` function.
+///
+/// Handles both quoted and unquoted URL tokens within the function.
+///
+/// # Arguments
+///
+/// * `parser` - The CSS parser positioned inside a `url()` function.
+///
+/// # Returns
+///
+/// `Some(url)` if a valid URL token was found, `None` otherwise.
+fn try_parse_url_token(parser: &mut Parser) -> Option<String> {
+    let result: Result<Option<String>, ParseError<()>> = parser.parse_nested_block(|inner| {
+        let token = inner.next()?;
+        match token {
+            Token::QuotedString(s) => Ok(Some(s.to_string())),
+            Token::UnquotedUrl(s) => Ok(Some(s.to_string())),
+            Token::Ident(s) => Ok(Some(s.to_string())),
+            _ => Ok(None),
+        }
+    });
+    result.ok().flatten()
+}
