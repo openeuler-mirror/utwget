@@ -160,3 +160,58 @@ fn extract_urls_recursive(
         }
     }
 }
+
+impl ContentExtractor for CssExtractor {
+    /// Extracts URLs from CSS content.
+    ///
+    /// Reads the entire CSS content and parses it to find all embedded URLs.
+    ///
+    /// # Arguments
+    ///
+    /// * `reader` - A reader providing the CSS content.
+    /// * `_base_url` - Base URL (unused for CSS extraction).
+    /// * `_opts` - Extraction options (unused for CSS extraction).
+    ///
+    /// # Returns
+    ///
+    /// A vector of `UrlPosition` objects for each URL found, or a
+    /// `ConvertError` if reading fails.
+    fn extract_urls(
+        &self,
+        reader: &mut dyn Read,
+        _base_url: &str,
+        _opts: &ExtractOptions,
+    ) -> Result<Vec<UrlPosition>, ConvertError> {
+        let mut content = String::new();
+        reader.read_to_string(&mut content).map_err(ConvertError::Io)?;
+
+        let mut input = ParserInput::new(&content);
+        let mut parser = Parser::new(&mut input);
+        let mut results = Vec::new();
+        let mut at_import_found = false;
+
+        extract_urls_recursive(&mut parser, &mut results, &mut at_import_found);
+
+        Ok(results)
+    }
+
+    /// Returns the content kind handled by this extractor.
+    ///
+    /// # Returns
+    ///
+    /// Always returns `ContentKind::Css`.
+    fn content_kind(&self) -> ContentKind {
+        ContentKind::Css
+    }
+
+    /// Indicates whether the full content must be loaded.
+    ///
+    /// CSS extraction requires the entire content to be loaded for parsing.
+    ///
+    /// # Returns
+    ///
+    /// Always returns `true`.
+    fn requires_full_load(&self) -> bool {
+        true
+    }
+}
