@@ -120,3 +120,34 @@ fn parse_opie_ext(ext: &str) -> Option<OpieAlgorithm> {
         None
     }
 }
+
+impl OpieChallenge {
+    /// Compute the OPIE response for this challenge.
+    ///
+    /// The response is computed by hashing the passphrase with the seed,
+    /// then iteratively hashing the result `sequence` times.
+    ///
+    /// # Arguments
+    ///
+    /// * `passphrase` - The user's secret passphrase.
+    ///
+    /// # Returns
+    ///
+    /// `Some(OpieResponse)` containing the one-time password,
+    /// or `None` if the computation fails.
+    pub fn compute_response(&self, passphrase: &str) -> Option<OpieResponse> {
+        let hash = match self.algorithm {
+            OpieAlgorithm::Md4 => opie_hash_md4(passphrase, &self.seed),
+            OpieAlgorithm::Md5 => opie_hash_md5(passphrase, &self.seed),
+            OpieAlgorithm::Sha1 => opie_hash_sha1(passphrase, &self.seed),
+        };
+
+        let initial = hash?;
+
+        let final_hash = opie_reduce(&initial, self.sequence, self.algorithm);
+
+        let response = opie_format_response(&final_hash);
+
+        Some(OpieResponse { response_hex: response })
+    }
+}
