@@ -50,6 +50,26 @@ fn is_cookie_domain_acceptable(request_host: &str, cookie_domain: &str) -> bool 
     }
 }
 
+/// Compute the default cookie path from a request path per RFC 6265 §5.1.4.
+///
+/// 1. If the path is empty or does not start with '/', return '/'.
+/// 2. If the path contains exactly one '/' (i.e. just '/'), return '/'.
+/// 3. Otherwise return the substring up to (but not including) the rightmost '/'.
+fn default_cookie_path(request_path: &str) -> String {
+    if request_path.is_empty() || !request_path.starts_with('/') {
+        return "/".to_string();
+    }
+    // Find the rightmost '/'. We know position 0 is '/'.
+    if let Some(idx) = request_path.rfind('/') {
+        if idx == 0 {
+            // Only one '/' at the start → default path is "/"
+            return "/".to_string();
+        }
+        return request_path[..idx].to_string();
+    }
+    "/".to_string()
+}
+
 /// Represents an HTTP cookie.
 ///
 /// Contains all cookie attributes as defined in RFC 6265, including
@@ -189,7 +209,7 @@ impl CookieJar {
     /// let mut jar = CookieJar::new();
     /// jar.parse_set_cookie("session=abc123; Path=/", "example.com", "/");
     /// ```
-    pub fn parse_set_cookie(&mut self, header: &str, request_host: &str, _request_path: &str) {
+    pub fn parse_set_cookie(&mut self, header: &str, request_host: &str, request_path: &str) {
         let header = header.trim();
         if header.is_empty() {
             return;
@@ -210,7 +230,10 @@ impl CookieJar {
         };
 
         let mut domain = request_host.to_ascii_lowercase();
-        let mut path = "/".to_string();
+        // RFC 6265 §5.1.4: default-path = the request URI up to (but not
+        // including) the rightmost '/'. If there is no '/' or the URI
+        // starts with '//', the default path is '/'.
+        let mut path = default_cookie_path(request_path);
         let mut expires = None;
         let mut secure = false;
         let mut httponly = false;
