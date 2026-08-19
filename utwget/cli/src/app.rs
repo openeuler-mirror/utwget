@@ -1162,6 +1162,24 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
     config.tls.pinned_pubkey = args.pinnedpubkey.clone();
     config.tls.ciphers = args.ciphers.clone();
 
+    // Apply certificate/private-key type options
+    if let Some(ref ct) = args.certificate_type {
+        config.tls.cert_type = match ct.to_ascii_lowercase().as_str() {
+            "pem" => ut_core::types::KeyFileType::Pem,
+            "asn1" => ut_core::types::KeyFileType::Asn1,
+            "der" => ut_core::types::KeyFileType::Der,
+            _ => ut_core::types::KeyFileType::Pem,
+        };
+    }
+    if let Some(ref pt) = args.private_key_type {
+        config.tls.private_key_type = match pt.to_ascii_lowercase().as_str() {
+            "pem" => ut_core::types::KeyFileType::Pem,
+            "asn1" => ut_core::types::KeyFileType::Asn1,
+            "der" => ut_core::types::KeyFileType::Der,
+            _ => ut_core::types::KeyFileType::Pem,
+        };
+    }
+
     if let Some(ref sp) = args.secure_protocol {
         if let Ok(p) = parse_secure_protocol_arg(sp) {
             config.tls.secure_protocol = p;
@@ -1332,6 +1350,33 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
 
     config.progress.style = parse_progress_style_arg(&args.progress);
     config.progress.force_noscroll = !args.show_progress || !io::stdout().is_terminal();
+
+    // Apply --restrict-file-names (comma-separated list of restrictions)
+    if let Some(ref rfn) = args.restrict_file_names {
+        for part in rfn.split(',') {
+            let part = part.trim();
+            match part.to_ascii_lowercase().as_str() {
+                "unix" => config.filename_restrictions.restrict_os = ut_core::types::RestrictOs::Unix,
+                "windows" => config.filename_restrictions.restrict_os = ut_core::types::RestrictOs::Windows,
+                "lowercase" => config.filename_restrictions.case_restriction = ut_core::types::CaseRestriction::Lowercase,
+                "uppercase" => config.filename_restrictions.case_restriction = ut_core::types::CaseRestriction::Uppercase,
+                "nocontrol" => config.filename_restrictions.restrict_ctrl_chars = false,
+                "ascii" => config.filename_restrictions.restrict_nonascii = true,
+                _ => {
+                    eprintln!("utwget: invalid restrict-file-names value '{}'", part);
+                    std::process::exit(2);
+                }
+            }
+        }
+    }
+
+    // Apply --report-speed
+    if let Some(ref rs) = args.report_speed {
+        config.report_bps = rs.eq_ignore_ascii_case("bits");
+    }
+
+    // Apply --trust-server-names
+    config.trust_server_names = args.trust_server_names;
 
     config.reject_log = args.reject_log.clone();
 }
