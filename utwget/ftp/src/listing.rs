@@ -476,3 +476,33 @@ fn parse_vms_entry(line: &str) -> Option<FtpEntry> {
         })
     }
 }
+
+/// Parse a VMS date-time string from the remainder of a listing line.
+///
+/// Scans whitespace-separated tokens for a date in `DD-Mon-YYYY` format and,
+/// if available, the following token for a time in `HH:MM` format.
+///
+/// # Arguments
+/// * `s` - The portion of the VMS listing line after the file name and version.
+///
+/// # Returns
+/// `Some(DateTime<Utc>)` if a valid date token is found, `None` otherwise.
+fn parse_vms_date(s: &str) -> Option<DateTime<Utc>> {
+    let tokens: Vec<&str> = s.split_whitespace().collect();
+
+    for (i, token) in tokens.iter().enumerate() {
+        let date_opt = parse_vms_date_token(token);
+        if date_opt.is_some() {
+            let time_opt = if i + 1 < tokens.len() {
+                parse_vms_time_token(tokens[i + 1])
+            } else {
+                None
+            };
+            let (year, month, day) = date_opt.unwrap();
+            let (hour, minute) = time_opt.unwrap_or((0, 0));
+            return Utc.with_ymd_and_hms(year, month, day, hour, minute, 0).single();
+        }
+    }
+
+    None
+}
