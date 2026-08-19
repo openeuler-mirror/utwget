@@ -80,3 +80,16 @@ impl Default for ConvertOptions {
         }
     }
 }
+
+/// Statistics from a link conversion operation.
+///
+/// Tracks the number of URLs that were converted, skipped, or already relative.
+#[derive(Debug, Clone, Default)]
+pub struct ConvertStats {
+    /// Number of URLs successfully converted.
+    pub converted: usize,
+    /// Number of URLs skipped (not found in mapping).
+    pub skipped: usize,
+    /// Number of URLs that were already relative.
+    pub already_relative: usize,
+}
