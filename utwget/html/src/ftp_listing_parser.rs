@@ -83,3 +83,34 @@ pub fn ftp_listing_to_html(entries: &[FtpEntry]) -> String {
 
     html
 }
+
+/// Escapes special HTML characters in a string.
+///
+/// Replaces the following characters with their HTML entities:
+/// - `&` → `&amp;`
+/// - `<` → `&lt;`
+/// - `>` → `&gt;`
+/// - `"` → `&quot;`
+/// - `'` → `&#39;`
+///
+/// # Arguments
+///
+/// * `s` - The string to escape.
+///
+/// # Returns
+///
+/// A new string with HTML special characters escaped.
+fn escape_html(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    for ch in s.chars() {
+        match ch {
+            '&' => result.push_str("&amp;"),
+            '<' => result.push_str("&lt;"),
+            '>' => result.push_str("&gt;"),
+            '"' => result.push_str("&quot;"),
+            '\'' => result.push_str("&#39;"),
+            _ => result.push(ch),
+        }
+    }
+    result
+}
