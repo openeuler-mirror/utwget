@@ -7,7 +7,7 @@ use flate2::write::GzEncoder;
 use flate2::Compression;
 
 use crate::digest::compute_sha1;
-use crate::format::{default_content_type, record_separator, WarcHeader, WarcRecordType};
+use crate::format::{default_content_type, request_content_type, record_separator, WarcHeader, WarcRecordType};
 use crate::{format_date, format_record_id, generate_uuid_v4, Result, WarcError, WarcWriter};
 
 /// WARC file writer implementation.
@@ -532,7 +532,7 @@ impl WarcWriter for WarcWriterImpl {
         let header = self.make_header(
             WarcRecordType::Request,
             url,
-            default_content_type(self.gzip_enabled),
+            request_content_type(self.gzip_enabled),
             content.len() as u64,
             format_date(date),
             self.payload_digest_for(&payload),

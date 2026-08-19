@@ -22,6 +22,8 @@ pub enum WarcRecordType {
     Request,
     /// Metadata record for additional information.
     Metadata,
+    /// Revisit record (deduplication): references a prior record's payload.
+    Revisit,
     /// Converted/transformed record.
     Conversion,
     /// Continuation of a record split across files.
@@ -36,6 +38,7 @@ impl fmt::Display for WarcRecordType {
             WarcRecordType::Resource => write!(f, "resource"),
             WarcRecordType::Request => write!(f, "request"),
             WarcRecordType::Metadata => write!(f, "metadata"),
+            WarcRecordType::Revisit => write!(f, "revisit"),
             WarcRecordType::Conversion => write!(f, "conversion"),
             WarcRecordType::Continuation => write!(f, "continuation"),
         }
@@ -183,6 +186,27 @@ pub fn default_content_type(gzip: bool) -> &'static str {
         "application/gzip"
     } else {
         "application/http;msgtype=response"
+    }
+}
+
+/// Returns the content type for WARC Request records.
+///
+/// Per ISO 28500 §5.10, Request records use `application/http;msgtype=request`
+/// (not `msgtype=response`). When gzip is enabled, the content type is
+/// `application/gzip` (the payload is compressed, not the HTTP message).
+///
+/// # Arguments
+///
+/// * `gzip` - Whether gzip compression is enabled for the WARC file.
+///
+/// # Returns
+///
+/// A static string slice containing the appropriate MIME type.
+pub fn request_content_type(gzip: bool) -> &'static str {
+    if gzip {
+        "application/gzip"
+    } else {
+        "application/http;msgtype=request"
     }
 }
 
