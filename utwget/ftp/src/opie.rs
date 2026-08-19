@@ -257,3 +257,27 @@ fn fold_bytes(state: &[u8], output_len: usize) -> Vec<u8> {
 
     result
 }
+
+/// Format the OPIE response as a six-word phrase.
+///
+/// OPIE responses are typically displayed as six words from a standard
+/// dictionary, making them easier to type.
+fn opie_format_response(hash: &[u8]) -> String {
+    let _words = OTP_WORDS;
+    let mut result = String::new();
+
+    let mut offset = 0usize;
+    for _ in 0..6 {
+        if offset + 2 <= hash.len() {
+            let val = ((hash[offset] as u32) << 8) | (hash[offset + 1] as u32);
+            let word_idx = (val % 2048) as usize;
+            if !result.is_empty() {
+                result.push(' ');
+            }
+            result.push_str(OTP_WORDS[word_idx]);
+        }
+        offset += 2;
+    }
+
+    result
+}
