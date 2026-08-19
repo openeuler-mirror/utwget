@@ -1224,13 +1224,13 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
     config.adjust_extension = args.adjust_extension;
 
     if args.mirror {
+        // --mirror is equivalent to -N -r -l inf --no-remove-listing in GNU wget
+        // (see init.c: cmd_spec_mirror). Do NOT add -k, -p, -c, or change
+        // use_robots here — those are independent options in GNU wget.
         config.recursive.enabled = true;
         config.timestamping = true;
-        config.recursive.use_robots = false;
-        config.convert_links = true;
-        config.page_requisites = true;
-        config.recursive.max_level = None; // Infinite recursion for mirror mode
-        config.continue_download = true;
+        config.recursive.max_level = None; // Infinite recursion (-l inf)
+        config.ftp.remove_listing = false; // --no-remove-listing
     }
 
     config.max_redirect = args.max_redirect;
