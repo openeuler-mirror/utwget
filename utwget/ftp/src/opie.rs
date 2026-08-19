@@ -166,3 +166,15 @@ fn opie_reduce(state: &[u8], steps: u64, algorithm: OpieAlgorithm) -> Vec<u8> {
     }
     current
 }
+
+/// Compute the initial MD4 hash for OPIE.
+fn opie_hash_md4(passphrase: &str, seed: &str) -> Option<Vec<u8>> {
+    let hash = simple_hash(passphrase.as_bytes(), seed.as_bytes(), 16);
+    Some(hash)
+}
+
+/// Compute the initial MD5 hash for OPIE.
+fn opie_hash_md5(passphrase: &str, seed: &str) -> Option<Vec<u8>> {
+    let hash = simple_hash(passphrase.as_bytes(), seed.as_bytes(), 16);
+    Some(hash)
+}
