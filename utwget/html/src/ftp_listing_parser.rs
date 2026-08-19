@@ -23,3 +23,63 @@ pub struct FtpEntry {
     /// The group name.
     pub group: String,
 }
+
+/// Converts FTP directory entries to an HTML listing.
+///
+/// Generates a simple HTML page with links for each FTP entry.
+/// Directories are shown with a trailing slash.
+///
+/// # Arguments
+///
+/// * `entries` - Slice of FTP entries to convert.
+///
+/// # Returns
+///
+/// An HTML string containing links to each entry.
+///
+/// # Example
+///
+/// ```
+/// use ut_html::ftp_listing_parser::{FtpEntry, ftp_listing_to_html};
+///
+/// let entries = vec![
+///     FtpEntry {
+///         name: "docs".to_string(),
+///         is_dir: true,
+///         size: 0,
+///         date: "2024-01-01".to_string(),
+///         permissions: "rwxr-xr-x".to_string(),
+///         owner: "user".to_string(),
+///         group: "group".to_string(),
+///     },
+/// ];
+///
+/// let html = ftp_listing_to_html(&entries);
+/// assert!(html.contains("<a href=\"docs/\">docs/</a>"));
+/// ```
+pub fn ftp_listing_to_html(entries: &[FtpEntry]) -> String {
+    let mut html = String::from("<html><head><title>FTP Directory Listing</title></head><body>\n");
+
+    html.push_str("<pre>\n");
+
+    for entry in entries {
+        if entry.is_dir {
+            html.push_str(&format!(
+                "<a href=\"{}/\">{}/</a>\n",
+                escape_html(&entry.name),
+                escape_html(&entry.name)
+            ));
+        } else {
+            html.push_str(&format!(
+                "<a href=\"{}\">{}</a>\n",
+                escape_html(&entry.name),
+                escape_html(&entry.name)
+            ));
+        }
+    }
+
+    html.push_str("</pre>\n");
+    html.push_str("</body></html>");
+
+    html
+}
