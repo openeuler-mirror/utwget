@@ -151,3 +151,18 @@ impl OpieChallenge {
         Some(OpieResponse { response_hex: response })
     }
 }
+
+/// Reduce a hash state by iteratively hashing it.
+///
+/// This implements the OPIE hash reduction function.
+fn opie_reduce(state: &[u8], steps: u64, algorithm: OpieAlgorithm) -> Vec<u8> {
+    let mut current = state.to_vec();
+    for _ in 0..steps {
+        current = match algorithm {
+            OpieAlgorithm::Md4 => md4_reduce(&current),
+            OpieAlgorithm::Md5 => md5_reduce(&current),
+            OpieAlgorithm::Sha1 => sha1_reduce(&current),
+        };
+    }
+    current
+}
