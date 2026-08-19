@@ -416,3 +416,63 @@ pub fn parse_vms_listing(raw: &str) -> Vec<FtpEntry> {
         .filter_map(parse_vms_entry)
         .collect()
 }
+
+/// Parse a single line of a VMS-style FTP listing into an [`FtpEntry`].
+///
+/// VMS entries typically look like `FILE.TXT;1 1024 15-JAN-2025 10:30`.
+/// Lines starting with "Directory" or "Total" are skipped as headers/summaries.
+/// Files ending in `.DIR` are treated as directories.
+///
+/// # Arguments
+/// * `line` - A single VMS listing line.
+///
+/// # Returns
+/// `Some(FtpEntry)` if the line could be parsed, or `None` if it is a header/summary line.
+fn parse_vms_entry(line: &str) -> Option<FtpEntry> {
+    let trimmed = line.trim();
+
+    if trimmed.starts_with("Directory") || trimmed.starts_with("Total") {
+        return None;
+    }
+
+    if let Some(idx) = trimmed.find(';') {
+        let name_part = &trimmed[..idx];
+        let is_dir = name_part.ends_with(".DIR") || name_part.ends_with(".dir");
+        let name = if is_dir {
+            let dir_name = &name_part[..name_part.len() - 4];
+            dir_name.to_string()
+        } else {
+            name_part.to_string()
+        };
+
+        let rest = &trimmed[idx..];
+        let size: Option<u64> = rest.split_whitespace()
+            .skip(1)
+            .next()
+            .and_then(|s| s.parse().ok());
+
+        let date = parse_vms_date(rest);
+
+        Some(FtpEntry {
+            name,
+            is_dir,
+            size,
+            date,
+            perms: None,
+            owner: None,
+            group: None,
+        })
+    } else {
+        let name = trimmed.to_string();
+        let is_dir = name.ends_with(".DIR") || name.ends_with(".dir");
+        Some(FtpEntry {
+            name,
+            is_dir,
+            size: None,
+            date: None,
+            perms: None,
+            owner: None,
+            group: None,
+        })
+    }
+}
