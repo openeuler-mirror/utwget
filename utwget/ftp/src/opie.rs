@@ -29,3 +29,9 @@ pub enum OpieAlgorithm {
     /// SHA-1 hash algorithm.
     Sha1,
 }
+
+/// An OPIE response to send to the server.
+pub struct OpieResponse {
+    /// The one-time password as a hexadecimal string.
+    pub response_hex: String,
+}
