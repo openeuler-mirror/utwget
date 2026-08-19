@@ -514,7 +514,11 @@ pub fn parse_response_head(data: &[u8]) -> Option<HttpResponse> {
         // Header names are always ASCII per RFC 7230; values may contain
         // arbitrary bytes. Decode each line leniently so non-UTF-8 values
         // (e.g. Latin-1 filenames) do not fail the whole response parse.
-        let line = String::from_utf8_lossy(&line[..line.len().saturating_sub(1)]);
+        // Strip trailing \r if present (CRLF line endings); for LF-only
+        // responses there is no \r to strip, so don't unconditionally trim
+        // the last byte (which would corrupt the header value).
+        let line_bytes = line.strip_suffix(b"\r").unwrap_or(line);
+        let line = String::from_utf8_lossy(line_bytes);
         if line.is_empty() {
             break;
         }
