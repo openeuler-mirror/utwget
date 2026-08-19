@@ -94,7 +94,16 @@ impl BarProgress {
         let secs = elapsed.as_secs_f64().max(1e-6);
         let speed = self.downloaded as f64 / secs;
 
-        let bar_width = 20;
+        // Detect terminal width for the progress bar. Falls back to 80 cols
+        // (and a 20-char bar) when not a TTY or detection fails. This avoids
+        // the previous hardcoded bar_width=20 that overflowed narrow terminals
+        // and underutilized wide ones.
+        let term_width = terminal_size::terminal_size()
+            .map(|(w, _)| w.0 as usize)
+            .unwrap_or(80);
+        // Reserve space for: filename + bar(2 brackets) + pct(4) + size + speed + time + counters
+        // Roughly 50 chars of overhead → bar gets the remainder, clamped to [10, 50].
+        let bar_width = (term_width.saturating_sub(60)).clamp(10, 50);
         let filled = if total > 0 {
             ((self.downloaded as f64 / total as f64) * bar_width as f64).round() as usize
         } else {
@@ -129,7 +138,21 @@ impl BarProgress {
             format!("{:.0}B/s", speed)
         };
 
-        let time_str = format!("elapsed {}s", elapsed.as_secs());
+        // Compute ETA (estimated time remaining) when total size is known
+        // and some progress has been made. Format as HH:MM:SS or "??"
+        // when speed is too low to estimate.
+        let eta_str = if total > self.downloaded && speed > 1.0 {
+            let remaining = total - self.downloaded;
+            let eta_secs = (remaining as f64 / speed) as u64;
+            let h = eta_secs / 3600;
+            let m = (eta_secs % 3600) / 60;
+            let s = eta_secs % 60;
+            format!("eta {:02}:{:02}:{:02}", h, m, s)
+        } else {
+            "eta --:--:--".to_string()
+        };
+
+        let time_str = format!("elapsed {}s {}", elapsed.as_secs(), eta_str);
 
         format!(
             "\r{} {} {:>3}% {}  {}  {}  [{}/{}]",
