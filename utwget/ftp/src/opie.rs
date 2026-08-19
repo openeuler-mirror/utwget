@@ -18,3 +18,14 @@ pub struct OpieChallenge {
     /// The hash algorithm to use.
     pub algorithm: OpieAlgorithm,
 }
+
+/// The hash algorithm used for OPIE computation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpieAlgorithm {
+    /// MD4 hash algorithm.
+    Md4,
+    /// MD5 hash algorithm.
+    Md5,
+    /// SHA-1 hash algorithm.
+    Sha1,
+}
