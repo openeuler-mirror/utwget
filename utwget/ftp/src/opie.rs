@@ -89,3 +89,34 @@ pub fn parse_opie_challenge(prompt: &str) -> Option<OpieChallenge> {
         algorithm: ext,
     })
 }
+
+/// Parse the algorithm extension from an OPIE challenge.
+///
+/// Recognizes formats like "md5", "md4", "sha1", and the 4-character
+/// abbreviated forms.
+fn parse_opie_ext(ext: &str) -> Option<OpieAlgorithm> {
+    let ext = ext.to_ascii_lowercase();
+    match ext.as_str() {
+        "md4" | "md5" | "sha1" => {}
+        _ => {
+            let bytes = ext.as_bytes();
+            if bytes.len() != 4 {
+                return None;
+            }
+            match bytes[0] {
+                b'm' | b's' => {}
+                _ => return None,
+            }
+        }
+    }
+
+    if ext.starts_with("md4") || (ext.len() == 4 && ext.as_bytes()[0] == b'm' && ext.as_bytes()[3] == b'4') {
+        Some(OpieAlgorithm::Md4)
+    } else if ext.starts_with("md5") || (ext.len() == 4 && ext.as_bytes()[0] == b'm' && ext.as_bytes()[3] == b'5') {
+        Some(OpieAlgorithm::Md5)
+    } else if ext.starts_with("sha1") || (ext.len() == 4 && ext.as_bytes()[0] == b's') {
+        Some(OpieAlgorithm::Sha1)
+    } else {
+        None
+    }
+}
