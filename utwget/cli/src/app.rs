@@ -1514,7 +1514,7 @@ fn parse_progress_style_arg(s: &str) -> ut_core::ProgressStyle {
         "dot" | "d" => ut_core::ProgressStyle::Dot {
             bytes_per_dot: 1024,
             dots_per_line: 50,
-            spacing: 4,
+            spacing: 10,
         },
         _ => ut_core::ProgressStyle::Bar,
     }

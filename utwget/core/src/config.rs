@@ -214,7 +214,7 @@ impl Default for Config {
             limit_rate: None,
             wait: None,
             concurrent_downloads: 1,
-            wait_retry: None,
+            wait_retry: Some(Duration::from_secs(10)),
             random_wait: false,
             delete_after: false,
             content_disposition: false,
@@ -256,7 +256,7 @@ impl Default for Config {
             max_redirect: 20,
             timeout: None,
             connect_timeout: None,
-            read_timeout: None,
+            read_timeout: Some(Duration::from_secs(900)),
             dns_timeout: None,
             no_dns_cache: false,
 
@@ -380,10 +380,10 @@ impl Default for FtpConfig {
             glob: true,
             retrieve_symlinks: true,
             follow_ftp: false,
-            remove_listing: false,
+            remove_listing: true,
             htmlify: true,
             ftps_implicit: false,
-            ftps_resume_ssl: false,
+            ftps_resume_ssl: true,
             ftps_clear_data: false,
             ftps_fallback: false,
         }
@@ -547,10 +547,10 @@ impl Default for WarcConfig {
             filename: None,
             tempdir: None,
             max_size: None,
-            compression: false,
+            compression: true,
             digests: true,
             cdx: false,
-            keep_log: false,
+            keep_log: true,
             user_headers: Vec::new(),
             cdx_dedup_filename: None,
         }
@@ -713,7 +713,7 @@ impl Default for FilenameRestrictions {
     fn default() -> Self {
         FilenameRestrictions {
             restrict_os: RestrictOs::default(),
-            restrict_ctrl_chars: false,
+            restrict_ctrl_chars: true,
             restrict_nonascii: false,
             case_restriction: CaseRestriction::None,
         }
