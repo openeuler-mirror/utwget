@@ -1,0 +1,49 @@
+use std::io::{self, Write};
+use std::time::Duration;
+
+use ut_core::url::ParsedUrl;
+use ut_core::WgetError;
+use ut_progress::ProgressDisplay;
+
+use crate::types::{
+    BodyResult, RequestOptions, Protocol, ProtocolState, ResponseMeta, RetrieveError,
+};
+
+pub struct HttpProtocolAdapter;
+
+impl Protocol for HttpProtocolAdapter {
+    fn request(
+        &self,
+        _url: &ParsedUrl,
+        _opts: &RequestOptions,
+        _state: &mut ProtocolState,
+    ) -> Result<ResponseMeta, RetrieveError> {
+        Err(RetrieveError::Protocol(WgetError::Other(
+            "HTTP adapter requires a live connection; use Retriever directly".into(),
+        )))
+    }
+
+    fn read_body(
+        &self,
+        _response: &mut ResponseMeta,
+        _output: &mut dyn Write,
+        _state: &mut ProtocolState,
+        _progress: Option<&mut dyn ProgressDisplay>,
+    ) -> Result<BodyResult, RetrieveError> {
+        Err(RetrieveError::Protocol(WgetError::Other(
+            "HTTP adapter requires a live connection; use Retriever directly".into(),
+        )))
+    }
+
+    fn supports_resume(&self) -> bool {
+        true
+    }
+
+    fn supports_conditional(&self) -> bool {
+        true
+    }
+
+    fn connection_reusable(&self) -> bool {
+        true
+    }
+}
