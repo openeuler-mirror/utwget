@@ -90,3 +90,22 @@ fn url_attr_for_tag(tag: &str) -> Option<&'static str> {
     }
     None
 }
+
+/// Classifies a URL as absolute or relative.
+///
+/// # Arguments
+///
+/// * `url` - The URL to classify.
+///
+/// # Returns
+///
+/// - `LinkType::Absolute` if the URL contains a scheme, starts with `//`,
+///   or starts with `/`.
+/// - `LinkType::Relative` otherwise.
+fn classify_link(url: &str) -> LinkType {
+    if url.contains("://") || url.starts_with("//") || url.starts_with('/') {
+        LinkType::Absolute
+    } else {
+        LinkType::Relative
+    }
+}
