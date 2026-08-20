@@ -98,3 +98,11 @@ pub struct RateLimitedWriter<'a, W: Write> {
     max_bucket: u64,
     last_refill: std::time::Instant,
 }
+
+pub struct OwnedRateLimitedWriter {
+    inner: Box<dyn Write>,
+    bytes_per_second: u64,
+    bucket: u64,
+    max_bucket: u64,
+    last_refill: std::time::Instant,
+}
