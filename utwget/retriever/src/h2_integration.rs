@@ -293,3 +293,18 @@ fn is_url_proxied_for_http2(url: &ParsedUrl, config: &Config) -> bool {
     }
     true
 }
+
+/// Build a rustls ClientConfig for HTTP/2.
+fn build_rustls_config() -> Result<rustls::ClientConfig, RetrieveError> {
+    let mut root_store = rustls::RootCertStore::empty();
+    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+
+    let mut config = rustls::ClientConfig::builder()
+        .with_root_certificates(root_store)
+        .with_no_client_auth();
+
+    // Set ALPN protocol to h2 for HTTP/2 negotiation
+    config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+
+    Ok(config)
+}
