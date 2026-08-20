@@ -193,3 +193,26 @@ impl DownloadRegistry {
         }
     }
 }
+
+/// Normalize a URL by removing the fragment identifier.
+///
+/// URLs that differ only in their fragment (e.g., `http://example.com/page#section1`
+/// and `http://example.com/page#section2`) should be treated as the same resource
+/// for download purposes.
+///
+/// # Arguments
+///
+/// * `url` - The URL to normalize.
+///
+/// # Returns
+///
+/// The URL with leading/trailing whitespace removed and the fragment identifier
+/// (everything from `#` onwards) stripped.
+fn normalize_url(url: &str) -> String {
+    let url = url.trim();
+    if let Some(idx) = url.find('#') {
+        url[..idx].to_string()
+    } else {
+        url.to_string()
+    }
+}
