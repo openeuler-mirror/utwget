@@ -1145,7 +1145,11 @@ impl FtpClient {
             data_conn::enter_passive_mode(ctrl, self.is_ipv6)
                 .map_err(|e| FtpError::DataConnectFailed(e.to_string()))
         } else {
-            // Active mode: bind a local listener, send PORT/EPRT, then accept
+            // Active mode: bind a local listener, send PORT/EPRT, and return
+            // a lazy connection whose accept() is deferred until the first
+            // read() — i.e., after the data transfer command (LIST/RETR) is
+            // sent on the control connection.  This matches RFC 959 and
+            // GNU wget's ftp.c:1383-1389 ordering.
             let listener = std::net::TcpListener::bind("0.0.0.0:0")
                 .or_else(|_| std::net::TcpListener::bind("[::]:0"))
                 .map_err(|e| FtpError::DataConnectFailed(format!("failed to bind listener: {}", e)))?;
@@ -1185,16 +1189,10 @@ impl FtpClient {
                 }
             }
 
-            // Accept the incoming data connection from the server
-            let (stream, _addr) = listener.accept()
-                .map_err(|e| FtpError::DataConnectFailed(format!("failed to accept data connection: {}", e)))?;
-            stream.set_nonblocking(false).ok();
-            // Set timeout to prevent indefinite hang if server stops mid-transfer
-            stream.set_read_timeout(Some(std::time::Duration::from_secs(60))).ok();
-            stream.set_write_timeout(Some(std::time::Duration::from_secs(60))).ok();
-            log::debug!("FTP active mode data connection accepted from {}", _addr);
-
-            Ok(DataConnection::new(Box::new(stream)))
+            // Return a lazy active connection: accept() is deferred until
+            // the first read() call, which happens after the transfer command
+            // (LIST/RETR) is sent and the 1xx preliminary response is received.
+            Ok(DataConnection::new_active(listener))
         }
     }
 
