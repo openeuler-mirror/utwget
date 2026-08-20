@@ -327,3 +327,38 @@ pub fn should_use_http2(url: &ParsedUrl, config: &Config) -> bool {
 
     true
 }
+
+/// Attempt to download a URL using HTTP/2.
+///
+/// This function tries to establish an HTTP/2 connection and download the URL.
+/// If HTTP/2 fails, it returns an error so the caller can fall back to HTTP/1.1.
+///
+/// # Arguments
+///
+/// * `url` - The target URL.
+/// * `config` - Application configuration.
+///
+/// # Returns
+///
+/// The downloaded content as bytes, or an error.
+pub async fn download_with_http2(
+    url: &ParsedUrl,
+    config: &Config,
+) -> Result<Vec<u8>, RetrieveError> {
+    if !should_use_http2(url, config) {
+        return Err(RetrieveError::Protocol(WgetError::Other(
+            "HTTP/2 not applicable for this URL".into()
+        )));
+    }
+
+    let mut retriever = H2Retriever::connect(url, config)?;
+
+    // Build a simple GET request
+    let request = ut_http::request::HttpRequest::new(
+        ut_http::request::HttpMethod::Get,
+        url.full_path(),
+        url.host.clone(),
+    );
+
+    retriever.send_request(&request)
+}
