@@ -43,3 +43,14 @@ const URL_ATTR_MAP: &[(&str, &str)] = &[
     ("meta", "content"),
     ("base", "href"),
 ];
+
+/// CSS selector for all elements with URL attributes.
+///
+/// This selector matches all elements that have URL-containing attributes
+/// and should be processed during URL extraction.
+const SELECTOR: &str = concat![
+    "a[href], area[href], link[href], img[src], script[src], ",
+    "iframe[src], frame[src], embed[src], object[data], ",
+    "source[src], track[src], video[poster], body[background], ",
+    "applet[codebase], meta[content], base[href]",
+];
