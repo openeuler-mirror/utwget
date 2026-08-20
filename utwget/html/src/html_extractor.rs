@@ -109,3 +109,47 @@ fn classify_link(url: &str) -> LinkType {
         LinkType::Relative
     }
 }
+
+/// Parses a URL from a meta refresh content attribute.
+///
+/// Extracts the URL from content like `"5;url=http://example.com/"`.
+///
+/// # Arguments
+///
+/// * `content` - The content attribute value from a meta refresh element.
+///
+/// # Returns
+///
+/// `Some(url)` if a valid URL was found, `None` otherwise.
+fn parse_meta_refresh_url(content: &str) -> Option<String> {
+    let content = content.trim();
+    let lower = content.to_ascii_lowercase();
+
+    let url_idx = lower.find("url=")?;
+
+    let url = if url_idx + 4 < lower.len()
+        && (lower.as_bytes()[url_idx + 4] == b'\''
+            || lower.as_bytes()[url_idx + 4] == b'"')
+    {
+        let quote = content.as_bytes()[url_idx + 4];
+        let end = content[url_idx + 5..].find(quote as char);
+        match end {
+            Some(e) => &content[url_idx + 5..url_idx + 5 + e],
+            None => &content[url_idx + 5..],
+        }
+    } else {
+        let rest = &content[url_idx + 4..];
+        let end = rest.find(|c: char| c == ';' || c.is_whitespace());
+        match end {
+            Some(e) => &rest[..e],
+            None => rest,
+        }
+    };
+
+    let url = url.trim();
+    if url.is_empty() {
+        None
+    } else {
+        Some(url.to_string())
+    }
+}
