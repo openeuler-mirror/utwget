@@ -280,3 +280,16 @@ fn get_proxy_config(config: &Config) -> Result<ProxyConfig, RetrieveError> {
 
     Ok(ProxyConfig { host, port })
 }
+
+/// Check if a URL should use a proxy for HTTP/2.
+fn is_url_proxied_for_http2(url: &ParsedUrl, config: &Config) -> bool {
+    // Check --no-proxy domains
+    let host = url.host.as_str();
+    for domain in &config.proxy.no_proxy {
+        let domain = domain.trim();
+        if domain == host || (domain.starts_with('.') && host.ends_with(domain)) {
+            return false;
+        }
+    }
+    true
+}
