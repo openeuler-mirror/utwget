@@ -47,3 +47,42 @@ impl Protocol for HttpProtocolAdapter {
         true
     }
 }
+
+pub struct FtpProtocolAdapter;
+
+impl Protocol for FtpProtocolAdapter {
+    fn request(
+        &self,
+        _url: &ParsedUrl,
+        _opts: &RequestOptions,
+        _state: &mut ProtocolState,
+    ) -> Result<ResponseMeta, RetrieveError> {
+        Err(RetrieveError::Protocol(WgetError::Other(
+            "FTP adapter requires a live connection; use Retriever directly".into(),
+        )))
+    }
+
+    fn read_body(
+        &self,
+        _response: &mut ResponseMeta,
+        _output: &mut dyn Write,
+        _state: &mut ProtocolState,
+        _progress: Option<&mut dyn ProgressDisplay>,
+    ) -> Result<BodyResult, RetrieveError> {
+        Err(RetrieveError::Protocol(WgetError::Other(
+            "FTP adapter requires a live connection; use Retriever directly".into(),
+        )))
+    }
+
+    fn supports_resume(&self) -> bool {
+        true
+    }
+
+    fn supports_conditional(&self) -> bool {
+        false
+    }
+
+    fn connection_reusable(&self) -> bool {
+        false
+    }
+}
