@@ -228,13 +228,12 @@ fn test_recursive_mirror_sets_flags() {
     use utwget_cli::app::build_config;
     let args = Args::try_parse_from(["utwget", "-m", "http://example.com/"]).unwrap();
     let config = build_config(&args);
+    // GNU wget's cmd_spec_mirror sets: -N -r -l inf --no-remove-listing
+    // (see init.c). It does NOT set -k, -p, -c, or change use_robots.
     assert!(config.recursive.enabled);
     assert!(config.timestamping);
-    assert!(config.convert_links);
-    assert!(config.page_requisites);
-    assert!(config.continue_download);
-    assert_eq!(config.recursive.max_level, Some(0));
-    assert!(!config.recursive.use_robots);
+    assert_eq!(config.recursive.max_level, None); // -l inf → None (unlimited)
+    assert!(!config.ftp.remove_listing); // --no-remove-listing
 }
 
 // ========== ContentExtractor trait 接口一致性 ==========
