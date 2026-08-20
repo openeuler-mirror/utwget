@@ -259,3 +259,24 @@ struct ProxyConfig {
     host: String,
     port: u16,
 }
+
+/// Get proxy configuration from the main config.
+fn get_proxy_config(config: &Config) -> Result<ProxyConfig, RetrieveError> {
+    let proxy_url = config.proxy.https_proxy.as_ref()
+        .or(config.proxy.http_proxy.as_ref())
+        .ok_or_else(|| RetrieveError::Protocol(WgetError::Other(
+            "HTTP/2 requires a proxy but no proxy is configured".into()
+        )))?;
+
+    // Parse proxy URL (format: host:port or http://host:port)
+    let proxy_str = proxy_url.trim_start_matches("http://").trim_start_matches("https://");
+    let parts: Vec<&str> = proxy_str.split(':').collect();
+    let host = parts[0].to_string();
+    let port = if parts.len() > 1 {
+        parts[1].parse().unwrap_or(8080)
+    } else {
+        8080
+    };
+
+    Ok(ProxyConfig { host, port })
+}
