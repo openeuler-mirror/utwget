@@ -26,6 +26,7 @@ fn test_warc_header_serialize_basic() {
         truncated: None,
         wagon: None,
         payload_digest: None,
+        block_digest: None,
     };
 
     let bytes = header.serialize();
@@ -67,6 +68,7 @@ fn test_warc_header_serialize_all_record_types() {
             truncated: None,
             wagon: None,
             payload_digest: None,
+        block_digest: None,
         };
 
         let bytes = header.serialize();
@@ -93,6 +95,7 @@ fn test_warc_header_serialize_with_concurrent_to() {
         truncated: None,
         wagon: None,
         payload_digest: None,
+        block_digest: None,
     };
 
     let bytes = header.serialize();
@@ -117,6 +120,7 @@ fn test_warc_header_serialize_gzip_compressed() {
         truncated: None,
         wagon: None,
         payload_digest: None,
+        block_digest: None,
     };
 
     let bytes = header.serialize();
@@ -142,6 +146,7 @@ fn test_warc_header_serialize_truncated() {
         truncated: Some("length".to_string()),
         wagon: None,
         payload_digest: None,
+        block_digest: None,
     };
 
     let bytes = header.serialize();
@@ -165,6 +170,7 @@ fn test_warc_header_serialize_wagon() {
         truncated: None,
         wagon: Some("wagon-metadata-here".to_string()),
         payload_digest: None,
+        block_digest: None,
     };
 
     let bytes = header.serialize();
@@ -188,6 +194,7 @@ fn test_warc_header_serialize_terminates_with_double_crlf() {
         truncated: None,
         wagon: None,
         payload_digest: None,
+        block_digest: None,
     };
 
     let bytes = header.serialize();
@@ -209,6 +216,7 @@ fn test_warc_header_serialize_no_target_uri_when_empty() {
         truncated: None,
         wagon: None,
         payload_digest: None,
+        block_digest: None,
     };
 
     let bytes = header.serialize();
@@ -232,6 +240,7 @@ fn test_warc_header_serialize_crlf_line_endings() {
         truncated: None,
         wagon: None,
         payload_digest: None,
+        block_digest: None,
     };
 
     let bytes = header.serialize();
@@ -439,6 +448,7 @@ fn test_warc_header_serialize_complete() {
         truncated: Some("time".to_string()),
         wagon: Some("test-wagon".to_string()),
         payload_digest: Some("sha1:abcdef0123456789abcdef0123456789abcdef01".to_string()),
+        block_digest: None,
     };
 
     let bytes = header.serialize();
@@ -475,6 +485,7 @@ fn test_warc_header_strips_crlf_injection() {
         truncated: Some("length\r\nWARC-Also: bad".to_string()),
         wagon: None,
         payload_digest: None,
+        block_digest: None,
     };
 
     let bytes = header.serialize();

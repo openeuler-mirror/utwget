@@ -51,6 +51,9 @@ pub struct WarcWriterImpl {
     cdx_entries: Vec<String>,
     base_path: PathBuf,
     user_headers: Vec<String>,
+    /// The collection UUID for isPartOf (generated once per writer, reused
+    /// across all warcinfo records in this WARC set, per ISO 28500).
+    collection_id: String,
 }
 
 /// Returns a standard HTTP reason phrase for the given status code.
@@ -154,6 +157,9 @@ impl WarcWriterImpl {
         user_headers: Vec<String>,
     ) -> Result<Self> {
         let tempdir = tempdir.unwrap_or_else(std::env::temp_dir);
+        // Generate the collection UUID once per writer; reused for all
+        // warcinfo records in this WARC set (ISO 28500 §5.1 isPartOf).
+        let collection_id = generate_uuid_v4()?;
         let mut writer = WarcWriterImpl {
             file: None,
             filename: String::new(),
@@ -167,6 +173,7 @@ impl WarcWriterImpl {
             cdx_entries: Vec::new(),
             base_path,
             user_headers,
+            collection_id,
         };
         writer.open_file()?;
         Ok(writer)
@@ -235,7 +242,7 @@ impl WarcWriterImpl {
             "software: wget-rs/0.1.0\r\n\
              format: WARC File Format 1.1\r\n\
              isPartOf: <urn:uuid:{}>\r\n",
-            generate_uuid_v4()?
+            self.collection_id
         );
         // Add user-defined headers
         for user_header in &self.user_headers {
@@ -263,6 +270,7 @@ impl WarcWriterImpl {
             truncated: None,
             wagon: None,
             payload_digest: None,
+            block_digest: None,
         };
 
         self.write_record(&header, &content)?;
@@ -468,6 +476,9 @@ impl WarcWriterImpl {
             truncated: None,
             wagon: None,
             payload_digest,
+            // WARC-Block-Digest: computed over the block content (the bytes
+            // as stored, possibly compressed). Required by ISO 28500 §5.10.
+            block_digest: None,
         })
     }
     /// Compute the `WARC-Payload-Digest` header value for a payload.

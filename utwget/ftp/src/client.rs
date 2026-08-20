@@ -1356,12 +1356,18 @@ fn parent_path(path: &str) -> String {
 }
 
 /// Extract the base name (filename) from a full path.
+/// Filters out `..` and `.` components to prevent path traversal.
 fn base_name(path: &str) -> String {
     let path = path.trim_start_matches('/');
-    if let Some(last_slash) = path.rfind('/') {
-        path[last_slash + 1..].to_string()
+    let name = if let Some(last_slash) = path.rfind('/') {
+        &path[last_slash + 1..]
     } else {
-        path.to_string()
+        path
+    };
+    // Block path traversal: never return ".." or "." as a filename
+    match name {
+        ".." | "." => "_".to_string(),
+        _ => name.to_string(),
     }
 }
 

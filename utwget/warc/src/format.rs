@@ -86,6 +86,9 @@ pub struct WarcHeader {
     pub wagon: Option<String>,
     /// Payload digest (e.g., "sha1:abc123...") for integrity verification.
     pub payload_digest: Option<String>,
+    /// Block digest (WARC-Block-Digest) over the block content (the
+    /// possibly-compressed record content). Required by ISO 28500 §5.10.
+    pub block_digest: Option<String>,
 }
 
 impl WarcHeader {
@@ -145,6 +148,10 @@ impl WarcHeader {
 
         if let Some(ref digest) = self.payload_digest {
             lines.push(format!("WARC-Payload-Digest: {}", sanitize(digest)));
+        }
+
+        if let Some(ref digest) = self.block_digest {
+            lines.push(format!("WARC-Block-Digest: {}", sanitize(digest)));
         }
 
         if let Some(ref t) = self.truncated {
