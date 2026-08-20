@@ -253,3 +253,9 @@ impl H2Retriever {
         self.port
     }
 }
+
+/// Proxy configuration for HTTP/2.
+struct ProxyConfig {
+    host: String,
+    port: u16,
+}
