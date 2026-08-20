@@ -42,3 +42,27 @@ pub struct UrlPosition {
     /// Whether a meta robots nofollow directive disallows following this link.
     pub meta_disallow_follow: bool,
 }
+
+/// Returns the default list of tags to follow for URL extraction.
+///
+/// Includes all standard HTML elements that can contain URLs.
+fn default_follow_tags() -> Vec<String> {
+    vec![
+        "a".into(),
+        "area".into(),
+        "link".into(),
+        "img".into(),
+        "script".into(),
+        "iframe".into(),
+        "frame".into(),
+        "embed".into(),
+        "object".into(),
+        "source".into(),
+        "track".into(),
+        "video".into(),
+        "body".into(),
+        "applet".into(),
+        "meta".into(),
+        "base".into(),
+    ]
+}
