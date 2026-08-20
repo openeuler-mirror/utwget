@@ -66,3 +66,22 @@ fn default_follow_tags() -> Vec<String> {
         "base".into(),
     ]
 }
+
+/// Options controlling URL extraction behavior.
+///
+/// These options determine which elements are processed during URL extraction
+/// from HTML documents.
+#[derive(Debug, Clone)]
+pub struct ExtractOptions {
+    /// Whether to follow URLs in `<base>` elements.
+    pub follow_base: bool,
+    /// Tags to ignore during extraction.
+    ///
+    /// URLs in these elements will not be extracted.
+    pub ignore_tags: Vec<String>,
+    /// Tags to follow during extraction.
+    ///
+    /// Only URLs in these elements will be extracted.
+    /// If empty, all tags with URL attributes are processed.
+    pub follow_tags: Vec<String>,
+}
