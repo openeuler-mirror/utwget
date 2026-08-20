@@ -308,3 +308,22 @@ fn build_rustls_config() -> Result<rustls::ClientConfig, RetrieveError> {
 
     Ok(config)
 }
+
+/// Check if HTTP/2 should be used for a given URL.
+///
+/// Returns true if:
+/// - HTTP/2 is enabled in config
+/// - The URL is HTTPS (HTTP/2 requires TLS)
+pub fn should_use_http2(url: &ParsedUrl, config: &Config) -> bool {
+    if !config.http.force_http2 {
+        return false;
+    }
+
+    // HTTP/2 requires HTTPS
+    if !url.scheme.is_secure() {
+        debug!("HTTP/2 requires HTTPS, falling back to HTTP/1.1");
+        return false;
+    }
+
+    true
+}
