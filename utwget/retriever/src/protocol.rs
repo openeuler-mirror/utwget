@@ -106,3 +106,24 @@ pub struct OwnedRateLimitedWriter {
     max_bucket: u64,
     last_refill: std::time::Instant,
 }
+
+impl<'a, W: Write> RateLimitedWriter<'a, W> {
+    pub fn new(inner: &'a mut W, bytes_per_second: u64) -> Self {
+        let bps = if bytes_per_second == 0 { u64::MAX } else { bytes_per_second };
+        RateLimitedWriter {
+            inner,
+            bytes_per_second: bps,
+            bucket: bps,
+            max_bucket: bps,
+            last_refill: std::time::Instant::now(),
+        }
+    }
+
+    fn refill(&mut self) {
+        let now = std::time::Instant::now();
+        let elapsed = now.duration_since(self.last_refill);
+        self.last_refill = now;
+        let refill = (elapsed.as_secs_f64() * self.bytes_per_second as f64) as u64;
+        self.bucket = (self.bucket + refill).min(self.max_bucket);
+    }
+}
