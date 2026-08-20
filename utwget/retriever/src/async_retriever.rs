@@ -181,3 +181,23 @@ pub async fn download(url: &str, config: Arc<Config>) -> Result<RetrieveOutcome,
     let retriever = AsyncRetriever::new(config, 1);
     retriever.retrieve(url).await
 }
+
+/// Download multiple URLs concurrently with a concurrency limit.
+///
+/// # Arguments
+///
+/// * `urls` - The URLs to download.
+/// * `config` - Shared configuration.
+/// * `max_concurrent` - Maximum number of concurrent downloads.
+///
+/// # Returns
+///
+/// A vector of (url, result) pairs.
+pub async fn download_many(
+    urls: &[String],
+    config: Arc<Config>,
+    max_concurrent: usize,
+) -> Vec<(String, Result<RetrieveOutcome, RetrieveError>)> {
+    let retriever = AsyncRetriever::new(config, max_concurrent);
+    retriever.retrieve_many(urls).await
+}
