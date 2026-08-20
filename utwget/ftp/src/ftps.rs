@@ -481,9 +481,15 @@ impl FtpsClient {
                 }
             }
 
-            // Use system root certificates
+            // Load system root certificates, falling back to Mozilla roots.
             if root_store.is_empty() {
-                root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+                let result = rustls_native_certs::load_native_certs();
+                for cert in &result.certs {
+                    root_store.add(cert.clone()).ok();
+                }
+                if root_store.is_empty() {
+                    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+                }
             }
 
             // Select TLS protocol versions based on --secure-protocol, mirroring

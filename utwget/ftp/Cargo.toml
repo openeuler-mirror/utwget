@@ -8,7 +8,7 @@ license = "GPL-3.0-or-later"
 [features]
 default = ["ftps"]
 ftp-opie = []
-ftps = ["dep:rustls", "dep:webpki-roots", "dep:rustls-pki-types", "dep:rustls-pemfile"]
+ftps = ["dep:rustls", "dep:webpki-roots", "dep:rustls-pki-types", "dep:rustls-pemfile", "dep:rustls-native-certs"]
 
 [dependencies]
 ut-core = { path = "../core" }
@@ -20,3 +20,4 @@ rustls = { version = "0.23", optional = true }
 webpki-roots = { version = "0.26", optional = true }
 rustls-pki-types = { version = "1", optional = true }
 rustls-pemfile = { version = "2", optional = true }
+rustls-native-certs = { version = "0.8", optional = true }

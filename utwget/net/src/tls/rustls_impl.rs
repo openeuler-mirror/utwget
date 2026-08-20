@@ -155,9 +155,23 @@ impl RustlsConnector {
                 load_certs_from_dir(ca_dir, &mut root_store)?;
             }
 
-            // Use system root certificates if none specified
+            // Load system root certificates when no custom CA is specified.
+            // Try the OS native trust store first (matches GNU wget's
+            // GnuTLS behavior of using the system CA bundle), falling back
+            // to the bundled Mozilla root list if native certs are
+            // unavailable (e.g. minimal containers).
             if root_store.is_empty() {
-                root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+                let result = rustls_native_certs::load_native_certs();
+                if !result.errors.is_empty() {
+                    log::warn!("failed to load some native root certs: {} errors", result.errors.len());
+                }
+                for cert in &result.certs {
+                    root_store.add(cert.clone()).ok();
+                }
+                if root_store.is_empty() {
+                    log::warn!("no native root certs found; falling back to Mozilla roots");
+                    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+                }
             }
         }
 
