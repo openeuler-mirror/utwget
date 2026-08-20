@@ -2203,7 +2203,11 @@ impl Retriever {
             }
         }
 
-        if self.config.timestamping || self.config.if_modified_since {
+        // GNU wget sends If-Modified-Since only when BOTH timestamping (-N)
+        // AND if_modified_since are true (http.c:4319-4323). Without -N,
+        // timestamping is false so no conditional GET is sent — the default
+        // "always re-download" behavior is preserved.
+        if self.config.timestamping && self.config.if_modified_since {
             if let Ok(metadata) = fs::metadata(self.determine_output_path(url).unwrap_or_default()) {
                 if let Ok(mtime) = metadata.modified() {
                     opts.if_modified_since = Some(mtime.into());
