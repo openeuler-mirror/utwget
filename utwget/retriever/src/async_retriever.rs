@@ -159,3 +159,25 @@ impl AsyncRetriever {
         &self.config
     }
 }
+
+/// Create a silent progress display for background downloads.
+fn create_silent_progress() -> Box<dyn ProgressDisplay> {
+    ut_progress::create_progress_display(ut_core::ProgressStyle::Silent, true)
+}
+
+/// Download a single URL asynchronously using the default configuration.
+///
+/// This is a convenience function for simple async downloads.
+///
+/// # Arguments
+///
+/// * `url` - The URL to download.
+/// * `config` - Shared configuration.
+///
+/// # Returns
+///
+/// A `RetrieveOutcome` on success.
+pub async fn download(url: &str, config: Arc<Config>) -> Result<RetrieveOutcome, RetrieveError> {
+    let retriever = AsyncRetriever::new(config, 1);
+    retriever.retrieve(url).await
+}
