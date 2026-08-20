@@ -54,3 +54,39 @@ const SELECTOR: &str = concat![
     "source[src], track[src], video[poster], body[background], ",
     "applet[codebase], meta[content], base[href]",
 ];
+
+/// Checks if a tag represents an inline resource.
+///
+/// Inline resources are embedded directly in the page (images, scripts, etc.)
+/// rather than linking to separate documents.
+///
+/// # Arguments
+///
+/// * `tag` - The HTML tag name (lowercase).
+///
+/// # Returns
+///
+/// `true` if the tag represents an inline resource, `false` otherwise.
+fn is_inline_tag(tag: &str) -> bool {
+    INLINE_TAGS.contains(&tag)
+}
+
+/// Returns the URL attribute name for a given HTML tag.
+///
+/// Looks up the attribute that contains a URL for the specified tag.
+///
+/// # Arguments
+///
+/// * `tag` - The HTML tag name (lowercase).
+///
+/// # Returns
+///
+/// `Some(attr_name)` if the tag has a URL attribute, `None` otherwise.
+fn url_attr_for_tag(tag: &str) -> Option<&'static str> {
+    for (t, a) in URL_ATTR_MAP {
+        if *t == tag {
+            return Some(a);
+        }
+    }
+    None
+}
