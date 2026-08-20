@@ -85,3 +85,13 @@ pub struct ExtractOptions {
     /// If empty, all tags with URL attributes are processed.
     pub follow_tags: Vec<String>,
 }
+
+impl Default for ExtractOptions {
+    fn default() -> Self {
+        Self {
+            follow_base: true,
+            ignore_tags: Vec::new(),
+            follow_tags: default_follow_tags(),
+        }
+    }
+}
