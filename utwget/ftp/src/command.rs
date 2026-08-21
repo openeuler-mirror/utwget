@@ -157,6 +157,7 @@ impl FtpResponse {
         // Use a larger buffer for efficient reads, especially over TLS where
         // each read() call may trigger a TLS record decryption. The previous
         // single-byte read was correct but slow on high-latency connections.
+        const MAX_FTP_LINE_LEN: usize = 8 * 1024; // 8 KB per line (DoS guard)
         let mut line_bytes = Vec::new();
         let mut buf = [0u8; 256];
         loop {
@@ -174,6 +175,12 @@ impl FtpResponse {
                 break;
             }
             line_bytes.extend_from_slice(read);
+            // DoS guard: reject lines longer than MAX_FTP_LINE_LEN
+            if line_bytes.len() > MAX_FTP_LINE_LEN {
+                return Err(FtpCommandError::MalformedResponse(
+                    format!("FTP response line too long (exceeds {} bytes)", MAX_FTP_LINE_LEN)
+                ));
+            }
         }
         String::from_utf8(line_bytes).map_err(|e| FtpCommandError::Io(io::Error::new(io::ErrorKind::InvalidData, e.to_string())))
     }
@@ -210,8 +217,16 @@ impl FtpResponse {
         if trimmed.len() >= 4 && trimmed.as_bytes()[3] == b'-' {
             let mut all_lines = vec![trimmed[4..].to_string()];
             let end_marker = format!("{} ", code);
+            const MAX_FTP_RESPONSE_SIZE: usize = 64 * 1024; // 64 KB total (DoS guard)
+            let mut total_size = first_line.len();
             loop {
                 let line = Self::read_line_from(transport)?;
+                total_size += line.len();
+                if total_size > MAX_FTP_RESPONSE_SIZE {
+                    return Err(FtpCommandError::MalformedResponse(
+                        format!("FTP multi-line response too large (exceeds {} bytes)", MAX_FTP_RESPONSE_SIZE)
+                    ));
+                }
                 let t = line.trim_end();
                 if t.len() >= 4 && t[..4] == end_marker {
                     all_lines.push(t[4..].to_string());
