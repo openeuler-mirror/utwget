@@ -226,3 +226,17 @@ impl<'a, W: Write, P: ProgressDisplay> ProgressWriter<'a, W, P> {
         self.total_written
     }
 }
+
+impl<'a, W: Write, P: ProgressDisplay> Write for ProgressWriter<'a, W, P> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let n = self.inner.write(buf)?;
+        self.total_written += n as u64;
+        let elapsed = std::time::Instant::now().elapsed();
+        self.progress.update(self.total_written, elapsed);
+        Ok(n)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
+}
