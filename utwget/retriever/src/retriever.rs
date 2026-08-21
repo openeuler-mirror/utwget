@@ -1294,3 +1294,29 @@ impl Retriever {
         Ok(stream.try_clone().map_err(RetrieveError::Io)?)
     }
 }
+
+/// Read all data from a Transport trait object until EOF.
+///
+/// # Arguments
+///
+/// * `transport` - A boxed transport (e.g. TLS-wrapped stream).
+///
+/// # Returns
+///
+/// All bytes read from the transport.
+///
+/// # Errors
+///
+/// Returns `RetrieveError` if a read operation fails.
+fn read_all_from_transport(transport: &mut Box<dyn ut_net::Transport<Error = ut_core::error::TlsError>>) -> Result<Vec<u8>, RetrieveError> {
+    let mut data = Vec::new();
+    let mut buf = [0u8; 8192];
+    loop {
+        match transport.read(&mut buf) {
+            Ok(0) => break, // EOF
+            Ok(n) => data.extend_from_slice(&buf[..n]),
+            Err(e) => return Err(RetrieveError::Protocol(WgetError::Other(format!("read error: {}", e)))),
+        }
+    }
+    Ok(data)
+}
