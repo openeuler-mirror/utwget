@@ -118,3 +118,16 @@ pub struct ResponseMeta {
     /// Whether the connection can be kept alive.
     pub keep_alive: bool,
 }
+
+/// Result of downloading a response body.
+///
+/// Contains statistics about the download and the local file path.
+#[derive(Debug, Clone)]
+pub struct BodyResult {
+    /// Number of bytes read from the response.
+    pub bytes_read: u64,
+    /// Time elapsed during the download.
+    pub elapsed: Duration,
+    /// Local file path where the content was saved, if not deleted.
+    pub local_file: Option<PathBuf>,
+}
