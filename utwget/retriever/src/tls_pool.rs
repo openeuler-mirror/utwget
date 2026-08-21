@@ -13,3 +13,11 @@ use ut_net::tls::TlsError;
 
 /// Maximum age of an idle connection before it's considered expired (5 minutes).
 const MAX_IDLE_AGE: std::time::Duration = std::time::Duration::from_secs(300);
+
+/// A pooled connection that can be either TCP or TLS.
+enum PooledConnection {
+    /// Plain TCP connection.
+    Tcp(std::net::TcpStream),
+    /// TLS connection wrapped in a trait object.
+    Tls(Box<dyn Transport<Error = TlsError>>),
+}
