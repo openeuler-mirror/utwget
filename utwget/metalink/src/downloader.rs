@@ -313,8 +313,17 @@ impl MetalinkDownloader {
         let mut reader = std::io::BufReader::new(file);
 
         let mut all_ok = true;
+        // Cap individual piece size to prevent OOM from crafted .meta4 files
+        // and to prevent 32-bit truncation bypass via `as usize`.
+        const MAX_PIECE_SIZE: u64 = 1024 * 1024 * 1024; // 1 GiB
         for (i, piece) in pieces.iter().enumerate() {
-            let mut buf = vec![0u8; piece.length as usize];
+            if piece.length > MAX_PIECE_SIZE {
+                warn!("piece {} skipped: length {} exceeds max {}", i, piece.length, MAX_PIECE_SIZE);
+                all_ok = false;
+                continue;
+            }
+            let alloc_len = piece.length as usize; // safe: <= 1 GiB and <= usize::MAX on 64-bit
+            let mut buf = vec![0u8; alloc_len];
             let mut total_read: usize = 0;
 
             while total_read < buf.len() {
