@@ -206,3 +206,57 @@ pub enum RetrieveError {
     #[error("no URLs to download")]
     NoUrls,
 }
+
+/// Trait for protocol implementations (HTTP, FTP).
+///
+/// Defines the interface that protocol handlers must implement to
+/// work with the retriever. This abstraction allows the retriever
+/// to work with different protocols uniformly.
+pub trait Protocol: Send + Sync {
+    /// Make a request to the given URL.
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - The parsed URL to request.
+    /// * `opts` - Request options.
+    /// * `state` - Mutable protocol state.
+    ///
+    /// # Returns
+    ///
+    /// Response metadata on success, or an error.
+    fn request(
+        &self,
+        url: &ut_core::url::ParsedUrl,
+        opts: &RequestOptions,
+        state: &mut ProtocolState,
+    ) -> Result<ResponseMeta, RetrieveError>;
+
+    /// Read the response body and write to output.
+    ///
+    /// # Arguments
+    ///
+    /// * `response` - Response metadata (modified with actual bytes read).
+    /// * `output` - Writer for the response body.
+    /// * `state` - Mutable protocol state.
+    /// * `progress` - Optional progress display.
+    ///
+    /// # Returns
+    ///
+    /// Body result with statistics on success, or an error.
+    fn read_body(
+        &self,
+        response: &mut ResponseMeta,
+        output: &mut dyn io::Write,
+        state: &mut ProtocolState,
+        progress: Option<&mut dyn ut_progress::ProgressDisplay>,
+    ) -> Result<BodyResult, RetrieveError>;
+
+    /// Whether this protocol supports resume (range requests).
+    fn supports_resume(&self) -> bool;
+
+    /// Whether this protocol supports conditional requests.
+    fn supports_conditional(&self) -> bool;
+
+    /// Whether the connection can be reused for subsequent requests.
+    fn connection_reusable(&self) -> bool;
+}
