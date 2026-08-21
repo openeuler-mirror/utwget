@@ -212,3 +212,17 @@ pub struct ProgressWriter<'a, W: Write, P: ProgressDisplay> {
     progress: &'a mut P,
     total_written: u64,
 }
+
+impl<'a, W: Write, P: ProgressDisplay> ProgressWriter<'a, W, P> {
+    pub fn new(inner: W, progress: &'a mut P) -> Self {
+        ProgressWriter {
+            inner,
+            progress,
+            total_written: 0,
+        }
+    }
+
+    pub fn bytes_written(&self) -> u64 {
+        self.total_written
+    }
+}
