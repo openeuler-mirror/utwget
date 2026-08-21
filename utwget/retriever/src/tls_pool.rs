@@ -39,3 +39,15 @@ struct ConnectionEntry {
     /// When this connection was last used.
     last_used: Instant,
 }
+
+/// Connection pool for reusing TCP and TLS connections.
+///
+/// This pool manages connections keyed by (host, port) and supports
+/// both plain TCP and TLS connections. Connections are automatically
+/// expired after a configurable idle timeout.
+pub struct TlsConnectionPool {
+    /// Pooled connections keyed by (host, port, use_tls).
+    pools: Mutex<HashMap<(String, u16, bool), Vec<ConnectionEntry>>>,
+    /// Maximum connections per pool key.
+    max_per_pool: usize,
+}
