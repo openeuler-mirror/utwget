@@ -167,3 +167,19 @@ impl Default for ProtocolState {
         }
     }
 }
+
+/// Outcome of a URL retrieval operation.
+///
+/// Indicates the result of attempting to download a URL,
+/// distinguishing between success, redirects, and other conditions.
+#[derive(Debug)]
+pub enum RetrieveOutcome {
+    /// Download completed successfully with body result.
+    Success(BodyResult),
+    /// Resource not modified since last download (304 response).
+    NotModified,
+    /// URL redirected to a new location.
+    Redirected(String),
+    /// Spider mode: URL checked but not downloaded.
+    SpiderOnly,
+}
