@@ -54,13 +54,16 @@ pub enum ExitStatus {
 impl ExitStatus {
     /// Maps a `WgetError` to the corresponding exit status code.
     ///
-    /// Uses the same priority logic as the original wget: the "worst"
-    /// (highest numeric) status wins across all URLs.
+    /// Mirrors GNU wget's exit-code mapping from `exits.c` and `http.c`:
+    /// - HTTP 4xx/5xx → `ServerError` (8)
+    /// - FTP file not found → `ServerError` (8) (FTPNSFOD)
+    /// - Retry limit exceeded → `NetworkFail` (4) (TRYLIMEXC)
+    /// - TLS init failed → `Error` (1) (SSLINITFAILED → UNKNOWN)
+    /// - URL parse / unsupported scheme → `Error` (1) (URLERROR → UNKNOWN)
     pub fn from_error(err: &ut_core::error::WgetError) -> Self {
         use ut_core::error::TlsError;
         match err {
-            WgetError::FtpFileNotFound(_)
-            | WgetError::FileNotFound(_)
+            WgetError::FileNotFound(_)
             | WgetError::FileExists(_)
             | WgetError::CannotCreateDir(_)
             | WgetError::WriteError(_) => ExitStatus::IoFail,
@@ -83,17 +86,18 @@ impl ExitStatus {
             WgetError::AuthFailed(_)
             | WgetError::FtpLoginRefused => ExitStatus::ServerAuthFail,
 
-            WgetError::Http { status: 400..=499, .. }
-            | WgetError::TooManyRedirects { .. }
+            WgetError::Http { status: 400..=599, .. }
+            | WgetError::FtpServerError(_)
+            | WgetError::FtpFileNotFound(_) => ExitStatus::ServerError,
+
+            WgetError::TooManyRedirects { .. }
             | WgetError::UnsupportedMethod(_)
             | WgetError::UrlParse(_)
-            | WgetError::UnsupportedScheme(_) => ExitStatus::ProtocolError,
+            | WgetError::UnsupportedScheme(_) => ExitStatus::Error,
 
-            WgetError::Http { status: 500..=599, .. }
-            | WgetError::FtpServerError(_) => ExitStatus::ServerError,
+            WgetError::RetryLimitExceeded { .. } => ExitStatus::NetworkFail,
 
-            WgetError::RetryLimitExceeded { .. }
-            | WgetError::QuotaExceeded { .. }
+            WgetError::QuotaExceeded { .. }
             | WgetError::MetalinkParse(_)
             | WgetError::MetalinkDownload(_)
             | WgetError::MetalinkChecksum { .. }
@@ -123,6 +127,24 @@ impl ExitStatus {
             ExitStatus::ServerAuthFail => 6,
             ExitStatus::ProtocolError => 7,
             ExitStatus::ServerError => 8,
+        }
+    }
+
+    /// Update `current` with `new` using GNU wget's aggregation logic
+    /// (exits.c:74-84): the first non-zero status wins, but a lower
+    /// non-zero status replaces a higher one.
+    ///
+    /// ```text
+    /// if new != 0 && (current == 0 || new < current)
+    ///     current = new
+    /// ```
+    pub fn aggregate(current: ExitStatus, new: ExitStatus) -> ExitStatus {
+        if new != ExitStatus::Success
+            && (current == ExitStatus::Success || new < current)
+        {
+            new
+        } else {
+            current
         }
     }
 
@@ -324,6 +346,12 @@ impl App {
                 Ok(p) => p,
                 Err(e) => {
                     self.urls_attempted += 1;
+                    // URL parse failures should produce exit code 1 (Error),
+                    // not be silently swallowed as exit 0.
+                    self.worst_status = ExitStatus::aggregate(
+                        self.worst_status,
+                        ExitStatus::Error,
+                    );
                     if self.config.verbose >= 1 || self.config.debug {
                         eprintln!("wget-rs: {}", e);
                     }
@@ -407,9 +435,7 @@ impl App {
                             Err(e) => {
                                 let wg_err: WgetError = e.into();
                                 let status = ExitStatus::from_error(&wg_err);
-                                if status > self.worst_status {
-                                    self.worst_status = status;
-                                }
+                                self.worst_status = ExitStatus::aggregate(self.worst_status, status);
                                 if self.config.verbose >= 1 || self.config.debug {
                                     eprintln!("{}", crate::i18n::translate_with_args("utwget.error_downloading", &[
                                         ("url", redirect_url),
@@ -427,9 +453,7 @@ impl App {
                 Err(e) => {
                     let wg_err: WgetError = e.into();
                     let status = ExitStatus::from_error(&wg_err);
-                    if status > self.worst_status {
-                        self.worst_status = status;
-                    }
+                    self.worst_status = ExitStatus::aggregate(self.worst_status, status);
                     if self.config.verbose >= 1 || self.config.debug {
                         eprintln!("{}", crate::i18n::translate_with_args("utwget.error_downloading", &[
                             ("url", url_str.to_string()),
@@ -510,11 +534,17 @@ impl App {
                         Err(e) => {
                             let wg_err: WgetError = e.into();
                             let status = ExitStatus::from_error(&wg_err);
-                            // Atomically update worst_status only if new status is greater
+                            // Atomically update worst_status using GNU
+                            // wget's aggregation logic (exits.c:74-84):
+                            // first non-zero wins, lower non-zero replaces
+                            // higher.
                             let status_u8 = status as u8;
                             loop {
                                 let current = worst_status.load(Ordering::Relaxed);
-                                if status_u8 <= current {
+                                // new != 0 && (current == 0 || new < current)
+                                let should_update = status_u8 != 0
+                                    && (current == 0 || status_u8 < current);
+                                if !should_update {
                                     break;
                                 }
                                 match worst_status.compare_exchange_weak(
@@ -541,7 +571,9 @@ impl App {
                     let status_u8 = ExitStatus::NetworkFail as u8;
                     loop {
                         let current = worst_status.load(Ordering::Relaxed);
-                        if status_u8 <= current {
+                        let should_update = status_u8 != 0
+                            && (current == 0 || status_u8 < current);
+                        if !should_update {
                             break;
                         }
                         match worst_status.compare_exchange_weak(
