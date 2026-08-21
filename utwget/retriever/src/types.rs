@@ -153,3 +153,17 @@ pub struct ProtocolState {
     /// Whether authentication has completed successfully.
     pub auth_finished: bool,
 }
+
+impl Default for ProtocolState {
+    fn default() -> Self {
+        ProtocolState {
+            retry_count: 0,
+            redirect_count: 0,
+            resume_position: 0,
+            head_done: false,
+            last_content_length: None,
+            ntlm_seen: false,
+            auth_finished: false,
+        }
+    }
+}
