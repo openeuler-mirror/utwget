@@ -37,3 +37,40 @@ pub enum ExitStatus {
     /// No URLs were found to download.
     NoUrlsFound,
 }
+
+/// Recursive downloader for retrieving entire website trees.
+///
+/// The `RecursiveRetriever` coordinates the download of a URL and all linked
+/// resources, following links in HTML and CSS files up to a configurable depth.
+/// It integrates with the URL queue, robots.txt parser, and URL filters.
+///
+/// # Features
+///
+/// - Depth-limited recursion (`-l` / `--level`)
+/// - Host spanning control (`-H` / `--span-hosts`)
+/// - robots.txt compliance (`--use-robots`)
+/// - URL filtering (`-A` / `-R` accept/reject patterns)
+/// - Page requisites (`-p` / `--page-requisites`)
+/// - Spider mode (`--spider`)
+///
+/// # Example
+///
+/// ```no_run
+/// use ut_retriever::RecursiveRetriever;
+/// use ut_core::Config;
+/// use std::sync::Arc;
+///
+/// let config = Arc::new(Config::default());
+/// let retriever = RecursiveRetriever::new(config, progress);
+/// let result = retriever.retrieve_tree("http://example.com/");
+/// ```
+pub struct RecursiveRetriever {
+    /// Core retriever for individual downloads.
+    retriever: Retriever,
+    /// HTML link extractor.
+    html_extractor: HtmlExtractor,
+    /// CSS URL extractor.
+    css_extractor: CssExtractor,
+    /// Cache of robots.txt allow/deny status per host.
+    robots_cache: HashMap<String, bool>,
+}
