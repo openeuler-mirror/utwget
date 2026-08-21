@@ -129,6 +129,10 @@ pub struct Config {
     /// Compression mode for downloads
     #[cfg(feature = "compression")]
     pub compression: CompressionMode,
+    /// Base URL for resolving relative URLs in input files (--base)
+    pub base_url: Option<String>,
+    /// Filename restriction string (--restrict-file-names)
+    pub restrict_file_names: Option<String>,
 
     /// Preferred address family for DNS resolution (--prefer-family)
     pub prefer_family: AddressFamily,
@@ -242,6 +246,8 @@ impl Default for Config {
             iri: IriConfig::default(),
             #[cfg(feature = "compression")]
             compression: CompressionMode::Auto,
+            base_url: None,
+            restrict_file_names: None,
 
             prefer_family: AddressFamily::Unspecified,
             force_ipv4: false,
@@ -318,6 +324,10 @@ pub struct HttpConfig {
     pub force_http2: bool,
     /// Force HTTP/1.1 usage (--http1.1)
     pub force_http1_1: bool,
+    /// Don't use server-side cache (--no-cache)
+    pub no_cache: bool,
+    /// External askpass program (--use-askpass)
+    pub use_askpass: Option<String>,
 }
 
 impl Default for HttpConfig {
@@ -340,6 +350,8 @@ impl Default for HttpConfig {
             default_page: "index.html".to_string(),
             force_http2: false,
             force_http1_1: false,
+            no_cache: false,
+            use_askpass: None,
         }
     }
 }
