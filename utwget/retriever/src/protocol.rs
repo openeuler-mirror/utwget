@@ -240,3 +240,13 @@ impl<'a, W: Write, P: ProgressDisplay> Write for ProgressWriter<'a, W, P> {
         self.inner.flush()
     }
 }
+
+pub fn apply_rate_limit<W: Write + 'static>(writer: W, limit: Option<u64>) -> Box<dyn Write> {
+    match limit {
+        Some(bps) if bps > 0 => {
+            let writer = Box::new(writer);
+            Box::new(OwnedRateLimitedWriter::owned(writer, bps))
+        }
+        _ => Box::new(writer),
+    }
+}
