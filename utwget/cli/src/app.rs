@@ -362,7 +362,7 @@ impl App {
 
             self.urls_attempted += 1;
 
-            let result = self.retriever.retrieve_with_retry(&parsed.display());
+            let result = self.retriever.retrieve_with_retry(&parsed.display_with_credentials());
 
             match result {
                 Ok(RetrieveOutcome::Success(body_result)) => {
@@ -412,7 +412,7 @@ impl App {
                                 break;
                             }
                         };
-                        match self.retriever.retrieve_with_retry(&redirect_parsed.display()) {
+                        match self.retriever.retrieve_with_retry(&redirect_parsed.display_with_credentials()) {
                             Ok(RetrieveOutcome::Success(body_result)) => {
                                 self.urls_downloaded += 1;
                                 if let Some(ref file) = body_result.local_file {
@@ -652,7 +652,7 @@ impl App {
                 eprintln!("Starting recursive download from: {}", parsed.display());
             }
 
-            match recursive_retriever.retrieve_tree(&parsed.display()) {
+            match recursive_retriever.retrieve_tree(&parsed.display_with_credentials()) {
                 Ok(ut_retriever::ExitStatus::Success) => {
                     if self.config.verbose >= 1 {
                         eprintln!("Recursive download completed successfully");
@@ -782,7 +782,7 @@ impl App {
                 let parsed = ParsedUrl::parse(url_str)
                     .map_err(|e| WgetError::Other(format!("URL parse error: {}", e)))?;
 
-                match self.retriever.retrieve(&parsed.display()) {
+                match self.retriever.retrieve(&parsed.display_with_credentials()) {
                     Ok(RetrieveOutcome::Success(body_result)) => {
                         if let Some(ref local_file) = body_result.local_file {
                             // Check if response indicates Metalink
@@ -811,7 +811,7 @@ impl App {
             let parsed = ParsedUrl::parse(url_str)
                 .map_err(|e| WgetError::Other(format!("URL parse error: {}", e)))?;
 
-            match self.retriever.retrieve(&parsed.display()) {
+            match self.retriever.retrieve(&parsed.display_with_credentials()) {
                 Ok(RetrieveOutcome::Success(body_result)) => {
                     if let Some(ref local_file) = body_result.local_file {
                         return self.process_metalink_file(local_file, &output_dir);
