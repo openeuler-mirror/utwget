@@ -50,12 +50,25 @@ fn rearrange_args() -> Vec<String> {
     let original_args: Vec<String> = std::env::args().collect();
 
     // Expand compound short options to long forms
-    // e.g., -nc -> --no-clobber, -nd -> --no-directories, etc.
+    // e.g., -nc -> --no-clobber, -nd -> --no-directories, -nv -> --no-verbose, etc.
+    //
+    // GNU wget's -n<char> combinator (main.c:1524-1555) iterates each
+    // character after -n and applies "no-" semantics:
+    //   v → --no-verbose,  H → --no-host-directories,
+    //   d → --no-directories,  c → --no-clobber,  p → --no-parent
+    //
+    // We handle the common two-char forms here. Multi-char forms like
+    // -nHcp are split into individual flags.
+    let n_char_map: std::collections::HashMap<char, &str> = [
+        ('v', "no-verbose"),
+        ('H', "no-host-directories"),
+        ('d', "no-directories"),
+        ('c', "no-clobber"),
+        ('p', "no-parent"),
+    ].iter().copied().collect();
+
+    // Also keep the old-style compound map for backward compat (e.g. -x)
     let compound_short_opts: std::collections::HashMap<&str, &str> = [
-        ("nc", "no-clobber"),
-        ("nd", "no-directories"),
-        ("nH", "no-host-directories"),
-        ("np", "no-parent"),
         ("x", "force-directories"),
     ].iter().copied().collect();
 
@@ -63,9 +76,28 @@ fn rearrange_args() -> Vec<String> {
     for arg in &original_args {
         if arg.starts_with('-') && !arg.starts_with("--") && arg.len() > 1 {
             let short = &arg[1..];
+            // Check the old-style compound map first (e.g. -x)
             if let Some(long_opt) = compound_short_opts.get(short) {
                 args.push(format!("--{}", long_opt));
                 continue;
+            }
+            // GNU wget -n<char> combinator: expand -nv, -nH, -nd, -nc, -np,
+            // and multi-char forms like -nHcp into individual --no-XXX flags.
+            if short.starts_with('n') && short.len() > 1 {
+                let mut expanded = Vec::new();
+                let mut all_known = true;
+                for ch in short[1..].chars() {
+                    if let Some(long_opt) = n_char_map.get(&ch) {
+                        expanded.push(format!("--{}", long_opt));
+                    } else {
+                        all_known = false;
+                        break;
+                    }
+                }
+                if all_known {
+                    args.extend(expanded);
+                    continue;
+                }
             }
         }
         args.push(arg.clone());
