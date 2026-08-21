@@ -183,3 +183,26 @@ pub enum RetrieveOutcome {
     /// Spider mode: URL checked but not downloaded.
     SpiderOnly,
 }
+
+/// Error type for retrieval operations.
+///
+/// Categorizes errors by their source: protocol-level errors,
+/// response errors, I/O errors, or quota violations.
+#[derive(Debug, thiserror::Error)]
+pub enum RetrieveError {
+    /// Protocol-level error (connection, TLS, etc.).
+    #[error("protocol error: {0}")]
+    Protocol(#[from] WgetError),
+    /// Response-level error (HTTP status, parsing, etc.).
+    #[error("response error: {0}")]
+    Response(WgetError),
+    /// I/O error (file operations, network read/write).
+    #[error("I/O error: {0}")]
+    Io(#[from] io::Error),
+    /// Download quota exceeded.
+    #[error("quota exceeded")]
+    Quota,
+    /// No URLs found to download.
+    #[error("no URLs to download")]
+    NoUrls,
+}
