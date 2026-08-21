@@ -728,20 +728,27 @@ impl Retriever {
             if let Some(location) = response.location() {
                 let redirect_url = url.merge(location).map_err(RetrieveError::Protocol)?;
 
-                // RFC 9110: when a POST (or any method other than GET/HEAD) is
-                // redirected with 301/302/303, the follow-up request must be a
-                // GET without a body. Record the target so build_request_options
-                // downgrades the method for the follow-up request.
-                let method_is_get = opts.method == ut_core::types::HttpMethod::Get
-                    || opts.method == ut_core::types::HttpMethod::Head;
-                if !method_is_get && (response.status_code == 301
+                // RFC 9110: when a POST is redirected with 301/302/303, the
+                // follow-up request must be a GET without a body.  GNU wget
+                // (http.c:3912-3933) only downgrades POST to GET for 301/302;
+                // other custom methods (PUT, DELETE, etc.) are preserved.
+                // 303 always downgrades to GET; 307/308 always preserve.
+                let method_is_post = opts.method == ut_core::types::HttpMethod::Post;
+                if method_is_post && (response.status_code == 301
                     || response.status_code == 302
                     || response.status_code == 303)
                 {
                     debug!(
-                        "{} redirect for {}: follow-up will use GET without body",
-                        response.status_code, opts.method
+                        "{} redirect for POST: follow-up will use GET without body",
+                        response.status_code
                     );
+                    self.redirect_get_method_urls.insert(redirect_url.display());
+                }
+                // For non-POST methods with 303, also downgrade to GET.
+                if opts.method != ut_core::types::HttpMethod::Get
+                    && opts.method != ut_core::types::HttpMethod::Head
+                    && response.status_code == 303
+                {
                     self.redirect_get_method_urls.insert(redirect_url.display());
                 }
 
