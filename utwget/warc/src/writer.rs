@@ -10,6 +10,25 @@ use crate::digest::compute_sha1;
 use crate::format::{default_content_type, request_content_type, record_separator, WarcHeader, WarcRecordType};
 use crate::{format_date, format_record_id, generate_uuid_v4, Result, WarcError, WarcWriter};
 
+/// Open a file for writing with 0600 permissions (owner-only) to protect
+/// sensitive data (cookies, URLs with credentials) stored in WARC files.
+fn create_restricted_file(path: &Path) -> std::io::Result<File> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)
+    }
+    #[cfg(not(unix))]
+    {
+        File::create(path)
+    }
+}
+
 /// WARC file writer implementation.
 ///
 /// This struct manages writing WARC records to one or more WARC files,
@@ -211,7 +230,7 @@ impl WarcWriterImpl {
         let path = parent.join(&name);
         self.filename = path.to_string_lossy().to_string();
 
-        let raw = File::create(&path).map_err(WarcError::Io)?;
+        let raw = create_restricted_file(&path).map_err(WarcError::Io)?;
         let boxed: Box<dyn Write + Send> = if self.gzip_enabled {
             Box::new(GzEncoder::new(raw, Compression::default()))
         } else {
@@ -718,7 +737,7 @@ impl WarcWriter for WarcWriterImpl {
     fn create_temp_file(&mut self) -> Result<(Box<dyn Write + Send>, PathBuf)> {
         let name = format!("warc-tmp-{}.tmp", generate_uuid_v4()?);
         let path = self.tempdir.join(name);
-        let file = File::create(&path).map_err(WarcError::Io)?;
+        let file = create_restricted_file(&path).map_err(WarcError::Io)?;
         Ok((Box::new(file), path))
     }
 
@@ -826,7 +845,7 @@ impl WarcWriter for WarcWriterImpl {
         self.file_counter = 1;
         self.current_size = 0;
 
-        let raw = File::create(&path).map_err(WarcError::Io)?;
+        let raw = create_restricted_file(&path).map_err(WarcError::Io)?;
         let boxed: Box<dyn Write + Send> = if self.gzip_enabled {
             Box::new(GzEncoder::new(raw, Compression::default()))
         } else {
@@ -857,7 +876,7 @@ impl WarcWriter for WarcWriterImpl {
 
         if self.cdx_enabled && !self.cdx_entries.is_empty() {
             let cdx_name = format!("{}.cdx", self.filename);
-            let mut cdx_file = File::create(&cdx_name).map_err(WarcError::Io)?;
+            let mut cdx_file = create_restricted_file(Path::new(&cdx_name)).map_err(WarcError::Io)?;
             let newline: &[u8] = b"\n";
             for entry in &self.cdx_entries {
                 cdx_file

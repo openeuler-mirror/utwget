@@ -2627,8 +2627,15 @@ impl Retriever {
     pub fn save_state(&self) {
         // Save cookies
         if let Some(ref cookie_file) = self.config.cookie.output_file {
-            match fs::File::create(cookie_file) {
-                Ok(file) => {
+            match fs::OpenOptions::new().create(true).write(true).truncate(true).open(cookie_file) {
+                Ok(mut file) => {
+                    // Restrict permissions to 0600 (owner-only) to protect
+                    // session auth tokens, matching GNU wget behavior.
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        let _ = file.set_permissions(fs::Permissions::from_mode(0o600));
+                    }
                     if let Err(e) = self.cookie_jar.save_to_writer(file) {
                         warn!("failed to save cookies to {}: {}", cookie_file.display(), e);
                     }

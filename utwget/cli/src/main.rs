@@ -676,7 +676,7 @@ fn redirect_log_output(file: &std::path::Path, append: bool) -> Result<(), Box<d
     let fd = unsafe {
         let c_path = std::ffi::CString::new(file.as_os_str().as_encoded_bytes())
             .map_err(|e| format!("invalid log path: {e}"))?;
-        libc::open(c_path.as_ptr(), flags, 0o644)
+        libc::open(c_path.as_ptr(), flags, 0o600)
     };
     if fd < 0 {
         let err = std::io::Error::last_os_error();
