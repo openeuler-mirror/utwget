@@ -90,3 +90,31 @@ impl Default for RequestOptions {
         }
     }
 }
+
+/// Metadata extracted from an HTTP response.
+///
+/// Contains all relevant information from the response headers and status
+/// that is needed for download processing and link extraction.
+#[derive(Debug, Clone)]
+pub struct ResponseMeta {
+    /// HTTP status code (e.g., 200, 404).
+    pub status_code: u16,
+    /// Content-Length header value, if present.
+    pub content_length: Option<u64>,
+    /// Content-Type header value, if present.
+    pub content_type: Option<String>,
+    /// Last-Modified header parsed as UTC datetime.
+    pub last_modified: Option<DateTime<Utc>>,
+    /// Whether Accept-Ranges header indicates range support.
+    pub accept_ranges: bool,
+    /// Location header for redirects.
+    pub location: Option<String>,
+    /// ETag header value.
+    pub etag: Option<String>,
+    /// Server header value.
+    pub server: Option<String>,
+    /// Document flags indicating content type and properties.
+    pub document_flags: DocumentFlags,
+    /// Whether the connection can be kept alive.
+    pub keep_alive: bool,
+}
