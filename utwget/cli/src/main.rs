@@ -298,18 +298,46 @@ fn main() -> ExitCode {
 
     // Daemonize if --background is set
     if config.background {
+        // GNU wget validates URLs before backgrounding so that errors like
+        // "no URLs specified" are visible on the terminal, not swallowed by
+        // the daemon's /dev/null.
+        if args.urls.is_empty()
+            && config.input_filename.is_none()
+            && args.input_file.is_none()
+        {
+            eprintln!("utwget: 缺少 URL");
+            return ExitCode::from(1);
+        }
+
         // If -o/-a redirected stderr to a log file, keep that redirection in
-        // the daemon; otherwise send stderr to /dev/null (classic daemon).
+        // the daemon.  Otherwise, create a default "wget-log" file (GNU wget
+        // behavior) and redirect output there.
         let keep_log = config.output_file.is_some() || config.append_output.is_some();
-        match daemonize(!keep_log) {
-            Ok(true) => {
-                // Parent process after successful fork - exit immediately
+        if !keep_log {
+            // GNU wget defaults to "wget-log" in the current directory.
+            let default_log = std::path::PathBuf::from("wget-log");
+            if let Err(e) = redirect_log_output(&default_log, false) {
+                eprintln!("utwget: {}", e);
+                return ExitCode::from(1);
+            }
+        }
+
+        // Print background message to the *original* stderr before forking.
+        // After fork+setsid the child loses the terminal, so this must happen
+        // in the parent before the fork returns.
+        // (The actual message is printed by the parent below.)
+        match daemonize(false) {
+            Ok(child_pid) if child_pid > 0 => {
+                // Parent process: child has been forked off.
+                eprintln!("Continuing in background, pid {}.", child_pid);
+                if !keep_log {
+                    eprintln!("Output will be written to 'wget-log'.");
+                }
                 return ExitCode::SUCCESS;
             }
-            Ok(false) => {
-                // Child process - continue with download
-                // Reinstall signal handlers in child process
-                unsafe { crate::signal::install_signal_handlers(); }
+            Ok(_) => {
+                // Child (daemon) process — continue with the download.
+                // Signal handlers were already reinstalled inside daemonize().
             }
             Err(e) => {
                 eprintln!("utwget: unable to daemonize: {}", e);
@@ -672,27 +700,29 @@ fn redirect_log_output(file: &std::path::Path, append: bool) -> Result<(), Box<d
 
 /// Daemonize the process by forking and creating a new session.
 ///
-/// Returns `Ok(true)` in the parent process (should exit),
-/// `Ok(false)` in the child process (should continue), or `Err` on failure.
+/// Returns `Ok(child_pid)` in the parent process (should exit after
+/// printing the background message), or `Err` on failure.  The child
+/// process never returns from this function — it continues execution
+/// as the daemon after the double-fork completes.
 ///
 /// This follows the classic Unix double-fork pattern:
-/// 1. Fork first time - parent exits, child continues
+/// 1. Fork first time - parent returns with child PID, child continues
 /// 2. Call setsid() to create new session
 /// 3. Fork second time - first child exits, grandchild continues
 /// 4. Redirect stdin/stdout/stderr to /dev/null
 ///
-/// `redirect_stderr_to_null` controls whether stderr is sent to /dev/null. When
-/// `-o`/`-a` has already redirected stderr to a log file (via
-/// `redirect_log_output`), pass `false` to preserve that redirection.
-fn daemonize(redirect_stderr_to_null: bool) -> Result<bool, Box<dyn std::error::Error>> {
+/// `redirect_stderr_to_null` controls whether stderr is sent to /dev/null.
+/// When `-o`/`-a` or the default `wget-log` has already redirected stderr
+/// to a log file, pass `false` to preserve that redirection.
+fn daemonize(redirect_stderr_to_null: bool) -> Result<i32, Box<dyn std::error::Error>> {
     // First fork
     let pid = unsafe { libc::fork() };
     if pid < 0 {
         return Err("fork failed".into());
     }
     if pid > 0 {
-        // Parent process - exit
-        return Ok(true);
+        // Parent process - return child PID so caller can print message.
+        return Ok(pid as i32);
     }
 
     // Child process - create new session
@@ -728,5 +758,12 @@ fn daemonize(redirect_stderr_to_null: bool) -> Result<bool, Box<dyn std::error::
         }
     }
 
-    Ok(false)
+    // Reinstall signal handlers in the daemon process.
+    unsafe { crate::signal::install_signal_handlers(); }
+
+    // Return a sentinel PID (0) — the child never actually reaches this
+    // return because the parent already returned above.  This is just to
+    // satisfy the type system; the function effectively "diverges" here.
+    // In practice, the child continues execution from the caller's match.
+    Ok(0)
 }
