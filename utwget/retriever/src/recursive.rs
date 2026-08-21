@@ -510,3 +510,40 @@ impl RecursiveRetriever {
         &mut self.retriever
     }
 }
+
+/// Detect content type from file extension.
+///
+/// Maps common file extensions to their MIME types. This is used when
+/// the Content-Type header is not available (e.g., for local files
+/// during recursive downloads).
+///
+/// # Arguments
+///
+/// * `path` - The file path to examine.
+///
+/// # Returns
+///
+/// A MIME type string based on the file extension, or
+/// `application/octet-stream` for unknown extensions.
+fn detect_content_type(path: &std::path::Path) -> String {
+    let ext = path.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase());
+
+    match ext.as_deref() {
+        Some("html") | Some("htm") | Some("xhtml") => "text/html".to_string(),
+        Some("css") => "text/css".to_string(),
+        Some("js") | Some("mjs") => "application/javascript".to_string(),
+        Some("json") => "application/json".to_string(),
+        Some("xml") => "text/xml".to_string(),
+        Some("txt") => "text/plain".to_string(),
+        Some("pdf") => "application/pdf".to_string(),
+        Some("png") => "image/png".to_string(),
+        Some("jpg") | Some("jpeg") => "image/jpeg".to_string(),
+        Some("gif") => "image/gif".to_string(),
+        Some("svg") => "image/svg+xml".to_string(),
+        Some("ico") => "image/x-icon".to_string(),
+        Some("webp") => "image/webp".to_string(),
+        _ => "application/octet-stream".to_string(),
+    }
+}
