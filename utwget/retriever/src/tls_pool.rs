@@ -21,3 +21,13 @@ enum PooledConnection {
     /// TLS connection wrapped in a trait object.
     Tls(Box<dyn Transport<Error = TlsError>>),
 }
+
+impl PooledConnection {
+    /// Check if the connection is still alive.
+    fn is_alive(&self) -> bool {
+        match self {
+            PooledConnection::Tcp(stream) => stream.peer_addr().is_ok(),
+            PooledConnection::Tls(transport) => transport.is_alive(),
+        }
+    }
+}
