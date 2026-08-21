@@ -28,3 +28,33 @@ pub struct SpiderResult {
     /// Number of redirected URLs.
     pub redirected: usize,
 }
+
+/// Spider for checking URLs without downloading content.
+///
+/// The `Spider` uses the recursive retriever infrastructure but operates
+/// in spider mode, which performs HEAD requests or range requests to
+/// check URL validity without downloading the full content.
+///
+/// # Example
+///
+/// ```no_run
+/// use ut_retriever::Spider;
+/// use ut_core::Config;
+/// use std::sync::Arc;
+///
+/// let config = Arc::new(Config::default());
+/// let mut spider = Spider::new(config, progress);
+/// let result = spider.spider_and_report("http://example.com/");
+/// ```
+pub struct Spider {
+    /// Inner recursive retriever configured for spider mode.
+    inner: RecursiveRetriever,
+    /// List of broken links found during spidering.
+    broken_links: Vec<(String, String, String)>,
+    /// Total number of URLs checked.
+    total_checked: usize,
+    /// Number of successful checks.
+    successful: usize,
+    /// Number of redirects encountered.
+    redirected: usize,
+}
