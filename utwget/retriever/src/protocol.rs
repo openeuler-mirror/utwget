@@ -148,3 +148,32 @@ impl OwnedRateLimitedWriter {
         self.bucket = (self.bucket + refill).min(self.max_bucket);
     }
 }
+
+impl<'a, W: Write> Write for RateLimitedWriter<'a, W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        if self.bytes_per_second == u64::MAX {
+            return self.inner.write(buf);
+        }
+
+        let mut written = 0usize;
+        while written < buf.len() {
+            self.refill();
+            let available = self.bucket.min((buf.len() - written) as u64) as usize;
+            if available == 0 {
+                std::thread::sleep(Duration::from_millis(10));
+                continue;
+            }
+            let n = self.inner.write(&buf[written..written + available])?;
+            if n == 0 {
+                break;
+            }
+            written += n;
+            self.bucket = self.bucket.saturating_sub(n as u64);
+        }
+        Ok(written)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
+}
