@@ -206,3 +206,9 @@ impl Write for OwnedRateLimitedWriter {
         self.inner.flush()
     }
 }
+
+pub struct ProgressWriter<'a, W: Write, P: ProgressDisplay> {
+    inner: W,
+    progress: &'a mut P,
+    total_written: u64,
+}
