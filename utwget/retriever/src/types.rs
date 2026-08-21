@@ -131,3 +131,25 @@ pub struct BodyResult {
     /// Local file path where the content was saved, if not deleted.
     pub local_file: Option<PathBuf>,
 }
+
+/// State tracking for protocol operations.
+///
+/// Maintains counters and flags that persist across retries, redirects,
+/// and authentication challenges during a single URL retrieval.
+#[derive(Debug, Clone)]
+pub struct ProtocolState {
+    /// Number of retry attempts made so far.
+    pub retry_count: u32,
+    /// Number of redirects followed so far.
+    pub redirect_count: u32,
+    /// Byte position for resume downloads.
+    pub resume_position: u64,
+    /// Whether a HEAD request has been completed.
+    pub head_done: bool,
+    /// Content-Length from the last response.
+    pub last_content_length: Option<u64>,
+    /// Whether NTLM authentication has been seen.
+    pub ntlm_seen: bool,
+    /// Whether authentication has completed successfully.
+    pub auth_finished: bool,
+}
