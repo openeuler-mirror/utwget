@@ -1320,3 +1320,378 @@ fn read_all_from_transport(transport: &mut Box<dyn ut_net::Transport<Error = ut_
     }
     Ok(data)
 }
+
+impl Retriever {
+    /// Build the set of request options for a given URL.
+    ///
+    /// Configures method, proxy usage, authentication, headers, range start,
+    /// and If-Modified-Since based on the current configuration and state.
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - The parsed target URL.
+    /// * `referer` - Optional referer URL.
+    /// * `resume_pos` - Optional byte position for resume.
+    ///
+    /// # Returns
+    ///
+    /// A populated `RequestOptions` struct.
+    fn build_request_options(
+        &self,
+        url: &ParsedUrl,
+        referer: Option<&str>,
+        resume_pos: Option<u64>,
+    ) -> RequestOptions {
+        let mut opts = RequestOptions::default();
+        opts.method = self.config.http.method.unwrap_or(ut_core::types::HttpMethod::Get);
+        opts.use_proxy = self.config.proxy.use_proxy;
+        opts.auth_without_challenge = self.config.auth_without_challenge;
+        opts.save_headers = self.config.http.save_headers;
+        opts.content_on_error = self.config.http.content_on_error;
+
+        if let Some(r) = referer.or(self.config.http.referer.as_deref()) {
+            opts.referer = Some(r.to_string());
+        }
+
+        // Only set range_start if resume_pos > 0 (actual resume, not initial download)
+        if let Some(pos) = resume_pos {
+            if pos > 0 {
+                opts.range_start = Some(pos);
+            }
+        }
+
+        if self.config.timestamping || self.config.if_modified_since {
+            if let Ok(metadata) = fs::metadata(self.determine_output_path(url).unwrap_or_default()) {
+                if let Ok(mtime) = metadata.modified() {
+                    opts.if_modified_since = Some(mtime.into());
+                }
+            }
+        }
+
+        opts
+    }
+
+    /// Determine the local filesystem path for a downloaded URL.
+    ///
+    /// Applies `--output-document`, protocol directory prefix,
+    /// directory cut count, and `--directory-prefix` rules.
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - The parsed URL to generate a filename for.
+    ///
+    /// # Returns
+    ///
+    /// A `PathBuf` pointing to the local output path.
+    ///
+    /// # Errors
+    ///
+    /// Returns `RetrieveError` if the URL cannot be converted to a filename.
+    fn determine_output_path(&self, url: &ParsedUrl) -> Result<PathBuf, RetrieveError> {
+        if let Some(ref doc) = self.config.output_document {
+            return Ok(doc.clone());
+        }
+
+        let mut path = url.to_filename(self.config.no_host_directories);
+
+        if self.config.protocol_directories {
+            let scheme_dir = PathBuf::from(url.scheme.as_str());
+            path = scheme_dir.join(path);
+        }
+
+        if self.config.cut_dirs > 0 {
+            let components: Vec<_> = path.components().collect();
+            let skip = (self.config.cut_dirs as usize).min(components.len());
+            let remaining: PathBuf = components[skip..].iter().collect();
+            path = remaining;
+        }
+
+        if let Some(ref prefix) = self.config.dir_prefix {
+            path = prefix.join(path);
+        }
+
+        Ok(path)
+    }
+
+    /// Check whether a file already exists and whether it should be skipped.
+    ///
+    /// Returns `true` if the file exists and should not be overwritten
+    /// (e.g., `--noclobber` is set), `false` otherwise.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The local file path to check.
+    /// * `_url` - The parsed URL (currently unused).
+    ///
+    /// # Returns
+    ///
+    /// `true` if the download should be skipped.
+    ///
+    /// # Errors
+    ///
+    /// Returns `RetrieveError` if filesystem metadata reading fails.
+    fn check_existing(&mut self, path: &Path, _url: &ParsedUrl) -> Result<bool, RetrieveError> {
+        if !path.exists() {
+            return Ok(false);
+        }
+
+        if self.config.noclobber {
+            info!("file already exists; not clobbering: {}", path.display());
+            self.progress.finish(ut_progress::FinishStatus::AlreadyExists);
+            return Ok(true);
+        }
+
+        if !self.config.continue_download && !self.config.timestamping {
+            return Ok(false);
+        }
+
+        Ok(false)
+    }
+
+    /// Compute the byte position from which to resume a download.
+    ///
+    /// Returns the size of the existing file if `--continue` is set and
+    /// the file exists, or `0` otherwise.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The local file path to check.
+    ///
+    /// # Returns
+    ///
+    /// The byte position for resume.
+    ///
+    /// # Errors
+    ///
+    /// Returns `RetrieveError` if filesystem metadata cannot be read.
+    fn compute_resume_position(&self, path: &Path) -> Result<u64, RetrieveError> {
+        if !self.config.continue_download || !path.exists() {
+            return Ok(0);
+        }
+        let metadata = fs::metadata(path).map_err(RetrieveError::Io)?;
+        if metadata.len() > 0 {
+            debug!("resuming from position {}", metadata.len());
+            Ok(metadata.len())
+        } else {
+            Ok(0)
+        }
+    }
+
+    /// Resolve the effective URL by following any previously registered redirects.
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - The original parsed URL.
+    ///
+    /// # Returns
+    ///
+    /// `Some(ParsedUrl)` if a redirect target is found, `None` otherwise.
+    fn resolve_effective_url(&self, url: &ParsedUrl) -> Option<ParsedUrl> {
+        self.download_registry.resolve_redirect(&url.display())
+            .and_then(|s| ParsedUrl::parse(&s).ok())
+    }
+
+    /// Check whether the download quota has been exceeded.
+    ///
+    /// # Errors
+    ///
+    /// Returns `RetrieveError::Quota` if `--quota` is set and the total
+    /// downloaded bytes meets or exceeds the quota.
+    fn check_quota(&self) -> Result<(), RetrieveError> {
+        if let Some(quota) = self.config.quota {
+            if self.total_downloaded >= quota {
+                return Err(RetrieveError::Quota);
+            }
+        }
+        Ok(())
+    }
+
+    /// Resolve authentication credentials for the given URL.
+    ///
+    /// Checks, in order: `--http-user`/`--http-password`, URL-embedded credentials,
+    /// and the `.netrc` database.
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - The parsed URL.
+    ///
+    /// # Returns
+    ///
+    /// `Some(Credentials)` if credentials are found, `None` otherwise.
+    fn resolve_credentials(&self, url: &ParsedUrl) -> Option<ut_core::types::Credentials> {
+        if let (Some(ref u), Some(ref p)) = (&self.config.http.user, &self.config.http.password) {
+            return Some(ut_core::types::Credentials {
+                username: u.clone(),
+                password: p.clone(),
+            });
+        }
+        if let (Some(ref u), Some(ref p)) = (&url.user, &url.password) {
+            return Some(ut_core::types::Credentials {
+                username: u.clone(),
+                password: p.clone(),
+            });
+        }
+        self.netrc.lookup(&url.host)
+    }
+
+    /// Process Set-Cookie headers from an HTTP response and update the cookie jar.
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - The parsed URL that returned the response.
+    /// * `headers` - The HTTP response headers.
+    fn process_cookies(&mut self, url: &ParsedUrl, headers: &HeaderMap) {
+        if !self.config.cookie.enabled {
+            return;
+        }
+        for cookie_header in headers.set_cookies() {
+            self.cookie_jar.parse_set_cookie(cookie_header, &url.host, &url.path);
+        }
+    }
+
+    /// Convert an HTTP response into a `ResponseMeta` struct for further processing.
+    ///
+    /// Extracts status code, content length, content type, timestamps,
+    /// etag, location, server, accept-ranges, and document flags.
+    ///
+    /// # Arguments
+    ///
+    /// * `response` - The HTTP response.
+    /// * `ct` - Optional content-type string.
+    ///
+    /// # Returns
+    ///
+    /// A `ResponseMeta` with parsed metadata.
+    fn http_response_to_meta(&self, response: &HttpResponse, ct: Option<&str>) -> ResponseMeta {
+        let mut flags = determine_document_flags(ct, response.status_code);
+
+        if response.headers.accept_ranges() {
+            flags |= DocumentFlags::ACCEPT_RANGES;
+        }
+
+        let last_modified = response.headers.last_modified()
+            .and_then(parse_http_date);
+
+        let etag = response.headers.etag().map(|s| s.to_string());
+
+        let location = response.location().map(|s| s.to_string());
+
+        let server = response.headers.server().map(|s| s.to_string());
+
+        let content_length = response.content_length();
+
+        ResponseMeta {
+            status_code: response.status_code,
+            content_length,
+            content_type: ct.map(|s| s.to_string()),
+            last_modified,
+            accept_ranges: response.headers.accept_ranges(),
+            location,
+            etag,
+            server,
+            document_flags: flags,
+            keep_alive: response.keep_alive(),
+        }
+    }
+
+    /// Apply the server-provided Last-Modified timestamp to the local file.
+    ///
+    /// Only applies when `--use-server-timestamps` is enabled (the default).
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The local file path.
+    /// * `meta` - The response metadata containing the timestamp.
+    fn apply_server_timestamp(&self, path: &Path, meta: &ResponseMeta) {
+        if !self.config.use_server_timestamps {
+            return;
+        }
+        if let Some(lm) = meta.last_modified {
+            apply_file_timestamp(path, lm);
+        }
+    }
+
+    /// Write a WARC record for the downloaded response.
+    ///
+    /// Only active when the `warc` feature is enabled and a WARC writer
+    /// has been initialized.
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - The URL string.
+    /// * `response` - The HTTP response.
+    /// * `meta` - The response metadata.
+    #[cfg(feature = "warc")]
+    fn write_warc_record(
+        &mut self,
+        url: &str,
+        response: &HttpResponse,
+        meta: &ResponseMeta,
+    ) {
+        if let Some(ref mut warc) = self.warc {
+            let date = Utc::now();
+            let header_bytes = serialize_headers(&response.headers);
+            let body_bytes = response.body.as_deref().unwrap_or(&[]);
+            let ct = meta.content_type.as_deref().unwrap_or("application/octet-stream");
+            let _ = warc.write_response(url, response.status_code, &header_bytes, body_bytes, ct, date);
+        }
+    }
+
+    /// Get a reference to the download registry.
+    pub fn download_registry(&self) -> &DownloadRegistry {
+        &self.download_registry
+    }
+
+    /// Get a mutable reference to the download registry.
+    pub fn download_registry_mut(&mut self) -> &mut DownloadRegistry {
+        &mut self.download_registry
+    }
+
+    /// Get the total number of bytes downloaded so far.
+    pub fn total_downloaded(&self) -> u64 {
+        self.total_downloaded
+    }
+
+    /// Get a reference to the cookie jar.
+    pub fn cookie_jar(&self) -> &CookieJar {
+        &self.cookie_jar
+    }
+
+    /// Get a reference to the URL filter.
+    pub fn url_filter(&self) -> &CompositeFilter {
+        &self.url_filter
+    }
+
+    /// Get a reference to the application configuration.
+    pub fn config(&self) -> &Config {
+        &self.config
+    }
+
+    /// Calculate the backoff duration for retry attempts.
+    ///
+    /// Uses exponential backoff with an optional random jitter
+    /// (when `--random-wait` is enabled), capped at 60 seconds.
+    ///
+    /// # Arguments
+    ///
+    /// * `attempt` - The zero-based retry attempt number.
+    ///
+    /// # Returns
+    ///
+    /// The duration to wait before the next retry.
+    fn calculate_backoff(&self, attempt: u32) -> Duration {
+        let base = self.config.wait_retry.unwrap_or(Duration::from_secs(1));
+        let max_wait = Duration::from_secs(60);
+        let exponential = base * 2u32.saturating_pow(attempt);
+
+        let jitter = if self.config.random_wait {
+            let mut rng = rand::thread_rng();
+            let ms = rng.gen_range(0..=500);
+            Duration::from_millis(ms)
+        } else {
+            Duration::ZERO
+        };
+
+        (exponential + jitter).min(max_wait)
+    }
+}
