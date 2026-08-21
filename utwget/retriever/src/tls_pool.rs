@@ -31,3 +31,11 @@ impl PooledConnection {
         }
     }
 }
+
+/// A connection entry with metadata.
+struct ConnectionEntry {
+    /// The pooled connection.
+    conn: PooledConnection,
+    /// When this connection was last used.
+    last_used: Instant,
+}
