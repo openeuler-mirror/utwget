@@ -39,3 +39,54 @@ bitflags::bitflags! {
         const METALINK_META = 0x0100;
     }
 }
+
+/// Options for constructing an HTTP/FTP request.
+///
+/// This struct holds all configurable parameters for a single request,
+/// including method, headers, authentication, and conditional request options.
+#[derive(Debug, Clone)]
+pub struct RequestOptions {
+    /// Whether to use a proxy for this request.
+    pub use_proxy: bool,
+    /// HTTP method (GET, POST, HEAD, etc.).
+    pub method: HttpMethod,
+    /// Additional headers to include in the request.
+    pub headers: Vec<(String, String)>,
+    /// POST data for form submissions.
+    pub post_data: Option<Vec<u8>>,
+    /// Request body data for custom methods.
+    pub body_data: Option<Vec<u8>>,
+    /// Referer header value.
+    pub referer: Option<String>,
+    /// Start position for range requests (resume).
+    pub range_start: Option<u64>,
+    /// If-Modified-Since header for conditional requests.
+    pub if_modified_since: Option<DateTime<Utc>>,
+    /// If-None-Match header for ETag-based conditional requests.
+    pub if_none_match: Option<String>,
+    /// Send authentication without waiting for challenge.
+    pub auth_without_challenge: bool,
+    /// Save response headers to a separate file.
+    pub save_headers: bool,
+    /// Return content even for error responses.
+    pub content_on_error: bool,
+}
+
+impl Default for RequestOptions {
+    fn default() -> Self {
+        RequestOptions {
+            use_proxy: true,
+            method: HttpMethod::Get,
+            headers: Vec::new(),
+            post_data: None,
+            body_data: None,
+            referer: None,
+            range_start: None,
+            if_modified_since: None,
+            if_none_match: None,
+            auth_without_challenge: false,
+            save_headers: false,
+            content_on_error: false,
+        }
+    }
+}
