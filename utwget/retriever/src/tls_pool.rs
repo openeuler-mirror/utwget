@@ -51,3 +51,105 @@ pub struct TlsConnectionPool {
     /// Maximum connections per pool key.
     max_per_pool: usize,
 }
+
+impl TlsConnectionPool {
+    /// Create a new TLS connection pool.
+    ///
+    /// # Arguments
+    ///
+    /// * `max_per_pool` - Maximum number of connections to pool per (host, port, use_tls) key.
+    pub fn new(max_per_pool: usize) -> Self {
+        TlsConnectionPool {
+            pools: Mutex::new(HashMap::new()),
+            max_per_pool,
+        }
+    }
+
+    /// Get a connection from the pool.
+    ///
+    /// Returns a pooled connection if one is available and still alive.
+    /// Expired connections are automatically removed.
+    ///
+    /// # Arguments
+    ///
+    /// * `host` - The target hostname.
+    /// * `port` - The target port.
+    /// * `use_tls` - Whether this is a TLS connection.
+    ///
+    /// # Returns
+    ///
+    /// A `PooledConnection` if one is available, `None` otherwise.
+    fn get(&self, host: &str, port: u16, use_tls: bool) -> Option<PooledConnection> {
+        let key = (host.to_string(), port, use_tls);
+        let mut pools = self.pools.lock().unwrap();
+        if let Some(pool) = pools.get_mut(&key) {
+            // Remove expired connections and find a valid one
+            pool.retain(|entry| entry.last_used.elapsed() < MAX_IDLE_AGE);
+            while let Some(entry) = pool.pop() {
+                if entry.conn.is_alive() {
+                    debug!("reusing pooled connection to {}:{}", host, port);
+                    return Some(entry.conn);
+                }
+            }
+        }
+        None
+    }
+
+    /// Return a connection to the pool for reuse.
+    ///
+    /// # Arguments
+    ///
+    /// * `host` - The target hostname.
+    /// * `port` - The target port.
+    /// * `use_tls` - Whether this is a TLS connection.
+    /// * `conn` - The connection to return to the pool.
+    fn put(&self, host: &str, port: u16, use_tls: bool, conn: PooledConnection) {
+        let key = (host.to_string(), port, use_tls);
+        let mut pools = self.pools.lock().unwrap();
+        let pool = pools.entry(key).or_insert_with(Vec::new);
+        if pool.len() < self.max_per_pool {
+            pool.push(ConnectionEntry {
+                conn,
+                last_used: Instant::now(),
+            });
+        }
+    }
+
+    /// Get a TCP connection from the pool.
+    pub fn get_tcp(&self, host: &str, port: u16) -> Option<std::net::TcpStream> {
+        match self.get(host, port, false) {
+            Some(PooledConnection::Tcp(stream)) => Some(stream),
+            _ => None,
+        }
+    }
+
+    /// Return a TCP connection to the pool.
+    pub fn put_tcp(&self, host: &str, port: u16, conn: std::net::TcpStream) {
+        self.put(host, port, false, PooledConnection::Tcp(conn));
+    }
+
+    /// Get a TLS connection from the pool.
+    pub fn get_tls(&self, host: &str, port: u16) -> Option<Box<dyn Transport<Error = TlsError>>> {
+        match self.get(host, port, true) {
+            Some(PooledConnection::Tls(transport)) => Some(transport),
+            _ => None,
+        }
+    }
+
+    /// Return a TLS connection to the pool.
+    pub fn put_tls(&self, host: &str, port: u16, conn: Box<dyn Transport<Error = TlsError>>) {
+        self.put(host, port, true, PooledConnection::Tls(conn));
+    }
+
+    /// Clear all connections from the pool.
+    pub fn clear(&self) {
+        let mut pools = self.pools.lock().unwrap();
+        pools.clear();
+    }
+
+    /// Get the total number of pooled connections.
+    pub fn total_pooled(&self) -> usize {
+        let pools = self.pools.lock().unwrap();
+        pools.values().map(|pool| pool.len()).sum()
+    }
+}
