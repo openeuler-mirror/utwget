@@ -474,3 +474,32 @@ pub fn content_type_is_xml(ct: Option<&str>) -> bool {
             || s.eq_ignore_ascii_case("text/xml")
     })
 }
+
+/// Determine document flags from content type and status code.
+///
+/// Sets appropriate flags based on the response characteristics:
+/// - `TEXT_HTML` for HTML content
+/// - `TEXT_CSS` for CSS content
+/// - `RETRIEVAL_OK` for successful status codes (2xx)
+///
+/// # Arguments
+///
+/// * `ct` - Optional Content-Type header value.
+/// * `status_code` - HTTP response status code.
+///
+/// # Returns
+///
+/// `DocumentFlags` with appropriate flags set.
+pub fn determine_document_flags(ct: Option<&str>, status_code: u16) -> DocumentFlags {
+    let mut flags = DocumentFlags::empty();
+    if content_type_is_html(ct) {
+        flags |= DocumentFlags::TEXT_HTML;
+    }
+    if content_type_is_css(ct) {
+        flags |= DocumentFlags::TEXT_CSS;
+    }
+    if status_code >= 200 && status_code < 300 {
+        flags |= DocumentFlags::RETRIEVAL_OK;
+    }
+    flags
+}
