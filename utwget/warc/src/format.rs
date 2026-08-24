@@ -41,3 +41,44 @@ impl fmt::Display for WarcRecordType {
         }
     }
 }
+
+/// WARC record header containing all mandatory and optional fields.
+///
+/// This struct represents the header portion of a WARC record, following
+/// the WARC 1.1 specification format. Headers are serialized to the
+/// WARC format with CRLF line endings.
+///
+/// # Fields
+///
+/// * `record_type` - The type of WARC record (warcinfo, response, etc.)
+/// * `record_id` - Unique identifier for this record (URN UUID format)
+/// * `date` - ISO 8601 timestamp of record creation
+/// * `content_length` - Length of the record body in bytes
+/// * `concurrent_to` - List of related record IDs
+/// * `content_type` - MIME type of the record content
+/// * `target_uri` - Original URI of the captured resource
+/// * `gzip_compressed` - Whether the content is gzip compressed
+/// * `truncated` - Reason for truncation if record was truncated
+/// * `wagon` - Optional wagon metadata
+pub struct WarcHeader {
+    /// The type of WARC record.
+    pub record_type: WarcRecordType,
+    /// Unique record identifier in URN UUID format.
+    pub record_id: String,
+    /// ISO 8601 formatted timestamp.
+    pub date: String,
+    /// Length of the content block in bytes.
+    pub content_length: u64,
+    /// List of related record IDs (WARC-Concurrent-To).
+    pub concurrent_to: Vec<String>,
+    /// MIME type of the content block.
+    pub content_type: String,
+    /// Original URI of the captured resource.
+    pub target_uri: String,
+    /// Whether the content block is gzip compressed.
+    pub gzip_compressed: bool,
+    /// Reason for truncation if the record was truncated.
+    pub truncated: Option<String>,
+    /// Optional wagon metadata.
+    pub wagon: Option<String>,
+}
