@@ -27,3 +27,17 @@ pub enum WarcRecordType {
     /// Continuation of a record split across files.
     Continuation,
 }
+
+impl fmt::Display for WarcRecordType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            WarcRecordType::Warcinfo => write!(f, "warcinfo"),
+            WarcRecordType::Response => write!(f, "response"),
+            WarcRecordType::Resource => write!(f, "resource"),
+            WarcRecordType::Request => write!(f, "request"),
+            WarcRecordType::Metadata => write!(f, "metadata"),
+            WarcRecordType::Conversion => write!(f, "conversion"),
+            WarcRecordType::Continuation => write!(f, "continuation"),
+        }
+    }
+}
