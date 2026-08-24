@@ -148,3 +148,9 @@ impl WarcHeader {
         out
     }
 }
+
+/// WARC format version string.
+///
+/// This constant defines the WARC specification version used in the
+/// version line of each WARC record header.
+pub const WARC_VERSION: &str = "WARC/1.1";
