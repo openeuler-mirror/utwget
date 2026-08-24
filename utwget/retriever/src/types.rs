@@ -276,3 +276,68 @@ impl From<RetrieveError> for WgetError {
         }
     }
 }
+
+/// Parse an HTTP date header value.
+///
+/// Supports multiple date formats:
+/// - RFC 7231: `Tue, 15 Nov 1994 08:12:31 GMT`
+/// - RFC 850: `Tuesday, 15-Nov-94 08:12:31 GMT`
+/// - ANSI C: `Tue Nov 15 08:12:31 1994`
+/// - ISO 8601: `1994-11-15T08:12:31Z`
+///
+/// # Arguments
+///
+/// * `s` - The date string to parse.
+///
+/// # Returns
+///
+/// `Some(DateTime<Utc>)` if parsing succeeds, `None` otherwise.
+pub fn parse_http_date(s: &str) -> Option<DateTime<Utc>> {
+    use chrono::NaiveDateTime;
+
+    let s = s.trim();
+
+    // Try RFC 7231 format: Tue, 15 Nov 1994 08:12:31 GMT
+    if s.ends_with(" GMT") {
+        let without_gmt = &s[..s.len() - 4];
+        let formats = [
+            "%a, %d %b %Y %H:%M:%S",
+            "%A, %d-%b-%y %H:%M:%S",
+            "%a, %d-%b-%Y %H:%M:%S",
+            "%d %b %Y %H:%M:%S",
+        ];
+        for fmt in &formats {
+            if let Ok(dt) = NaiveDateTime::parse_from_str(without_gmt, fmt) {
+                return Some(DateTime::from_naive_utc_and_offset(dt, Utc));
+            }
+        }
+    }
+
+    // Try ISO 8601 format with Z suffix
+    if s.ends_with('Z') {
+        let without_z = &s[..s.len() - 1];
+        let formats = [
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y-%m-%dT%H:%M:%S%.f",
+        ];
+        for fmt in &formats {
+            if let Ok(dt) = NaiveDateTime::parse_from_str(without_z, fmt) {
+                return Some(DateTime::from_naive_utc_and_offset(dt, Utc));
+            }
+        }
+    }
+
+    // Try parsing as NaiveDateTime for formats without timezone
+    let naive_formats = [
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S",
+        "%d %b %Y %H:%M:%S",
+    ];
+    for fmt in &naive_formats {
+        if let Ok(dt) = NaiveDateTime::parse_from_str(s, fmt) {
+            return Some(DateTime::from_naive_utc_and_offset(dt, Utc));
+        }
+    }
+
+    None
+}
