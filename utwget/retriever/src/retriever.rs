@@ -278,6 +278,10 @@ impl Retriever {
     ///
     /// Returns `RetrieveError` if the URL cannot be parsed or the download fails.
     pub fn retrieve(&mut self, url: &str) -> Result<RetrieveOutcome, RetrieveError> {
+        // Clear redirect method-downgrade set to prevent cross-request state
+        // contamination. A URL downgraded to GET in a previous download should
+        // not affect an unrelated download that happens to target the same URL.
+        self.redirect_get_method_urls.clear();
         let parsed = ParsedUrl::parse(url).map_err(RetrieveError::Protocol)?;
         self.retrieve_parsed(&parsed, None)
     }
@@ -300,6 +304,9 @@ impl Retriever {
     ///
     /// Returns the last `RetrieveError` encountered after all retries are exhausted.
     pub fn retrieve_with_retry(&mut self, url: &str) -> Result<RetrieveOutcome, RetrieveError> {
+        // Clear redirect method-downgrade set to prevent cross-request state
+        // contamination between independent downloads.
+        self.redirect_get_method_urls.clear();
         let parsed = ParsedUrl::parse(url).map_err(RetrieveError::Protocol)?;
         let max_tries = self.config.tries;
 
