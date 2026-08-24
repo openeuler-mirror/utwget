@@ -104,3 +104,52 @@ pub fn apply_permissions(path: &Path, permissions: &RemotePermissions) -> io::Re
     }
     Ok(())
 }
+
+/// Set extended attributes on a file.
+///
+/// On Linux, this uses the `user` namespace for xattr keys:
+/// - `user.xdg.origin.url`: The download URL
+/// - `user.xdg.content.type`: The Content-Type
+/// - `user.wget.last_modified`: The Last-Modified timestamp
+/// - `user.wget.etag`: The ETag
+///
+/// On unsupported platforms, this is a no-op that returns `Ok(())`.
+///
+/// # Arguments
+///
+/// * `path` - Path to the local file.
+/// * `metadata` - Metadata to store in extended attributes.
+///
+/// # Returns
+///
+/// `Ok(())` on success, or an `io::Error` on failure.
+///
+/// # Errors
+///
+/// Returns an error if any extended attribute cannot be set.
+///
+/// # Example
+///
+/// ```no_run
+/// use ut_retriever::xattr::{FileMetadata, set_xattr};
+/// use std::path::Path;
+///
+/// let metadata = FileMetadata {
+///     url: "http://example.com/file.txt".to_string(),
+///     content_type: Some("text/plain".to_string()),
+///     last_modified: Some("Mon, 15 Jun 2026 12:00:00 GMT".to_string()),
+///     etag: Some("\"abc123\"".to_string()),
+/// };
+/// set_xattr(Path::new("file.txt"), &metadata).expect("failed to set xattr");
+/// ```
+pub fn set_xattr(path: &Path, metadata: &FileMetadata) -> io::Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        set_xattr_linux(path, metadata)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (path, metadata);
+        Ok(())
+    }
+}
