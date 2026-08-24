@@ -44,3 +44,17 @@ pub struct FileMetadata {
     /// ETag header value from the server response.
     pub etag: Option<String>,
 }
+
+/// Permission information from remote server.
+///
+/// Used with `--preserve-permissions` to maintain the original file
+/// permissions from the remote server.
+#[derive(Debug, Clone, Copy)]
+pub struct RemotePermissions {
+    /// Unix file mode (permissions bits).
+    pub mode: u32,
+    /// Whether the remote resource is a directory.
+    pub is_dir: bool,
+    /// Whether the remote resource is a symbolic link.
+    pub is_symlink: bool,
+}
