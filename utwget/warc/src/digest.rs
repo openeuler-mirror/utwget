@@ -77,3 +77,65 @@ impl WarcDigest {
         format!("sha1:{}", hex)
     }
 }
+
+/// Computes a SHA-1 digest of the given data and returns it in
+/// `sha1:<hex>` format.
+///
+/// This is a convenience function for one-shot hashing without creating a
+/// `WarcDigest` instance.
+///
+/// # Arguments
+///
+/// * `data` - The byte slice to hash.
+///
+/// # Returns
+///
+/// A string in the format `sha1:<40-hex-digit-checksum>`.
+///
+/// # Examples
+///
+/// ```ignore
+/// use warc::digest::compute_sha1;
+///
+/// let digest = compute_sha1(b"hello world");
+/// assert_eq!(digest, "sha1:2aae6c35c94fcfb415dbe95f408b9ce91ee846ed");
+/// ```
+pub fn compute_sha1(data: &[u8]) -> String {
+    let mut hasher = sha1::Sha1::new();
+    hasher.update(data);
+    let hash = hasher.finalize();
+    let hex: String = hash.iter().map(|b| format!("{:02x}", b)).collect();
+    format!("sha1:{}", hex)
+}
+
+/// Reads a file from disk and computes its SHA-1 digest in
+/// `sha1:<hex>` format.
+///
+/// # Arguments
+///
+/// * `path` - The filesystem path to the file to hash.
+///
+/// # Returns
+///
+/// A `Result` containing the digest string in `sha1:<hex>` format on
+/// success, or a `WarcError::Io` error if the file cannot be read.
+///
+/// # Errors
+///
+/// Returns `WarcError::Io` if the file does not exist, is not readable,
+/// or an I/O error occurs during reading.
+///
+/// # Examples
+///
+/// ```ignore
+/// use warc::digest::compute_file_sha1;
+/// use std::path::Path;
+///
+/// let digest = compute_file_sha1(Path::new("/tmp/example.bin"))
+///     .expect("failed to compute digest");
+/// println!("{}", digest);
+/// ```
+pub fn compute_file_sha1(path: &std::path::Path) -> Result<String> {
+    let data = std::fs::read(path).map_err(crate::WarcError::Io)?;
+    Ok(compute_sha1(&data))
+}
