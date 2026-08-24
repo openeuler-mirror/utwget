@@ -662,56 +662,70 @@ impl Retriever {
             }
         }
 
-        if response.status_code == 401 && creds.is_some() {
+        // Authentication retry loop. Supports multi-round-trip auth schemes
+        // like NTLM which require 2 exchanges after the initial 401:
+        //   1. client → Type 1, server → 401 Type 2 challenge
+        //   2. client → Type 3, server → 200 (or another 401)
+        // We loop up to 3 times to allow NTLM's extra round trip.
+        let mut auth_round = 0u32;
+        const MAX_AUTH_ROUNDS: u32 = 3;
+        while response.status_code == 401 && creds.is_some() && auth_round < MAX_AUTH_ROUNDS {
+            auth_round += 1;
             let www_auth = response.headers.www_authenticate();
-            if !www_auth.is_empty() {
-                let challenges = AuthChallenge::from_www_authenticate(&www_auth.join(", "));
-                for challenge in &challenges {
-                    // Log stale nonce — server says credentials are fine but nonce expired
-                    if challenge.stale == Some(true) {
-                        debug!("nonce is stale for {}, retrying with new nonce", url.display());
-                    }
-                    if let Some(ref c) = creds {
-                        if let Ok(Some(auth_val)) = self.auth_dispatcher.authenticate(
-                            challenge,
-                            c,
-                            opts.method.as_str(),
-                            &url.full_path(),
-                            opts.post_data.as_deref(),
-                        ) {
-                            let retry_req = build_request(
-                                url,
-                                &self.config,
-                                &opts.headers,
-                                Some(opts.method),
-                                opts.post_data.clone().or(opts.body_data.clone()),
-                                opts.range_start,
-                                opts.if_modified_since.as_ref(),
-                                opts.if_none_match.as_deref(),
-                                cookie_str.as_deref(),
-                                Some(&auth_val),
-                            );
-                            response = {
-                                let (r, leftover, source, return_info) = self.do_http_request(&retry_req, url)?;
-                                self.pending_keep_alive = r.keep_alive() && return_info.is_some();
-                                self.pending_return_info = return_info;
-                                self.pending_body_reader = Some((leftover, source));
-                                r
-                            };
-                            state.auth_finished = true;
-                            self.process_cookies(&url, &response.headers);
-                            #[cfg(feature = "hsts")]
-                            {
-                                if self.config.hsts.enabled && url.scheme == Scheme::Https {
-                                    if let Some(sts) = response.headers.get("strict-transport-security") {
-                                        self.hsts.add_from_header(&url.host, sts);
-                                    }
+            if www_auth.is_empty() {
+                break;
+            }
+            let challenges = AuthChallenge::from_www_authenticate(&www_auth.join(", "));
+            let mut auth_succeeded = false;
+            for challenge in &challenges {
+                // Log stale nonce — server says credentials are fine but nonce expired
+                if challenge.stale == Some(true) {
+                    debug!("nonce is stale for {}, retrying with new nonce", url.display());
+                }
+                if let Some(ref c) = creds {
+                    if let Ok(Some(auth_val)) = self.auth_dispatcher.authenticate(
+                        challenge,
+                        c,
+                        opts.method.as_str(),
+                        &url.full_path(),
+                        opts.post_data.as_deref(),
+                    ) {
+                        let retry_req = build_request(
+                            url,
+                            &self.config,
+                            &opts.headers,
+                            Some(opts.method),
+                            opts.post_data.clone().or(opts.body_data.clone()),
+                            opts.range_start,
+                            opts.if_modified_since.as_ref(),
+                            opts.if_none_match.as_deref(),
+                            cookie_str.as_deref(),
+                            Some(&auth_val),
+                        );
+                        response = {
+                            let (r, leftover, source, return_info) = self.do_http_request(&retry_req, url)?;
+                            self.pending_keep_alive = r.keep_alive() && return_info.is_some();
+                            self.pending_return_info = return_info;
+                            self.pending_body_reader = Some((leftover, source));
+                            r
+                        };
+                        state.auth_finished = true;
+                        self.process_cookies(&url, &response.headers);
+                        #[cfg(feature = "hsts")]
+                        {
+                            if self.config.hsts.enabled && url.scheme == Scheme::Https {
+                                if let Some(sts) = response.headers.get("strict-transport-security") {
+                                    self.hsts.add_from_header(&url.host, sts);
                                 }
                             }
-                            break;
                         }
+                        auth_succeeded = true;
+                        break; // try next auth round (may be another 401 for NTLM)
                     }
                 }
+            }
+            if !auth_succeeded {
+                break; // no challenge succeeded, give up
             }
         }
 
