@@ -154,3 +154,36 @@ impl WarcHeader {
 /// This constant defines the WARC specification version used in the
 /// version line of each WARC record header.
 pub const WARC_VERSION: &str = "WARC/1.1";
+
+/// Returns the default content type for WARC records.
+///
+/// The content type depends on whether gzip compression is enabled:
+/// - With gzip: `application/gzip`
+/// - Without gzip: `application/http;msgtype=response`
+///
+/// # Arguments
+///
+/// * `gzip` - Whether gzip compression is enabled for the WARC file.
+///
+/// # Returns
+///
+/// A static string slice containing the appropriate MIME type.
+pub fn default_content_type(gzip: bool) -> &'static str {
+    if gzip {
+        "application/gzip"
+    } else {
+        "application/http;msgtype=response"
+    }
+}
+
+/// Returns the WARC record separator sequence.
+///
+/// The separator is two CRLF sequences (`\r\n\r\n`) used to mark
+/// the end of a WARC record and separate records in a WARC file.
+///
+/// # Returns
+///
+/// A static byte slice containing `\r\n\r\n`.
+pub fn record_separator() -> &'static [u8] {
+    b"\r\n\r\n"
+}
