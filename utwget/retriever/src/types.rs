@@ -341,3 +341,49 @@ pub fn parse_http_date(s: &str) -> Option<DateTime<Utc>> {
 
     None
 }
+
+/// Parse Content-Disposition header to extract filename.
+///
+/// Supports both `filename="..."` and RFC 6266 `filename*=...` formats.
+/// The latter allows UTF-8 encoded filenames using percent-encoding.
+///
+/// # Arguments
+///
+/// * `s` - The Content-Disposition header value.
+///
+/// # Returns
+///
+/// `Some(String)` containing the filename if found, `None` otherwise.
+pub fn parse_content_disposition(s: &str) -> Option<String> {
+    let s = s.trim();
+    let filename_key = "filename=";
+    let filename_star_key = "filename*=";
+
+    if let Some(idx) = s.find(filename_star_key) {
+        let rest = &s[idx + filename_star_key.len()..].trim_start();
+        if rest.starts_with("UTF-8''") || rest.starts_with("utf-8''") {
+            let encoded = &rest[6..];
+            let end = encoded.find(';').unwrap_or(encoded.len());
+            let encoded = &encoded[..end];
+            if let Ok(decoded) = urlencoding_fallback(encoded) {
+                return Some(decoded);
+            }
+        }
+        let end = rest.find(';').unwrap_or(rest.len());
+        let val = rest[..end].trim_matches('"').to_string();
+        if !val.is_empty() {
+            return Some(val);
+        }
+    }
+
+    if let Some(idx) = s.find(filename_key) {
+        let rest = &s[idx + filename_key.len()..].trim_start();
+        let end = rest.find(';').unwrap_or(rest.len());
+        let val = rest[..end].trim_matches('"').to_string();
+        if !val.is_empty() {
+            return Some(val);
+        }
+    }
+
+    None
+}
