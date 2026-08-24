@@ -454,3 +454,23 @@ pub fn content_type_is_css(ct: Option<&str>) -> bool {
         s.eq_ignore_ascii_case("text/css")
     })
 }
+
+/// Check if content type indicates XML content.
+///
+/// Matches `application/xhtml+xml`, `application/xml`, or `text/xml`.
+///
+/// # Arguments
+///
+/// * `ct` - Optional Content-Type header value.
+///
+/// # Returns
+///
+/// `true` if the content type is XML, `false` otherwise.
+pub fn content_type_is_xml(ct: Option<&str>) -> bool {
+    ct.map_or(false, |s| {
+        let s = s.split(';').next().unwrap_or(s).trim();
+        s.eq_ignore_ascii_case("application/xhtml+xml")
+            || s.eq_ignore_ascii_case("application/xml")
+            || s.eq_ignore_ascii_case("text/xml")
+    })
+}
