@@ -387,3 +387,34 @@ pub fn parse_content_disposition(s: &str) -> Option<String> {
 
     None
 }
+
+/// Decode percent-encoded string.
+///
+/// Replaces `%XX` sequences with their corresponding bytes.
+/// This is a fallback implementation for URL decoding.
+///
+/// # Arguments
+///
+/// * `s` - The percent-encoded string.
+///
+/// # Returns
+///
+/// `Ok(String)` with decoded content, or `Err` if UTF-8 decoding fails.
+fn urlencoding_fallback(s: &str) -> Result<String, std::string::FromUtf8Error> {
+    let mut result = Vec::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '%' {
+            let hex: String = chars.by_ref().take(2).collect();
+            if let Ok(byte) = u8::from_str_radix(&hex, 16) {
+                result.push(byte);
+            } else {
+                result.extend(c.to_string().as_bytes());
+                result.extend(hex.as_bytes());
+            }
+        } else {
+            result.extend(c.to_string().as_bytes());
+        }
+    }
+    String::from_utf8(result)
+}
