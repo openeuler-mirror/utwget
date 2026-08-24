@@ -418,3 +418,21 @@ fn urlencoding_fallback(s: &str) -> Result<String, std::string::FromUtf8Error> {
     }
     String::from_utf8(result)
 }
+
+/// Check if content type indicates HTML content.
+///
+/// Compares the MIME type (ignoring parameters) to `text/html`.
+///
+/// # Arguments
+///
+/// * `ct` - Optional Content-Type header value.
+///
+/// # Returns
+///
+/// `true` if the content type is HTML, `false` otherwise.
+pub fn content_type_is_html(ct: Option<&str>) -> bool {
+    ct.map_or(false, |s| {
+        let s = s.split(';').next().unwrap_or(s).trim();
+        s.eq_ignore_ascii_case("text/html")
+    })
+}
