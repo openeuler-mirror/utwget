@@ -605,7 +605,36 @@ impl Transport for TlsTransport {
     ///
     /// `true` if the connection is alive, `false` otherwise.
     fn is_alive(&self) -> bool {
-        self.alive && self.conn.is_some()
+        if !self.alive || self.conn.is_none() || self.stream.is_none() {
+            return false;
+        }
+        // Probe the underlying TCP socket: a non-blocking MSG_PEEK recv
+        // returns 0 if the remote closed (EOF) or an error (ECONNRESET)
+        // if the connection was reset. Either way the connection is dead.
+        // If there is pending data (n > 0), the connection is alive.
+        // EAGAIN/EWOULDBLOCK means no data but connection is still open.
+        use std::os::unix::io::AsRawFd;
+        let stream = self.stream.as_ref().unwrap();
+        let fd = stream.as_raw_fd();
+        unsafe {
+            let mut buf = [0u8; 1];
+            let n = libc::recv(fd, buf.as_mut_ptr() as *mut libc::c_void, 1, libc::MSG_PEEK | libc::MSG_DONTWAIT);
+            if n == 0 {
+                // Remote closed
+                return false;
+            }
+            if n < 0 {
+                let errno = *libc::__errno_location();
+                // EAGAIN or EWOULDBLOCK: connection still open, no data
+                if errno == libc::EAGAIN || errno == libc::EWOULDBLOCK {
+                    return true;
+                }
+                // Any other error: connection is dead
+                return false;
+            }
+            // n > 0: there's pending data, connection is alive
+            true
+        }
     }
 
     /// Returns a reference to the transport as `Any`.
