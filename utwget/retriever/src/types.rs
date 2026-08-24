@@ -436,3 +436,21 @@ pub fn content_type_is_html(ct: Option<&str>) -> bool {
         s.eq_ignore_ascii_case("text/html")
     })
 }
+
+/// Check if content type indicates CSS content.
+///
+/// Compares the MIME type (ignoring parameters) to `text/css`.
+///
+/// # Arguments
+///
+/// * `ct` - Optional Content-Type header value.
+///
+/// # Returns
+///
+/// `true` if the content type is CSS, `false` otherwise.
+pub fn content_type_is_css(ct: Option<&str>) -> bool {
+    ct.map_or(false, |s| {
+        let s = s.split(';').next().unwrap_or(s).trim();
+        s.eq_ignore_ascii_case("text/css")
+    })
+}
