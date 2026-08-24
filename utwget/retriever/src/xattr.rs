@@ -69,3 +69,38 @@ impl Default for RemotePermissions {
         }
     }
 }
+
+/// Apply permissions to a local file.
+///
+/// This preserves the remote file permissions when `--preserve-permissions` is used.
+/// On Unix systems, this sets the file mode bits. On non-Unix systems, this is a no-op.
+///
+/// # Arguments
+///
+/// * `path` - Path to the local file.
+/// * `permissions` - Permission information to apply.
+///
+/// # Returns
+///
+/// `Ok(())` on success, or an `io::Error` on failure.
+///
+/// # Errors
+///
+/// Returns an error if the file permissions cannot be set.
+pub fn apply_permissions(path: &Path, permissions: &RemotePermissions) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = if permissions.is_dir {
+            permissions.mode | 0o111 // Ensure directory has execute bit
+        } else {
+            permissions.mode
+        };
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))?;
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (path, permissions);
+    }
+    Ok(())
+}
