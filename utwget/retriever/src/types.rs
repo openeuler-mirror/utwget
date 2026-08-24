@@ -260,3 +260,19 @@ pub trait Protocol: Send + Sync {
     /// Whether the connection can be reused for subsequent requests.
     fn connection_reusable(&self) -> bool;
 }
+
+/// Convert `RetrieveError` to `WgetError`.
+///
+/// This implementation allows `RetrieveError` to be converted to the
+/// more general `WgetError` type for unified error handling.
+impl From<RetrieveError> for WgetError {
+    fn from(e: RetrieveError) -> Self {
+        match e {
+            RetrieveError::Protocol(err) => err,
+            RetrieveError::Response(err) => err,
+            RetrieveError::Io(err) => WgetError::SocketError(err),
+            RetrieveError::Quota => WgetError::Other("quota exceeded".into()),
+            RetrieveError::NoUrls => WgetError::Other("no URLs".into()),
+        }
+    }
+}
