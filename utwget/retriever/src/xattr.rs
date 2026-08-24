@@ -58,3 +58,14 @@ pub struct RemotePermissions {
     /// Whether the remote resource is a symbolic link.
     pub is_symlink: bool,
 }
+
+impl Default for RemotePermissions {
+    /// Create default permissions (644 for files, 755 for directories).
+    fn default() -> Self {
+        RemotePermissions {
+            mode: 0o644, // Default: rw-r--r--
+            is_dir: false,
+            is_symlink: false,
+        }
+    }
+}
