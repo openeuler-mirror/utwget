@@ -165,3 +165,25 @@ impl UrlQueue {
         self.blacklist.len()
     }
 }
+
+/// Normalize a URL for deduplication.
+///
+/// Removes leading/trailing whitespace and the fragment identifier
+/// (everything from `#` onwards). URLs that differ only in their
+/// fragment are considered equivalent for download purposes.
+///
+/// # Arguments
+///
+/// * `url` - The URL to normalize.
+///
+/// # Returns
+///
+/// The normalized URL string.
+fn normalize(url: &str) -> String {
+    let url = url.trim();
+    if let Some(idx) = url.find('#') {
+        url[..idx].to_string()
+    } else {
+        url.to_string()
+    }
+}
