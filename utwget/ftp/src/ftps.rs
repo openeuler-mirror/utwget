@@ -32,6 +32,17 @@ pub struct FtpsConfig {
     pub require_data_tls: bool,
     /// Minimum/maximum TLS protocol version (mirrors --secure-protocol).
     pub secure_protocol: SecureProtocol,
+    /// --ftps-clear-data-connection: only encrypt control channel,
+    /// data transfers use cleartext (sends PROT C instead of PROT P).
+    pub clear_data_connection: bool,
+    /// --ftps-resume-ssl: resume TLS session for data connections.
+    /// When true, the data connection should reuse the TLS session
+    /// from the control connection (RFC 4217 §3.2).
+    /// Note: rustls session resumption requires a client-side session
+    /// cache; currently a new TLS handshake is performed per data
+    /// connection. This flag is accepted for compatibility but the
+    /// optimization is not yet active.
+    pub resume_ssl: bool,
 }
 
 impl Default for FtpsConfig {
@@ -43,6 +54,8 @@ impl Default for FtpsConfig {
             client_key: None,
             require_data_tls: false,
             secure_protocol: SecureProtocol::Auto,
+            clear_data_connection: false,
+            resume_ssl: false,
         }
     }
 }
@@ -428,19 +441,29 @@ impl FtpsClient {
         self.send_cmd("PBSZ 0")?;
         let _ = self.read_response()?;
 
-        self.send_cmd("PROT P")?;
-        let resp = self.read_response()?;
-        if resp.is_positive_completion {
-            self.config.require_data_tls = true;
+        // Set protection level: PROT P (private/encrypted) or PROT C
+        // (cleartext) depending on --ftps-clear-data-connection.
+        if self.config.clear_data_connection {
+            self.send_cmd("PROT C")?;
+            let resp = self.read_response()?;
+            if resp.is_positive_completion {
+                self.config.require_data_tls = false;
+                log::debug!("FTPS: data channel set to cleartext (PROT C)");
+            } else {
+                log::warn!("FTPS: server refused PROT C ({}); data channel may be encrypted", resp.text.trim());
+            }
         } else {
-            // Server refused encrypted data channel: data transfers will be
-            // sent in cleartext even though the control channel is encrypted.
-            // Warn the user - they may believe the entire session is encrypted.
-            log::warn!(
-                "FTPS: server refused PROT P ({}); data channel will be UNENCRYPTED. \
-                 Control channel is still encrypted, but file contents are sent in cleartext.",
-                resp.text.trim()
-            );
+            self.send_cmd("PROT P")?;
+            let resp = self.read_response()?;
+            if resp.is_positive_completion {
+                self.config.require_data_tls = true;
+            } else {
+                log::warn!(
+                    "FTPS: server refused PROT P ({}); data channel will be UNENCRYPTED. \
+                     Control channel is still encrypted, but file contents are sent in cleartext.",
+                    resp.text.trim()
+                );
+            }
         }
 
         log::debug!("FTPS: TLS upgrade complete");
