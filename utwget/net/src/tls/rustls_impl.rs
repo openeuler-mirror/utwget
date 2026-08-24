@@ -661,6 +661,17 @@ impl std::fmt::Debug for TlsTransport {
     }
 }
 
+/// On drop, attempt a graceful TLS close_notify so the server sees a
+/// clean shutdown rather than a TCP RST.  This matches `close()` but is
+/// best-effort (errors are logged at debug level, never propagated).
+impl Drop for TlsTransport {
+    fn drop(&mut self) {
+        if self.alive {
+            let _ = self.close();
+        }
+    }
+}
+
 /// Loads certificates from a PEM file.
 ///
 /// # Arguments
