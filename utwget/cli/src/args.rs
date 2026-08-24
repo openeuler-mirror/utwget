@@ -162,7 +162,9 @@ pub struct Args {
     pub unlink: bool,
 
     /// Rotate up to N backup files before writing.
-    #[arg(long = "backups")]
+    /// GNU wget's OPT_BOOLEAN: --backups (no value) defaults to 1,
+    /// --backups=N sets count to N.
+    #[arg(long = "backups", num_args = 0..=1, default_missing_value = "1")]
     pub backups: Option<u32>,
 
     /// Continue getting a partially-downloaded file.
