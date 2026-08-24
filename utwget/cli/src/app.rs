@@ -722,21 +722,58 @@ impl App {
         let mut failed_count = 0;
 
         for local_path in url_to_local.values() {
+            // Only process HTML and CSS files — skip binary files (images,
+            // PDFs, archives, etc.) to avoid corruption. GNU wget only
+            // converts files in downloaded_html_set and downloaded_css_set
+            // (convert.c:197-198).
+            let path = std::path::Path::new(local_path);
+            let is_html = path.extension()
+                .map(|e| {
+                    let ext = e.to_string_lossy().to_ascii_lowercase();
+                    ext == "html" || ext == "htm" || ext == "xhtml" || ext == "shtml"
+                })
+                .unwrap_or(false);
+            let is_css = path.extension()
+                .map(|e| e.to_string_lossy().eq_ignore_ascii_case("css"))
+                .unwrap_or(false);
+
+            if !is_html && !is_css {
+                continue;
+            }
+
             if self.config.debug {
                 eprintln!("Converting links in: {}", local_path);
             }
 
-            match converter.convert_links(local_path, &url_to_local, &opts) {
-                Ok(stats) => {
-                    converted_count += stats.converted;
-                    if self.config.verbose >= 1 {
-                        eprintln!("Converted {} links in {}", stats.converted, local_path);
+            if is_css {
+                // CSS conversion: replace url() references with local paths.
+                match Self::convert_css_links(local_path, &url_to_local, &opts) {
+                    Ok(n) => {
+                        converted_count += n;
+                        if self.config.verbose >= 1 {
+                            eprintln!("Converted {} links in {}", n, local_path);
+                        }
+                    }
+                    Err(e) => {
+                        failed_count += 1;
+                        if self.config.verbose >= 1 || self.config.debug {
+                            eprintln!("utwget: warning: failed to convert CSS links in {}: {}", local_path, e);
+                        }
                     }
                 }
-                Err(e) => {
-                    failed_count += 1;
-                    if self.config.verbose >= 1 || self.config.debug {
-                        eprintln!("utwget: warning: failed to convert links in {}: {}", local_path, e);
+            } else {
+                match converter.convert_links(local_path, &url_to_local, &opts) {
+                    Ok(stats) => {
+                        converted_count += stats.converted;
+                        if self.config.verbose >= 1 {
+                            eprintln!("Converted {} links in {}", stats.converted, local_path);
+                        }
+                    }
+                    Err(e) => {
+                        failed_count += 1;
+                        if self.config.verbose >= 1 || self.config.debug {
+                            eprintln!("utwget: warning: failed to convert links in {}: {}", local_path, e);
+                        }
                     }
                 }
             }
@@ -746,6 +783,58 @@ impl App {
             eprintln!("Link conversion complete: {} links converted, {} files failed",
                 converted_count, failed_count);
         }
+    }
+
+    /// Convert CSS `url()` references to local paths.
+    ///
+    /// Performs simple string replacement of `url("remote_url")` and
+    /// `url(remote_url)` patterns with `url("local_path")` for any
+    /// remote URL found in `url_to_local`. This mirrors GNU wget's
+    /// CSS link conversion (convert.c:616-622).
+    fn convert_css_links(
+        file_path: &str,
+        url_to_local: &HashMap<String, String>,
+        opts: &ut_html::ConvertOptions,
+    ) -> Result<usize, std::io::Error> {
+        let path = std::path::Path::new(file_path);
+        let content = std::fs::read_to_string(path)?;
+
+        if opts.backup_converted {
+            let backup_ext = path
+                .extension()
+                .map(|e| format!("{}.orig", e.to_string_lossy()))
+                .unwrap_or_else(|| "orig".to_string());
+            let backup_path = path.with_extension(&backup_ext);
+            let _ = std::fs::copy(path, &backup_path);
+        }
+
+        let mut count = 0usize;
+        let mut output = content.clone();
+
+        for (remote_url, local_path) in url_to_local {
+            // Skip URLs that are already local
+            if remote_url.starts_with('#') || remote_url.starts_with("data:") {
+                continue;
+            }
+            // Replace url("remote") and url(remote) forms
+            let quoted = format!("url(\"{}\")", remote_url);
+            let replacement = format!("url(\"{}\")", local_path);
+            if output.contains(&quoted) {
+                output = output.replace(&quoted, &replacement);
+                count += 1;
+            }
+            let bare = format!("url({})", remote_url);
+            if output.contains(&bare) {
+                output = output.replace(&bare, &replacement);
+                count += 1;
+            }
+        }
+
+        if count > 0 {
+            std::fs::write(path, output)?;
+        }
+
+        Ok(count)
     }
 
     /// Run in Metalink mode.
