@@ -82,3 +82,69 @@ pub struct WarcHeader {
     /// Optional wagon metadata.
     pub wagon: Option<String>,
 }
+
+impl WarcHeader {
+    /// Serializes the header to WARC format bytes.
+    ///
+    /// Converts the header fields to the WARC 1.1 format with CRLF line endings.
+    /// The output includes the WARC version line followed by all header fields
+    /// in the standard format, ending with two CRLF sequences to separate
+    /// the header from the content block.
+    ///
+    /// # Returns
+    ///
+    /// A byte vector containing the serialized WARC header.
+    ///
+    /// # Format
+    ///
+    /// The output format is:
+    /// ```text
+    /// WARC/1.1\r\n
+    /// WARC-Type: <type>\r\n
+    /// WARC-Date: <date>\r\n
+    /// WARC-Record-ID: <id>\r\n
+    /// Content-Type: <content-type>\r\n
+    /// Content-Length: <length>\r\n
+    /// [WARC-Target-URI: <uri>\r\n]
+    /// [WARC-Concurrent-To: <id>\r\n]*
+    /// [WARC-Payload-Digest: sha1:\r\n]
+    /// [WARC-Truncated: <reason>\r\n]
+    /// [WARC-Wagon: <wagon>\r\n]
+    /// \r\n
+    /// ```
+    pub fn serialize(&self) -> Vec<u8> {
+        let mut lines: Vec<String> = Vec::new();
+
+        lines.push("WARC/1.1".to_string());
+        lines.push(format!("WARC-Type: {}", self.record_type));
+        lines.push(format!("WARC-Date: {}", self.date));
+        lines.push(format!("WARC-Record-ID: {}", self.record_id));
+        lines.push(format!("Content-Type: {}", self.content_type));
+        lines.push(format!("Content-Length: {}", self.content_length));
+
+        if !self.target_uri.is_empty() {
+            lines.push(format!("WARC-Target-URI: {}", self.target_uri));
+        }
+
+        for ct in &self.concurrent_to {
+            lines.push(format!("WARC-Concurrent-To: {}", ct));
+        }
+
+        if self.gzip_compressed {
+            lines.push("WARC-Payload-Digest: sha1:".to_string());
+        }
+
+        if let Some(ref t) = self.truncated {
+            lines.push(format!("WARC-Truncated: {}", t));
+        }
+
+        if let Some(ref w) = self.wagon {
+            lines.push(format!("WARC-Wagon: {}", w));
+        }
+
+        let header_block: String = lines.into_iter().collect::<Vec<_>>().join("\r\n");
+        let mut out = header_block.into_bytes();
+        out.extend_from_slice(b"\r\n\r\n");
+        out
+    }
+}
