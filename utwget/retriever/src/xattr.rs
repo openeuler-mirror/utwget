@@ -251,3 +251,95 @@ fn set_xattr_linux(path: &Path, metadata: &FileMetadata) -> io::Result<()> {
 
     Ok(())
 }
+
+/// Get an extended attribute from a file.
+///
+/// On Linux, this reads the attribute from the `user` namespace.
+/// On unsupported platforms, this returns `Ok(None)`.
+///
+/// # Arguments
+///
+/// * `path` - Path to the local file.
+/// * `name` - Attribute name (without the `user.` prefix).
+///
+/// # Returns
+///
+/// - `Ok(Some(String))` if the attribute exists and was read successfully.
+/// - `Ok(None)` if the attribute does not exist or on unsupported platforms.
+/// - `Err(io::Error)` if an error occurred while reading.
+///
+/// # Errors
+///
+/// Returns an error if the attribute cannot be read due to permission issues
+/// or other I/O errors.
+///
+/// # Example
+///
+/// ```no_run
+/// use ut_retriever::xattr::get_xattr;
+/// use std::path::Path;
+///
+/// let url = get_xattr(Path::new("file.txt"), "xdg.origin.url");
+/// if let Ok(Some(url)) = url {
+///     println!("Downloaded from: {}", url);
+/// }
+/// ```
+#[cfg(target_os = "linux")]
+pub fn get_xattr(path: &Path, name: &str) -> io::Result<Option<String>> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStringExt;
+
+    let key = CString::new(format!("user.{}", name)).unwrap();
+    let path_c = CString::new(path.as_os_str().to_os_string().into_vec())
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+
+    unsafe {
+        // First get the size
+        let size = libc::getxattr(
+            path_c.as_ptr(),
+            key.as_ptr(),
+            std::ptr::null_mut(),
+            0,
+        );
+        if size < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        if size == 0 {
+            return Ok(None);
+        }
+
+        // Then get the value
+        let mut buf = vec![0u8; size as usize];
+        let ret = libc::getxattr(
+            path_c.as_ptr(),
+            key.as_ptr(),
+            buf.as_mut_ptr() as *mut libc::c_void,
+            size as usize,
+        );
+        if ret < 0 {
+            return Err(io::Error::last_os_error());
+        }
+
+        String::from_utf8(buf)
+            .map(Some)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+    }
+}
+
+/// Get an extended attribute from a file (stub for non-Linux platforms).
+///
+/// On non-Linux platforms, extended attributes are not supported,
+/// so this always returns `Ok(None)`.
+///
+/// # Arguments
+///
+/// * `_path` - Path to the local file (unused).
+/// * `_name` - Attribute name (unused).
+///
+/// # Returns
+///
+/// Always returns `Ok(None)`.
+#[cfg(not(target_os = "linux"))]
+pub fn get_xattr(_path: &Path, _name: &str) -> io::Result<Option<String>> {
+    Ok(None)
+}
