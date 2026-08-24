@@ -153,3 +153,101 @@ pub fn set_xattr(path: &Path, metadata: &FileMetadata) -> io::Result<()> {
         Ok(())
     }
 }
+
+/// Set extended attributes on Linux using libc.
+///
+/// This is the Linux-specific implementation that uses the `setxattr` syscall.
+///
+/// # Arguments
+///
+/// * `path` - Path to the local file.
+/// * `metadata` - Metadata to store.
+///
+/// # Returns
+///
+/// `Ok(())` on success, or an `io::Error` on failure.
+#[cfg(target_os = "linux")]
+fn set_xattr_linux(path: &Path, metadata: &FileMetadata) -> io::Result<()> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStringExt;
+
+    // Set user.xdg.origin.url (the download URL)
+    let url_key = CString::new("user.xdg.origin.url").unwrap();
+    let url_value = CString::new(metadata.url.as_bytes()).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    unsafe {
+        let path_c = CString::new(path.as_os_str().to_os_string().into_vec())
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        let ret = libc::setxattr(
+            path_c.as_ptr(),
+            url_key.as_ptr(),
+            url_value.as_ptr() as *const libc::c_void,
+            metadata.url.len(),
+            0,
+        );
+        if ret != 0 {
+            return Err(io::Error::last_os_error());
+        }
+    }
+
+    // Set user.xdg.content.type if available
+    if let Some(ref ct) = metadata.content_type {
+        let ct_key = CString::new("user.xdg.content.type").unwrap();
+        let ct_value = CString::new(ct.as_bytes()).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        unsafe {
+            let path_c = CString::new(path.as_os_str().to_os_string().into_vec())
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+            let ret = libc::setxattr(
+                path_c.as_ptr(),
+                ct_key.as_ptr(),
+                ct_value.as_ptr() as *const libc::c_void,
+                ct.len(),
+                0,
+            );
+            if ret != 0 {
+                return Err(io::Error::last_os_error());
+            }
+        }
+    }
+
+    // Set user.wget.last_modified if available
+    if let Some(ref lm) = metadata.last_modified {
+        let lm_key = CString::new("user.wget.last_modified").unwrap();
+        let lm_value = CString::new(lm.as_bytes()).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        unsafe {
+            let path_c = CString::new(path.as_os_str().to_os_string().into_vec())
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+            let ret = libc::setxattr(
+                path_c.as_ptr(),
+                lm_key.as_ptr(),
+                lm_value.as_ptr() as *const libc::c_void,
+                lm.len(),
+                0,
+            );
+            if ret != 0 {
+                return Err(io::Error::last_os_error());
+            }
+        }
+    }
+
+    // Set user.wget.etag if available
+    if let Some(ref etag) = metadata.etag {
+        let etag_key = CString::new("user.wget.etag").unwrap();
+        let etag_value = CString::new(etag.as_bytes()).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        unsafe {
+            let path_c = CString::new(path.as_os_str().to_os_string().into_vec())
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+            let ret = libc::setxattr(
+                path_c.as_ptr(),
+                etag_key.as_ptr(),
+                etag_value.as_ptr() as *const libc::c_void,
+                etag.len(),
+                0,
+            );
+            if ret != 0 {
+                return Err(io::Error::last_os_error());
+            }
+        }
+    }
+
+    Ok(())
+}
