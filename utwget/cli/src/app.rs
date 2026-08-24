@@ -318,6 +318,15 @@ impl App {
         // (main.c:2147). With -p alone, recursive stays false but
         // page_requisites triggers the tree path.
         if self.config.recursive.enabled || self.config.page_requisites {
+            if self.config.concurrent_downloads > 1 {
+                // -j in recursive mode: currently the recursive loop is
+                // sequential. Warn the user that -j is not yet honored
+                // in recursive mode. A future enhancement can parallelize
+                // the queue processing.
+                if self.config.verbose >= 1 {
+                    eprintln!("utwget: warning: -j/--concurrency is not yet supported in recursive mode; downloads will be sequential");
+                }
+            }
             return self.run_recursive(&all_urls);
         }
 
