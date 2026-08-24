@@ -122,9 +122,24 @@ impl TlsConnectionPool {
     fn put(&self, host: &str, port: u16, use_tls: bool, conn: PooledConnection) {
         let key = (host.to_string(), port, use_tls);
         let mut pools = self.pools.lock().unwrap_or_else(|e| e.into_inner());
-        // Evict oldest entry if at capacity to prevent unbounded memory growth
+        // Evict the least-recently-used entry if at capacity to prevent
+        // unbounded memory growth. This preserves actively-used connections
+        // and evicts idle ones, matching LRU cache behavior.
         if pools.len() >= MAX_POOL_ENTRIES && !pools.contains_key(&key) {
-            if let Some(oldest_key) = pools.keys().next().cloned() {
+            // Find the pool entry with the oldest last_used time across all
+            // connections in that entry's vector (the entry's "freshness" is
+            // determined by its most-recently-used connection).
+            if let Some(oldest_key) = pools
+                .iter()
+                .min_by_key(|(_, pool)| {
+                    // Use the newest last_used in this pool as the key's timestamp
+                    pool.iter()
+                        .map(|e| e.last_used)
+                        .max()
+                        .unwrap_or(Instant::now())
+                })
+                .map(|(k, _)| k.clone())
+            {
                 pools.remove(&oldest_key);
             }
         }
