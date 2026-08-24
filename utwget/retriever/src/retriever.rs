@@ -1511,6 +1511,182 @@ impl Retriever {
     ///
     /// Returns `RetrieveError` if DNS resolution fails, no suitable address is found,
     /// or all connection attempts fail.
+    /// Connect to a remote address, binding the local socket to a specific
+    /// source address first. Used by `--bind-address`.
+    ///
+    /// Uses `libc` syscalls to create a socket, bind, then connect with
+    /// an optional timeout.
+    fn connect_with_bind(
+        remote: &std::net::SocketAddr,
+        bind_addr: &str,
+        timeout: Option<std::time::Duration>,
+    ) -> Result<std::net::TcpStream, std::io::Error> {
+        // Parse the bind address. If no port is given, use port 0 (OS picks).
+        let bind: std::net::SocketAddr = match bind_addr.parse() {
+            Ok(a) => a,
+            Err(_) => {
+                // Try as host:port or just host (port 0)
+                let addr = format!("{}:0", bind_addr);
+                addr.parse().map_err(|e: std::net::AddrParseError| {
+                    std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("invalid bind address: {}", e))
+                })?
+            }
+        };
+
+        // Use a SocketAddr in the same family as the remote.
+        let bind = match remote {
+            std::net::SocketAddr::V4(_) => {
+                match bind {
+                    std::net::SocketAddr::V4(_) => bind,
+                    std::net::SocketAddr::V6(_) => {
+                        // Fall back to 0.0.0.0:0
+                        "0.0.0.0:0".parse().unwrap()
+                    }
+                }
+            }
+            std::net::SocketAddr::V6(_) => {
+                match bind {
+                    std::net::SocketAddr::V6(_) => bind,
+                    std::net::SocketAddr::V4(_) => {
+                        // Fall back to [::]:0
+                        "[::]:0".parse().unwrap()
+                    }
+                }
+            }
+        };
+
+        // Create socket via libc, bind, connect, then wrap as TcpStream.
+        unsafe {
+            let domain = if remote.is_ipv4() { libc::AF_INET } else { libc::AF_INET6 };
+            let fd = libc::socket(domain, libc::SOCK_STREAM, 0);
+            if fd < 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+
+            // Bind
+            let (bind_ptr, bind_len) = match &bind {
+                std::net::SocketAddr::V4(v4) => {
+                    let mut sa: libc::sockaddr_in = std::mem::zeroed();
+                    sa.sin_family = libc::AF_INET as u16;
+                    sa.sin_port = v4.port().to_be();
+                    sa.sin_addr = libc::in_addr { s_addr: u32::from(*v4.ip()).to_be() };
+                    let sa_ptr = &sa as *const libc::sockaddr_in as *const libc::sockaddr;
+                    let sa_len = std::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
+                    (sa_ptr, sa_len)
+                }
+                std::net::SocketAddr::V6(v6) => {
+                    let mut sa: libc::sockaddr_in6 = std::mem::zeroed();
+                    sa.sin6_family = libc::AF_INET6 as u16;
+                    sa.sin6_port = v6.port().to_be();
+                    sa.sin6_addr.s6_addr = v6.ip().octets();
+                    let sa_ptr = &sa as *const libc::sockaddr_in6 as *const libc::sockaddr;
+                    let sa_len = std::mem::size_of::<libc::sockaddr_in6>() as libc::socklen_t;
+                    (sa_ptr, sa_len)
+                }
+            };
+
+            // Allocate storage for the bind address
+            let sa_storage: [u8; 128] = [0u8; 128];
+            std::ptr::copy_nonoverlapping(
+                bind_ptr as *const u8,
+                sa_storage.as_ptr() as *mut u8,
+                bind_len as usize,
+            );
+
+            if libc::bind(fd, sa_storage.as_ptr() as *const libc::sockaddr, bind_len) < 0 {
+                let err = std::io::Error::last_os_error();
+                libc::close(fd);
+                return Err(err);
+            }
+
+            // Connect
+            let (remote_ptr, remote_len) = match remote {
+                std::net::SocketAddr::V4(v4) => {
+                    let mut sa: libc::sockaddr_in = std::mem::zeroed();
+                    sa.sin_family = libc::AF_INET as u16;
+                    sa.sin_port = v4.port().to_be();
+                    sa.sin_addr = libc::in_addr { s_addr: u32::from(*v4.ip()).to_be() };
+                    let sa_ptr = &sa as *const libc::sockaddr_in as *const libc::sockaddr;
+                    let sa_len = std::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
+                    (sa_ptr, sa_len)
+                }
+                std::net::SocketAddr::V6(v6) => {
+                    let mut sa: libc::sockaddr_in6 = std::mem::zeroed();
+                    sa.sin6_family = libc::AF_INET6 as u16;
+                    sa.sin6_port = v6.port().to_be();
+                    sa.sin6_addr.s6_addr = v6.ip().octets();
+                    let sa_ptr = &sa as *const libc::sockaddr_in6 as *const libc::sockaddr;
+                    let sa_len = std::mem::size_of::<libc::sockaddr_in6>() as libc::socklen_t;
+                    (sa_ptr, sa_len)
+                }
+            };
+
+            let remote_storage: [u8; 128] = [0u8; 128];
+            std::ptr::copy_nonoverlapping(
+                remote_ptr as *const u8,
+                remote_storage.as_ptr() as *mut u8,
+                remote_len as usize,
+            );
+
+            // Set non-blocking if timeout is set
+            if timeout.is_some() {
+                let flags = libc::fcntl(fd, libc::F_GETFL);
+                libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK);
+            }
+
+            let conn_ret = libc::connect(
+                fd,
+                remote_storage.as_ptr() as *const libc::sockaddr,
+                remote_len,
+            );
+
+            if conn_ret < 0 {
+                let errno = *libc::__errno_location();
+                if timeout.is_some() && (errno == libc::EINPROGRESS || errno == libc::EWOULDBLOCK) {
+                    // Wait for connect with poll
+                    let mut pfd = libc::pollfd { fd, events: libc::POLLOUT, revents: 0 };
+                    let timeout_ms = timeout.unwrap().as_millis() as libc::c_int;
+                    let poll_ret = libc::poll(&mut pfd, 1, timeout_ms);
+                    if poll_ret <= 0 {
+                        libc::close(fd);
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            "connect with bind timed out",
+                        ));
+                    }
+                    // Check for errors
+                    let mut soerr: libc::c_int = 0;
+                    let mut soerr_len = std::mem::size_of::<libc::c_int>() as libc::socklen_t;
+                    libc::getsockopt(
+                        fd,
+                        libc::SOL_SOCKET,
+                        libc::SO_ERROR,
+                        &mut soerr as *mut _ as *mut libc::c_void,
+                        &mut soerr_len,
+                    );
+                    if soerr != 0 {
+                        libc::close(fd);
+                        return Err(std::io::Error::from_raw_os_error(soerr));
+                    }
+                } else {
+                    let err = std::io::Error::last_os_error();
+                    libc::close(fd);
+                    return Err(err);
+                }
+            }
+
+            // Restore blocking mode
+            if timeout.is_some() {
+                let flags = libc::fcntl(fd, libc::F_GETFL);
+                libc::fcntl(fd, libc::F_SETFL, flags & !libc::O_NONBLOCK);
+            }
+
+            // Convert fd to TcpStream
+            use std::os::unix::io::FromRawFd;
+            Ok(std::net::TcpStream::from_raw_fd(fd))
+        }
+    }
+
     fn create_tcp_stream(&self, host: &str, port: u16) -> Result<std::net::TcpStream, RetrieveError> {
         // Try to get a connection from the pool first
         if let Some(conn) = self.connection_pool.get_tcp(host, port) {
@@ -1665,12 +1841,15 @@ impl Retriever {
         for addr in sorted_addresses {
             debug!("trying to connect to {}", addr);
 
-            // Apply bind address if set (requires socket2 crate for proper implementation)
-            if let Some(ref bind_addr) = self.config.bind_address {
+            // Apply bind address if set: create a socket, bind to the
+            // specified local address, then connect to the remote.
+            let stream_result = if let Some(ref bind_addr) = self.config.bind_address {
                 debug!("--bind-address={} requested for connection to {}", bind_addr, addr);
-            }
-
-            let stream_result = if let Some(timeout) = connect_timeout {
+                match Self::connect_with_bind(&addr, bind_addr, connect_timeout) {
+                    Ok(s) => Ok(s),
+                    Err(e) => Err(e),
+                }
+            } else if let Some(timeout) = connect_timeout {
                 std::net::TcpStream::connect_timeout(&addr, timeout)
             } else {
                 std::net::TcpStream::connect(&addr)
