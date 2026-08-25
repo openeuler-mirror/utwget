@@ -811,3 +811,13 @@ impl WarcWriter for WarcWriterImpl {
         Ok(())
     }
 }
+
+impl Drop for WarcWriterImpl {
+    /// Ensures the WARC file is properly closed when the writer is dropped.
+    ///
+    /// This implementation guarantees that the CDX index is written even
+    /// if the writer goes out of scope without an explicit call to `close()`.
+    fn drop(&mut self) {
+        let _ = self.close();
+    }
+}
