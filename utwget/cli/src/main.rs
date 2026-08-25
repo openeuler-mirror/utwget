@@ -499,7 +499,6 @@ fn print_wget_help() {
     println!("  -6,  --inet6-only                {}", t("utwget.help_inet6_only"));
     println!("       --proxy-user=USER           {}", t("utwget.help_proxy_user"));
     println!("       --proxy-password=PASS       {}", t("utwget.help_proxy_password"));
-    println!("  -j,  --concurrency=NUMBER        {}", t("utwget.help_concurrency"));
     println!("  -Q,  --quota=NUMBER              {}", t("utwget.help_quota"));
     println!("       --limit-rate=RATE           {}", t("utwget.help_limit_rate"));
     println!("       --delete-after              {}", t("utwget.help_delete_after"));
@@ -559,8 +558,6 @@ fn print_wget_help() {
     println!("       --local-encoding=ENC        {}", t("utwget.help_local_encoding"));
     println!("       --remote-encoding=ENC       {}", t("utwget.help_remote_encoding"));
     println!("       --no-iri                    {}", t("utwget.help_no_iri"));
-    println!("       --http2                     {}", t("utwget.help_http2"));
-    println!("       --http1.1                   {}", t("utwget.help_http1_1"));
     println!();
 
     println!("{}:", t("utwget.help_https_options"));
@@ -605,7 +602,6 @@ fn print_wget_help() {
     println!("  -p,  --page-requisites           {}", t("utwget.help_page_requisites"));
     println!("       --strict-comments           {}", t("utwget.help_strict_comments"));
     println!("       --convert-file-only         {}", t("utwget.help_convert_file_only"));
-    println!("       --reject-tags=LIST          {}", t("utwget.help_reject_tags"));
     println!();
 
     println!("{}:", t("utwget.help_recursive_accept"));
