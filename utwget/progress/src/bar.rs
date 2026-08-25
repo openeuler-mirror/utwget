@@ -331,3 +331,18 @@ impl ProgressDisplay for BarProgress {
         true
     }
 }
+
+/// Detects the current terminal width.
+///
+/// Attempts to determine the width of the terminal window for proper
+/// progress bar formatting. Falls back to a default width of 80 columns
+/// if the terminal size cannot be determined.
+///
+/// # Returns
+///
+/// The terminal width in columns, or 80 if detection fails.
+fn detect_terminal_width() -> usize {
+    terminal_size::terminal_size()
+        .map(|(w, _)| w.0 as usize)
+        .unwrap_or(80)
+}
