@@ -93,3 +93,262 @@ pub enum MetalinkError {
     #[error("no resources available for download")]
     NoResources,
 }
+
+/// Parser for Metalink XML documents.
+///
+/// Parses Metalink version 3.0 XML documents and extracts file information
+/// including names, sizes, checksums, and download URLs.
+///
+/// # Example
+///
+/// ```no_run
+/// use ut_metalink::parser::MetalinkParser;
+/// use std::io::Cursor;
+///
+/// let metalink_xml = r#"
+/// <?xml version="1.0" encoding="utf-8"?>
+/// <metalink version="3.0">
+///   <file name="example.zip">
+///     <size>12345</size>
+///     <hash type="sha-256">abc123...</hash>
+///     <url preference="100">http://example.com/example.zip</url>
+///   </file>
+/// </metalink>
+/// "#;
+///
+/// let files = MetalinkParser::parse(Cursor::new(metalink_xml)).unwrap();
+/// ```
+pub struct MetalinkParser;
+
+impl MetalinkParser {
+    /// Parses a Metalink XML document from a reader.
+    ///
+    /// Reads and parses a Metalink version 3.0 XML document, extracting
+    /// all file entries with their metadata, checksums, and download URLs.
+    ///
+    /// # Arguments
+    ///
+    /// * `reader` - A reader providing the XML document content.
+    ///
+    /// # Returns
+    ///
+    /// A vector of `MetalinkFile` entries on success.
+    ///
+    /// # Errors
+    ///
+    /// * `MetalinkError::Parse` - The document contains no files or has invalid structure.
+    /// * `MetalinkError::Xml` - XML parsing error occurred.
+    /// * `MetalinkError::Io` - I/O error while reading.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use ut_metalink::parser::MetalinkParser;
+    /// use std::fs::File;
+    ///
+    /// let file = File::open("example.metalink")?;
+    /// let files = MetalinkParser::parse(std::io::BufReader::new(file))?;
+    /// for file in &files {
+    ///     println!("File: {} ({} bytes)", file.name, file.size.unwrap_or(0));
+    /// }
+    /// # Ok::<(), ut_metalink::parser::MetalinkError>(())
+    /// ```
+    pub fn parse(reader: impl BufRead) -> Result<Vec<MetalinkFile>, MetalinkError> {
+        let mut xml_reader = Reader::from_reader(reader);
+        xml_reader.config_mut().trim_text(true);
+
+        let mut buf = Vec::new();
+        let mut files: Vec<MetalinkFile> = Vec::new();
+        let mut current_file: Option<MetalinkFile> = None;
+        let mut current_resource: Option<MetalinkResource> = None;
+
+        let mut path_stack: Vec<String> = Vec::new();
+
+        loop {
+            let event = xml_reader.read_event_into(&mut buf)?;
+            match event {
+                Event::Start(ref e) | Event::Empty(ref e) => {
+                    let local_name = e.local_name();
+                    let tag = String::from_utf8_lossy(local_name.as_ref()).to_string();
+                    path_stack.push(tag.clone());
+
+                    match tag.as_str() {
+                        "file" => {
+                            let name = e
+                                .attributes()
+                                .find(|a| a.as_ref().map(|a| a.key.as_ref() == b"name").unwrap_or(false))
+                                .and_then(|a| a.ok())
+                                .and_then(|a| String::from_utf8(a.value.to_vec()).ok())
+                                .unwrap_or_default();
+                            current_file = Some(MetalinkFile {
+                                name,
+                                size: None,
+                                hashes: Vec::new(),
+                                pieces: Vec::new(),
+                                resources: Vec::new(),
+                                identity: None,
+                                version: None,
+                                description: None,
+                            });
+                        }
+                        "size" => {
+                            if current_file.is_some() {
+                                let text = read_text(&mut xml_reader, &mut buf)?;
+                                if let Ok(size) = text.parse::<u64>() {
+                                    if let Some(ref mut f) = current_file {
+                                        f.size = Some(size);
+                                    }
+                                }
+                                path_stack.pop();
+                            }
+                        }
+                        "hash" => {
+                            let hash_type = e
+                                .attributes()
+                                .find(|a| a.as_ref().map(|a| a.key.as_ref() == b"type").unwrap_or(false))
+                                .and_then(|a| a.ok())
+                                .and_then(|a| String::from_utf8(a.value.to_vec()).ok())
+                                .and_then(|t| ChecksumType::from_str(&t));
+                            if let Some(ht) = hash_type {
+                                let value = read_text(&mut xml_reader, &mut buf)?;
+                                if let Some(ref mut f) = current_file {
+                                    f.hashes.push(FileChecksum {
+                                        hash_type: ht,
+                                        expected: value,
+                                    });
+                                }
+                            }
+                            path_stack.pop();
+                        }
+                        "pieces" => {
+                            if let Some(ref mut f) = current_file {
+                                let piece_length = e
+                                    .attributes()
+                                    .find(|a| a.as_ref().map(|a| a.key.as_ref() == b"length").unwrap_or(false))
+                                    .and_then(|a| a.ok())
+                                    .and_then(|a| String::from_utf8(a.value.to_vec()).ok())
+                                    .and_then(|v| v.parse::<u64>().ok());
+                                let piece_hash_type = e
+                                    .attributes()
+                                    .find(|a| a.as_ref().map(|a| a.key.as_ref() == b"type").unwrap_or(false))
+                                    .and_then(|a| a.ok())
+                                    .and_then(|a| String::from_utf8(a.value.to_vec()).ok())
+                                    .and_then(|t| ChecksumType::from_str(&t));
+
+                                if let (Some(length), Some(hash_type)) = (piece_length, piece_hash_type) {
+                                    f.pieces.push(MetalinkPiece {
+                                        length,
+                                        hash: String::new(),
+                                        hash_type,
+                                    });
+                                }
+                            }
+                        }
+                        "resources" => {}
+                        "url" => {
+                            // Parse URL attributes
+                            let type_ = e
+                                .attributes()
+                                .find(|a| a.as_ref().map(|a| a.key.as_ref() == b"type").unwrap_or(false))
+                                .and_then(|a| a.ok())
+                                .and_then(|a| String::from_utf8(a.value.to_vec()).ok());
+                            let preference = e
+                                .attributes()
+                                .find(|a| a.as_ref().map(|a| a.key.as_ref() == b"preference").unwrap_or(false))
+                                .and_then(|a| a.ok())
+                                .and_then(|a| String::from_utf8(a.value.to_vec()).ok())
+                                .and_then(|v| v.parse::<i32>().ok());
+
+                            let text = read_text(&mut xml_reader, &mut buf)?;
+                            if !text.is_empty() {
+                                let resource = MetalinkResource {
+                                    url: text,
+                                    type_,
+                                    preference,
+                                    max_connections: None,
+                                    location: None,
+                                };
+                                if let Some(ref mut f) = current_file {
+                                    f.resources.push(resource);
+                                }
+                            }
+                            path_stack.pop();
+                        }
+                        "identity" => {
+                            let text = read_text(&mut xml_reader, &mut buf)?;
+                            if let Some(ref mut f) = current_file {
+                                f.identity = Some(text);
+                            }
+                            path_stack.pop();
+                        }
+                        "version" => {
+                            let text = read_text(&mut xml_reader, &mut buf)?;
+                            if let Some(ref mut f) = current_file {
+                                f.version = Some(text);
+                            }
+                            path_stack.pop();
+                        }
+                        "description" => {
+                            let text = read_text(&mut xml_reader, &mut buf)?;
+                            if let Some(ref mut f) = current_file {
+                                f.description = Some(text);
+                            }
+                            path_stack.pop();
+                        }
+                        _ => {}
+                    }
+                }
+                Event::End(ref e) => {
+                    let local_name = e.local_name();
+                    let tag = String::from_utf8_lossy(local_name.as_ref()).to_string();
+
+                    match tag.as_str() {
+                        "url" => {
+                            if let Some(res) = current_resource.take() {
+                                if let Some(ref mut f) = current_file {
+                                    f.resources.push(res);
+                                }
+                            }
+                        }
+                        "file" => {
+                            if let Some(f) = current_file.take() {
+                                files.push(f);
+                            }
+                        }
+                        _ => {}
+                    }
+
+                    while let Some(top) = path_stack.last() {
+                        if top == &tag {
+                            path_stack.pop();
+                            break;
+                        }
+                        path_stack.pop();
+                    }
+                }
+                Event::Text(ref e) => {
+                    let text = e.unescape().unwrap_or_default();
+                    let trimmed = text.trim();
+                    if !trimmed.is_empty() {
+                        if let Some("url") = path_stack.last().map(|s| s.as_str()) {
+                            if let Some(ref mut res) = current_resource {
+                                if res.url.is_empty() {
+                                    res.url = trimmed.to_string();
+                                }
+                            }
+                        }
+                    }
+                }
+                Event::Eof => break,
+                _ => {}
+            }
+            buf.clear();
+        }
+
+        if files.is_empty() {
+            return Err(MetalinkError::Parse("no files found in metalink document".into()));
+        }
+
+        Ok(files)
+    }
+}
