@@ -35,3 +35,21 @@ pub struct MetalinkFile {
     /// Human-readable description of the file.
     pub description: Option<String>,
 }
+
+/// Represents a download resource (mirror) in a Metalink document.
+///
+/// Each resource provides a URL from which the file can be downloaded,
+/// along with metadata about the resource's protocol and preference.
+#[derive(Debug, Clone)]
+pub struct MetalinkResource {
+    /// The URL for downloading the file.
+    pub url: String,
+    /// The protocol type (e.g., "HTTP", "HTTPS", "FTP").
+    pub type_: Option<String>,
+    /// Preference value (higher is better).
+    pub preference: Option<i32>,
+    /// Maximum number of concurrent connections allowed.
+    pub max_connections: Option<u32>,
+    /// Geographic location code (e.g., "CN", "US", "DE").
+    pub location: Option<String>,
+}
