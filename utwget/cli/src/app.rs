@@ -91,8 +91,7 @@ impl ExitStatus {
             | WgetError::FtpFileNotFound(_)
             | WgetError::TooManyRedirects { .. } => ExitStatus::ServerError,
 
-            WgetError::TooManyRedirects { .. }
-            | WgetError::UnsupportedMethod(_)
+            WgetError::UnsupportedMethod(_)
             | WgetError::UrlParse(_)
             | WgetError::UnsupportedScheme(_) => ExitStatus::Error,
 
@@ -1148,22 +1147,41 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
     config.debug = args.debug;
     config.server_response = args.server_response;
     config.background = args.background;
-    config.output_file = args.output_file.clone();
-    config.append_output = args.append_output.clone();
+    // Only override wgetrc values when the CLI explicitly provides a value;
+    // otherwise preserve the value loaded from wgetrc (GNU wget init.c
+    // semantics: command-line overrides wgetrc, but absent CLI flags leave
+    // wgetrc intact). For Option<T> fields, args.* is None when the flag
+    // was not given, so we use .or() to keep the existing config value.
+    if args.output_file.is_some() {
+        config.output_file = args.output_file.clone();
+    }
+    if args.append_output.is_some() {
+        config.append_output = args.append_output.clone();
+    }
     config.tries = args.tries;
     config.retry_connrefused = args.retry_connrefused;
     config.retry_on_host_error = args.retry_on_host_error;
     config.retry_on_http_error = args.retry_on_http_error.clone();
 
-    config.output_document = args.output_document.clone();
-    config.input_filename = args.input_file.clone();
+    if args.output_document.is_some() {
+        config.output_document = args.output_document.clone();
+    }
+    if args.input_file.is_some() {
+        config.input_filename = args.input_file.clone();
+    }
     config.force_html = args.force_html;
-    config.dir_prefix = args.directory_prefix.clone();
+    if args.directory_prefix.is_some() {
+        config.dir_prefix = args.directory_prefix.clone();
+    }
     config.noclobber = args.no_clobber;
     config.unlink = args.unlink;
-    config.backups = args.backups;
+    if args.backups.is_some() {
+        config.backups = args.backups;
+    }
     config.continue_download = args.continue_download;
-    config.start_position = args.start_pos;
+    if args.start_pos.is_some() {
+        config.start_position = args.start_pos;
+    }
     config.timestamping = args.timestamping;
 
     if args.no_if_modified_since {
@@ -1173,11 +1191,19 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
         config.use_server_timestamps = false;
     }
 
-    config.quota = args.quota.as_ref().and_then(|s| ut_core::utils::parse_size_string(s));
-    config.limit_rate = args.limit_rate.as_ref().and_then(|s| ut_core::utils::parse_size_string(s));
+    if let Some(s) = &args.quota {
+        config.quota = ut_core::utils::parse_size_string(s);
+    }
+    if let Some(s) = &args.limit_rate {
+        config.limit_rate = ut_core::utils::parse_size_string(s);
+    }
 
-    config.wait = args.wait.and_then(safe_duration_f64);
-    config.wait_retry = args.wait_retry.and_then(safe_duration_f64);
+    if let Some(d) = args.wait {
+        config.wait = safe_duration_f64(d);
+    }
+    if let Some(d) = args.wait_retry {
+        config.wait_retry = safe_duration_f64(d);
+    }
     config.random_wait = args.random_wait;
     config.delete_after = args.delete_after;
     config.content_disposition = args.content_disposition;
@@ -1188,8 +1214,8 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
         config.use_netrc = false;
     }
 
-    config.http.user = args.http_user.clone().or(args.user.clone());
-    config.http.password = args.http_password.clone().or(args.password.clone());
+    config.http.user = args.http_user.clone().or(args.user.clone()).or(config.http.user.take());
+    config.http.password = args.http_password.clone().or(args.password.clone()).or(config.http.password.take());
 
     // Handle --ask-password: prompt for password interactively
     if args.ask_password && config.http.password.is_none() {
@@ -1215,9 +1241,18 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
         }
     }
 
-    config.http.headers = args.header.clone();
-    config.http.user_agent = args.user_agent.clone();
-    config.http.referer = args.referer.clone();
+    // Only override wgetrc-loaded headers when the CLI explicitly passes
+    // --header; otherwise keep the headers configured via wgetrc.
+    if !args.header.is_empty() {
+        config.http.headers = args.header.clone();
+    }
+    // Only override user_agent/referer when the CLI flag is present.
+    if args.user_agent.is_some() {
+        config.http.user_agent = args.user_agent.clone();
+    }
+    if args.referer.is_some() {
+        config.http.referer = args.referer.clone();
+    }
     config.http.save_headers = args.save_headers;
 
     // IRI configuration
@@ -1309,8 +1344,8 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
         config.http.default_page = page.clone();
     }
 
-    config.ftp.user = args.ftp_user.clone().or(args.user.clone());
-    config.ftp.password = args.ftp_password.clone().or(args.password.clone());
+    config.ftp.user = args.ftp_user.clone().or(args.user.clone()).or(config.ftp.user.take());
+    config.ftp.password = args.ftp_password.clone().or(args.password.clone()).or(config.ftp.password.take());
 
     if args.no_passive_ftp {
         config.ftp.passive = false;
@@ -1337,13 +1372,27 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
     if args.no_check_certificate {
         config.tls.check_certificate = ut_core::CheckCertMode::Off;
     }
-    config.tls.cert_file = args.certificate.clone();
-    config.tls.private_key = args.private_key.clone();
-    config.tls.ca_cert = args.ca_certificate.clone();
-    config.tls.ca_directory = args.ca_directory.clone();
-    config.tls.crl_file = args.crl_file.clone();
-    config.tls.pinned_pubkey = args.pinnedpubkey.clone();
-    config.tls.ciphers = args.ciphers.clone();
+    if args.certificate.is_some() {
+        config.tls.cert_file = args.certificate.clone();
+    }
+    if args.private_key.is_some() {
+        config.tls.private_key = args.private_key.clone();
+    }
+    if args.ca_certificate.is_some() {
+        config.tls.ca_cert = args.ca_certificate.clone();
+    }
+    if args.ca_directory.is_some() {
+        config.tls.ca_directory = args.ca_directory.clone();
+    }
+    if args.crl_file.is_some() {
+        config.tls.crl_file = args.crl_file.clone();
+    }
+    if args.pinnedpubkey.is_some() {
+        config.tls.pinned_pubkey = args.pinnedpubkey.clone();
+    }
+    if args.ciphers.is_some() {
+        config.tls.ciphers = args.ciphers.clone();
+    }
 
     // Apply certificate/private-key type options
     if let Some(ref ct) = args.certificate_type {
@@ -1410,8 +1459,12 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
     if let Some(ref patterns) = args.reject {
         config.recursive.reject_patterns = patterns.split(',').map(String::from).collect();
     }
-    config.recursive.accept_regex = args.accept_regex.clone();
-    config.recursive.reject_regex = args.reject_regex.clone();
+    if let Some(ref r) = args.accept_regex {
+        config.recursive.accept_regex = Some(r.clone());
+    }
+    if let Some(ref r) = args.reject_regex {
+        config.recursive.reject_regex = Some(r.clone());
+    }
     if let Some(ref domains) = args.domains {
         config.recursive.domains = domains.split(',').map(String::from).collect();
     }
@@ -1446,39 +1499,62 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
 
     config.max_redirect = args.max_redirect;
 
-    config.timeout = args.timeout.and_then(safe_duration_f64);
-    config.connect_timeout = args.connect_timeout.and_then(safe_duration_f64);
-    config.read_timeout = args.read_timeout.and_then(safe_duration_f64);
-    config.dns_timeout = args.dns_timeout.and_then(safe_duration_f64);
+    if let Some(s) = args.timeout {
+        config.timeout = safe_duration_f64(s);
+    }
+    if let Some(s) = args.connect_timeout {
+        config.connect_timeout = safe_duration_f64(s);
+    }
+    if let Some(s) = args.read_timeout {
+        config.read_timeout = safe_duration_f64(s);
+    }
+    if let Some(s) = args.dns_timeout {
+        config.dns_timeout = safe_duration_f64(s);
+    }
     config.no_dns_cache = args.no_dns_cache;
 
     config.cookie.enabled = !args.no_cookies;
-    config.cookie.input_file = args.load_cookies.clone();
-    config.cookie.output_file = args.save_cookies.clone();
+    if args.load_cookies.is_some() {
+        config.cookie.input_file = args.load_cookies.clone();
+    }
+    if args.save_cookies.is_some() {
+        config.cookie.output_file = args.save_cookies.clone();
+    }
     config.cookie.keep_session_cookies = args.keep_session_cookies;
 
     #[cfg(feature = "hsts")]
     {
         config.hsts.enabled = !args.no_hsts;
-        config.hsts.file = args.hsts_file.clone();
+        if args.hsts_file.is_some() {
+            config.hsts.file = args.hsts_file.clone();
+        }
     }
 
     if args.use_proxy == Some(false) || args.no_proxy {
         config.proxy.use_proxy = false;
     }
-    // CLI args take precedence; fall back to environment variables (GNU wget
-    // retr.c:1475-1486 reads http_proxy/https_proxy/ftp_proxy env vars).
+    // Precedence (GNU wget semantics): CLI flag > wgetrc value > environment
+    // variable. The wgetrc loader may have set proxy_* from the `http_proxy`
+    // / `https_proxy` / `ftp_proxy` wgetrc commands; we preserve that value
+    // when neither a CLI flag nor an environment variable is present.
     config.proxy.http_proxy = args.http_proxy.clone()
+        .or(config.proxy.http_proxy.take())
         .or_else(|| std::env::var("http_proxy").ok())
         .or_else(|| std::env::var("HTTP_PROXY").ok());
     config.proxy.https_proxy = args.https_proxy.clone()
+        .or(config.proxy.https_proxy.take())
         .or_else(|| std::env::var("https_proxy").ok())
         .or_else(|| std::env::var("HTTPS_PROXY").ok());
     config.proxy.ftp_proxy = args.ftp_proxy.clone()
+        .or(config.proxy.ftp_proxy.take())
         .or_else(|| std::env::var("ftp_proxy").ok())
         .or_else(|| std::env::var("FTP_PROXY").ok());
-    config.proxy.proxy_user = args.proxy_user.clone();
-    config.proxy.proxy_password = args.proxy_password.clone();
+    if args.proxy_user.is_some() {
+        config.proxy.proxy_user = args.proxy_user.clone();
+    }
+    if args.proxy_password.is_some() {
+        config.proxy.proxy_password = args.proxy_password.clone();
+    }
 
     // Read the no_proxy environment variable (comma-separated list of hosts
     // to bypass proxy), matching GNU wget init.c:416-418.
@@ -1498,9 +1574,13 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
     config.protocol_directories = args.protocol_directories;
     config.no_directories = args.no_directories;
     config.force_directories = args.force_directories;
-    config.cut_dirs = args.cut_dirs.unwrap_or(0);
+    if let Some(c) = args.cut_dirs {
+        config.cut_dirs = c;
+    }
 
-    config.bind_address = args.bind_address.clone();
+    if args.bind_address.is_some() {
+        config.bind_address = args.bind_address.clone();
+    }
     config.force_ipv4 = args.inet4_only;
     config.force_ipv6 = args.inet6_only;
 
@@ -1529,14 +1609,22 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
     // WARC configuration
     if args.warc_file.is_some() || args.warc_cdx || args.warc_dedup || args.warc_compression || args.warc_digests {
         config.warc.enabled = true;
-        config.warc.filename = args.warc_file.clone();
-        config.warc.max_size = args.warc_maxsize.as_deref().map(parse_warc_maxsize).flatten();
+        if args.warc_file.is_some() {
+            config.warc.filename = args.warc_file.clone();
+        }
+        if args.warc_maxsize.is_some() {
+            config.warc.max_size = args.warc_maxsize.as_deref().map(parse_warc_maxsize).flatten();
+        }
         config.warc.cdx = args.warc_cdx;
         config.warc.keep_log = args.warc_keep_log;
         config.warc.compression = args.warc_compression;
         config.warc.digests = args.warc_digests;
-        config.warc.tempdir = args.warc_temp_dir.clone();
-        config.warc.user_headers = args.warc_header.clone();
+        if args.warc_temp_dir.is_some() {
+            config.warc.tempdir = args.warc_temp_dir.clone();
+        }
+        if !args.warc_header.is_empty() {
+            config.warc.user_headers = args.warc_header.clone();
+        }
         // warc_dedup enables CDX dedup
         if args.warc_dedup {
             config.warc.cdx = true;
@@ -1557,7 +1645,9 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
     if args.metalink || args.metalink_over_http || args.input_metalink.is_some() {
         config.metalink.enabled = true;
         config.metalink.over_http = args.metalink_over_http;
-        config.metalink.input_file = args.input_metalink.clone();
+        if args.input_metalink.is_some() {
+            config.metalink.input_file = args.input_metalink.clone();
+        }
     }
 
     config.progress.style = parse_progress_style_arg(&args.progress);
@@ -1590,7 +1680,9 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
     // Apply --trust-server-names
     config.trust_server_names = args.trust_server_names;
 
-    config.reject_log = args.reject_log.clone();
+    if args.reject_log.is_some() {
+        config.reject_log = args.reject_log.clone();
+    }
 }
 
 /// Prompt for password interactively from terminal.
