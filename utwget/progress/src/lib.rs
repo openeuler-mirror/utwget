@@ -63,3 +63,14 @@ pub fn format_duration(duration: Duration) -> String {
         format!("{}s", secs)
     }
 }
+
+pub fn create_progress_display(style: ProgressStyle, force_noscroll: bool) -> Box<dyn ProgressDisplay> {
+    match style {
+        ProgressStyle::Bar => Box::new(bar::BarProgress::new(force_noscroll)),
+        ProgressStyle::Dot { bytes_per_dot, dots_per_line, spacing } => {
+            Box::new(dot::DotProgress::new(bytes_per_dot, dots_per_line, spacing))
+        }
+        ProgressStyle::Verbose => Box::new(verbose::VerboseProgress::new()),
+        ProgressStyle::Silent => Box::new(silent::SilentProgress),
+    }
+}
