@@ -48,3 +48,73 @@ pub struct DotProgress {
     line_count: usize,
     finished: bool,
 }
+
+impl DotProgress {
+    /// Creates a new `DotProgress` instance with the specified configuration.
+    ///
+    /// # Arguments
+    ///
+    /// * `bytes_per_dot` - Number of bytes each dot represents. A dot is printed
+    ///   for every `bytes_per_dot` bytes downloaded.
+    /// * `dots_per_line` - Number of dots to print before starting a new line.
+    ///   After this many dots, a newline is printed and the current total is shown.
+    /// * `spacing` - Insert a space every N dots for improved readability.
+    ///   Set to 0 to disable spacing.
+    ///
+    /// # Returns
+    ///
+    /// A new `DotProgress` instance configured with the specified parameters.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use utwget_progress::DotProgress;
+    /// let progress = DotProgress::new(1024, 50, 10);
+    /// ```
+    pub fn new(bytes_per_dot: usize, dots_per_line: usize, spacing: usize) -> Self {
+        DotProgress {
+            bytes_per_dot,
+            dots_per_line,
+            spacing,
+            current_bytes: 0,
+            current_dots: 0,
+            total_downloaded: 0,
+            line_count: 0,
+            finished: false,
+        }
+    }
+
+    /// Emits a single dot to the progress display.
+    ///
+    /// This method handles the actual printing of a dot character to stderr,
+    /// including spacing between dots and line wrapping when the configured
+    /// number of dots per line is reached.
+    ///
+    /// When a line wraps, the current total downloaded size is printed at
+    /// the start of the new line.
+    fn emit_dot(&mut self) {
+        if self.finished {
+            return;
+        }
+
+        self.current_dots += 1;
+        self.current_bytes = 0;
+
+        let mut stderr = io::stderr();
+
+        if self.spacing > 0 && (self.current_dots % self.spacing == 0) && self.current_dots < self.dots_per_line {
+            let _ = stderr.write_all(b" ");
+        }
+
+        let _ = stderr.write_all(b".");
+
+        if self.current_dots >= self.dots_per_line {
+            self.current_dots = 0;
+            self.line_count += 1;
+            let _ = stderr.write_all(b"\n");
+            let _ = stderr.write_all(format!("  {:>12} ", format_size(self.total_downloaded)).as_bytes());
+        }
+
+        let _ = stderr.flush();
+    }
+}
