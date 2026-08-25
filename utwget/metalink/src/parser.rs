@@ -67,3 +67,29 @@ pub struct MetalinkPiece {
     /// The hash algorithm used.
     pub hash_type: ChecksumType,
 }
+
+/// Error types for Metalink operations.
+///
+/// These errors can occur during parsing, downloading, or verification
+/// of Metalink documents and their associated files.
+#[derive(Debug, thiserror::Error)]
+pub enum MetalinkError {
+    /// Error parsing the Metalink document structure.
+    #[error("metalink parse error: {0}")]
+    Parse(String),
+    /// Error parsing the XML structure.
+    #[error("metalink XML error: {0}")]
+    Xml(#[from] quick_xml::Error),
+    /// I/O error during file operations.
+    #[error("metalink I/O error: {0}")]
+    Io(#[from] std::io::Error),
+    /// Error during checksum computation or verification.
+    #[error("metalink checksum error: {0}")]
+    Checksum(String),
+    /// Error during file download.
+    #[error("metalink download error: {0}")]
+    Download(String),
+    /// No download resources available for a file.
+    #[error("no resources available for download")]
+    NoResources,
+}
