@@ -54,3 +54,15 @@ impl ChecksumType {
         }
     }
 }
+
+/// Represents a file checksum with its hash type and expected value.
+///
+/// This struct is used to store checksum information parsed from a Metalink
+/// document and provides methods to verify downloaded files.
+#[derive(Debug, Clone)]
+pub struct FileChecksum {
+    /// The hash algorithm used for this checksum.
+    pub hash_type: ChecksumType,
+    /// The expected hash value as a lowercase hexadecimal string.
+    pub expected: String,
+}
