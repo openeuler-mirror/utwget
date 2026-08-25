@@ -2555,7 +2555,12 @@ impl Retriever {
         // --force-directories (-x) is active; otherwise it saves flat with
         // just the filename. --no-host-directories (-nH) suppresses the
         // leading host directory.
-        let create_dirs = self.config.recursive.enabled || self.config.force_directories;
+        //
+        // --no-directories (-nd) forces a flat layout (just the filename)
+        // and takes precedence over both -r and -x, matching GNU wget's
+        // `opt.ftp_dirstruct` / dirstruct handling (init.c, utils.c).
+        let create_dirs = (self.config.recursive.enabled || self.config.force_directories)
+            && !self.config.no_directories;
 
         let file_name = if url.file.is_empty() { "index.html".to_string() } else { url.file.clone() };
         let safe_file = ut_core::utils::safe_filename(&file_name);
