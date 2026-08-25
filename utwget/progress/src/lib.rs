@@ -24,3 +24,19 @@ pub enum FinishStatus {
     NotModified,
     Redirected(String),
 }
+
+pub fn format_size(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = 1024 * KB;
+    const GB: u64 = 1024 * MB;
+
+    if bytes >= GB {
+        format!("{:.1}G", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.1}M", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{}K", bytes / KB)
+    } else {
+        format!("{}B", bytes)
+    }
+}
