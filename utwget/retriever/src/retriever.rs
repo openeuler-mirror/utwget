@@ -2895,7 +2895,7 @@ impl Retriever {
         // Save cookies
         if let Some(ref cookie_file) = self.config.cookie.output_file {
             match fs::OpenOptions::new().create(true).write(true).truncate(true).open(cookie_file) {
-                Ok(mut file) => {
+                Ok(file) => {
                     // Restrict permissions to 0600 (owner-only) to protect
                     // session auth tokens, matching GNU wget behavior.
                     #[cfg(unix)]
