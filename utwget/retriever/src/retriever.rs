@@ -2903,7 +2903,7 @@ impl Retriever {
                         use std::os::unix::fs::PermissionsExt;
                         let _ = file.set_permissions(fs::Permissions::from_mode(0o600));
                     }
-                    if let Err(e) = self.cookie_jar.save_to_writer(file) {
+                    if let Err(e) = self.cookie_jar.save_to_writer(file, self.config.cookie.keep_session_cookies) {
                         warn!("failed to save cookies to {}: {}", cookie_file.display(), e);
                     }
                 }
