@@ -53,3 +53,17 @@ pub struct MetalinkResource {
     /// Geographic location code (e.g., "CN", "US", "DE").
     pub location: Option<String>,
 }
+
+/// Represents a piece (chunk) hash for partial file verification.
+///
+/// Metalink documents can specify hashes for individual pieces of a file,
+/// allowing verification during download or for partial recovery.
+#[derive(Debug, Clone)]
+pub struct MetalinkPiece {
+    /// Length of this piece in bytes.
+    pub length: u64,
+    /// Expected hash value as a hexadecimal string.
+    pub hash: String,
+    /// The hash algorithm used.
+    pub hash_type: ChecksumType,
+}
