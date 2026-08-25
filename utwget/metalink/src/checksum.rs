@@ -23,3 +23,34 @@ pub enum ChecksumType {
     /// SHA-256 hash algorithm (256-bit).
     Sha256,
 }
+
+impl ChecksumType {
+    /// Parses a checksum type from a string representation.
+    ///
+    /// Supports common variations of hash algorithm names, case-insensitively.
+    ///
+    /// # Arguments
+    ///
+    /// * `s` - The string representation of the hash algorithm.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Some(ChecksumType)` if the string is recognized, otherwise `None`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ut_metalink::checksum::ChecksumType;
+    /// assert_eq!(ChecksumType::from_str("md5"), Some(ChecksumType::Md5));
+    /// assert_eq!(ChecksumType::from_str("SHA-256"), Some(ChecksumType::Sha256));
+    /// assert_eq!(ChecksumType::from_str("unknown"), None);
+    /// ```
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "md5" => Some(ChecksumType::Md5),
+            "sha1" | "sha-1" => Some(ChecksumType::Sha1),
+            "sha256" | "sha-256" => Some(ChecksumType::Sha256),
+            _ => None,
+        }
+    }
+}
