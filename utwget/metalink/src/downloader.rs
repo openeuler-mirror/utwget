@@ -36,3 +36,33 @@ pub struct DownloadResult {
     /// or no checksums were available.
     pub checksum_verified: bool,
 }
+
+/// Metalink file downloader with configurable mirror selection.
+///
+/// Handles downloading files from Metalink resources, selecting the best
+/// mirror based on location, protocol, and preference settings.
+///
+/// # Example
+///
+/// ```no_run
+/// use ut_metalink::downloader::MetalinkDownloader;
+/// use ut_metalink::parser::MetalinkError;
+/// use std::path::Path;
+///
+/// fn my_download(url: &str, path: &Path) -> Result<(), MetalinkError> {
+///     // Implementation of actual download
+///     Ok(())
+/// }
+///
+/// let downloader = MetalinkDownloader::new(my_download)
+///     .with_location("CN")
+///     .with_protocols(vec!["HTTP".into(), "HTTPS".into()]);
+/// ```
+pub struct MetalinkDownloader {
+    /// The function used to perform actual downloads.
+    download_fn: DownloadFn,
+    /// Preferred geographic location for mirror selection.
+    preferred_location: Option<String>,
+    /// List of allowed protocols for downloads.
+    allowed_protocols: Vec<String>,
+}
