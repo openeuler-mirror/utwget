@@ -261,17 +261,31 @@ pub fn build_request(
     // Always add Host header for HTTP/1.1
     req.header(crate::headers::HOST, host);
 
-    if method == HttpMethod::Get || method == HttpMethod::Head {
-        req.header(crate::headers::ACCEPT, "*/*");
-    }
+    // GNU wget (http.c:1931) sends `Accept: */*` unconditionally for all
+    // HTTP methods, not just GET/HEAD.
+    req.header(crate::headers::ACCEPT, "*/*");
 
     #[cfg(feature = "compression")]
     {
-        // Do not advertise Accept-Encoding when compression is explicitly
-        // disabled (--no-compression), so the server sends the raw body.
-        if config.compression != ut_core::types::CompressionMode::None {
-            req.header(crate::headers::ACCEPT_ENCODING, "gzip, deflate");
+        // Match GNU wget's Accept-Encoding behavior (http.c:1933-1937):
+        //  - compression enabled  → "gzip" (never advertises deflate)
+        //  - compression disabled → "identity"
+        // The "deflate" token was previously advertised, causing servers to
+        // send deflate-encoded bodies that differ from original wget's gzip
+        // responses and break byte-level compatibility.
+        match config.compression {
+            ut_core::types::CompressionMode::Auto
+            | ut_core::types::CompressionMode::Gzip => {
+                req.header(crate::headers::ACCEPT_ENCODING, "gzip");
+            }
+            ut_core::types::CompressionMode::None => {
+                req.header(crate::headers::ACCEPT_ENCODING, "identity");
+            }
         }
+    }
+    #[cfg(not(feature = "compression"))]
+    {
+        req.header(crate::headers::ACCEPT_ENCODING, "identity");
     }
 
     if let Some(cookie_str) = cookies {

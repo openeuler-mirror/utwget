@@ -245,7 +245,12 @@ impl Default for Config {
             filename_restrictions: FilenameRestrictions::default(),
             iri: IriConfig::default(),
             #[cfg(feature = "compression")]
-            compression: CompressionMode::Auto,
+            // Match GNU wget default (init.c:460): compression none. wget
+            // only advertises `Accept-Encoding: gzip` when the user explicitly
+            // passes --compression auto/gzip. Defaulting to Auto here caused
+            // utwget to advertise gzip by default, diverging from original
+            // wget which sends `Accept-Encoding: identity` by default.
+            compression: CompressionMode::None,
             base_url: None,
             restrict_file_names: None,
 
