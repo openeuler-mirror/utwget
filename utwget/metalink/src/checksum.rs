@@ -66,3 +66,132 @@ pub struct FileChecksum {
     /// The expected hash value as a lowercase hexadecimal string.
     pub expected: String,
 }
+
+impl FileChecksum {
+    /// Verifies a file against the expected checksum.
+    ///
+    /// Computes the hash of the file at the given path and compares it
+    /// with the expected value.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to the file to verify.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(true)` - The file hash matches the expected checksum.
+    /// * `Ok(false)` - The file hash does not match.
+    /// * `Err(MetalinkError)` - An I/O error occurred while reading the file.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be opened or read.
+    pub fn verify(&self, path: &Path) -> Result<bool, MetalinkError> {
+        let file = std::fs::File::open(path).map_err(MetalinkError::Io)?;
+        let mut reader = std::io::BufReader::new(file);
+        let actual = Self::compute(self.hash_type.clone(), &mut reader)?;
+        Ok(actual.eq_ignore_ascii_case(&self.expected))
+    }
+
+    /// Computes the MD5 hash of data from a reader.
+    ///
+    /// Reads all data from the reader and computes its MD5 hash.
+    ///
+    /// # Arguments
+    ///
+    /// * `reader` - A reader providing the data to hash.
+    ///
+    /// # Returns
+    ///
+    /// The MD5 hash as a lowercase hexadecimal string.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if reading from the reader fails.
+    pub fn compute_md5(mut reader: impl Read) -> Result<String, MetalinkError> {
+        let mut hasher = md5::Md5::new();
+        let mut buf = [0u8; 8192];
+        loop {
+            let n = reader.read(&mut buf).map_err(MetalinkError::Io)?;
+            if n == 0 { break; }
+            hasher.update(&buf[..n]);
+        }
+        Ok(hasher.finalize().iter().map(|b| format!("{:02x}", b)).collect())
+    }
+
+    /// Computes the SHA-1 hash of data from a reader.
+    ///
+    /// Reads all data from the reader and computes its SHA-1 hash.
+    ///
+    /// # Arguments
+    ///
+    /// * `reader` - A reader providing the data to hash.
+    ///
+    /// # Returns
+    ///
+    /// The SHA-1 hash as a lowercase hexadecimal string.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if reading from the reader fails.
+    pub fn compute_sha1(mut reader: impl Read) -> Result<String, MetalinkError> {
+        let mut hasher = sha1::Sha1::new();
+        let mut buf = [0u8; 8192];
+        loop {
+            let n = reader.read(&mut buf).map_err(MetalinkError::Io)?;
+            if n == 0 { break; }
+            hasher.update(&buf[..n]);
+        }
+        Ok(hasher.finalize().iter().map(|b| format!("{:02x}", b)).collect())
+    }
+
+    /// Computes the SHA-256 hash of data from a reader.
+    ///
+    /// Reads all data from the reader and computes its SHA-256 hash.
+    ///
+    /// # Arguments
+    ///
+    /// * `reader` - A reader providing the data to hash.
+    ///
+    /// # Returns
+    ///
+    /// The SHA-256 hash as a lowercase hexadecimal string.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if reading from the reader fails.
+    pub fn compute_sha256(mut reader: impl Read) -> Result<String, MetalinkError> {
+        let mut hasher = sha2::Sha256::new();
+        let mut buf = [0u8; 8192];
+        loop {
+            let n = reader.read(&mut buf).map_err(MetalinkError::Io)?;
+            if n == 0 { break; }
+            hasher.update(&buf[..n]);
+        }
+        Ok(hasher.finalize().iter().map(|b| format!("{:02x}", b)).collect())
+    }
+
+    /// Computes a hash of data from a reader using the specified algorithm.
+    ///
+    /// Dispatches to the appropriate hash function based on the checksum type.
+    ///
+    /// # Arguments
+    ///
+    /// * `hash_type` - The hash algorithm to use.
+    /// * `reader` - A reader providing the data to hash.
+    ///
+    /// # Returns
+    ///
+    /// The computed hash as a lowercase hexadecimal string.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if reading from the reader fails.
+    pub fn compute(hash_type: ChecksumType, reader: impl Read) -> Result<String, MetalinkError> {
+        match hash_type {
+            ChecksumType::Md5 => Self::compute_md5(reader),
+            ChecksumType::Sha1 => Self::compute_sha1(reader),
+            ChecksumType::Sha256 => Self::compute_sha256(reader),
+        }
+    }
+}
