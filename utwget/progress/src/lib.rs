@@ -40,3 +40,15 @@ pub fn format_size(bytes: u64) -> String {
         format!("{}B", bytes)
     }
 }
+
+pub fn format_speed(bytes_per_sec: f64) -> String {
+    if bytes_per_sec >= 1024.0 * 1024.0 * 1024.0 {
+        format!("{:.1}G/s", bytes_per_sec / (1024.0 * 1024.0 * 1024.0))
+    } else if bytes_per_sec >= 1024.0 * 1024.0 {
+        format!("{:.1}M/s", bytes_per_sec / (1024.0 * 1024.0))
+    } else if bytes_per_sec >= 1024.0 {
+        format!("{:.0}K/s", bytes_per_sec / 1024.0)
+    } else {
+        format!("{:.0}B/s", bytes_per_sec)
+    }
+}
