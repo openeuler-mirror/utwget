@@ -118,3 +118,124 @@ impl DotProgress {
         let _ = stderr.flush();
     }
 }
+
+impl ProgressDisplay for DotProgress {
+    /// Initializes the dot progress display for a new download.
+    ///
+    /// Prints the initial line with zero bytes and starts the dot sequence.
+    ///
+    /// # Arguments
+    ///
+    /// * `_url` - The URL being downloaded (not displayed in dot mode).
+    /// * `_total_size` - The total expected file size (not used in dot mode).
+    /// * `_resume_from` - Resume offset if continuing a partial download (not used).
+    fn begin(&mut self, _url: &str, _total_size: Option<u64>, _resume_from: Option<u64>) {
+        self.current_bytes = 0;
+        self.current_dots = 0;
+        self.total_downloaded = 0;
+        self.line_count = 0;
+        self.finished = false;
+
+        let mut stderr = io::stderr();
+        let _ = stderr.write_all(b"\n");
+        let _ = stderr.write_all(format!("       0 ..........  ").as_bytes());
+        let _ = stderr.flush();
+    }
+
+    /// Updates the progress display based on bytes downloaded.
+    ///
+    /// Calculates how many new dots should be printed based on the increase
+    /// in downloaded bytes since the last update, and emits them.
+    ///
+    /// # Arguments
+    ///
+    /// * `downloaded` - Total bytes downloaded so far.
+    /// * `_elapsed` - Time elapsed since download started (not used in dot mode).
+    fn update(&mut self, downloaded: u64, _elapsed: Duration) {
+        if self.finished {
+            return;
+        }
+
+        let delta = downloaded.saturating_sub(self.total_downloaded);
+        self.total_downloaded = downloaded;
+        self.current_bytes += delta as usize;
+
+        while self.current_bytes >= self.bytes_per_dot {
+            self.current_bytes -= self.bytes_per_dot;
+            self.emit_dot();
+        }
+    }
+
+    /// Finalizes the dot progress display with the given status.
+    ///
+    /// Prints a final newline if needed and displays the completion status,
+    /// including the total downloaded size for successful downloads or
+    /// an error message for failures.
+    ///
+    /// # Arguments
+    ///
+    /// * `status` - The final status of the download operation.
+    fn finish(&mut self, status: FinishStatus) {
+        self.finished = true;
+
+        let mut stderr = io::stderr();
+
+        if self.current_dots > 0 {
+            let _ = stderr.write_all(b"\n");
+        }
+
+        match status {
+            FinishStatus::Success { downloaded, .. } => {
+                let _ = stderr.write_all(format!("  {:>12} saved [{}]\n", format_size(downloaded), self.total_downloaded).as_bytes());
+            }
+            FinishStatus::Error(ref err) => {
+                let _ = stderr.write_all(format!("ERROR: {}\n", err).as_bytes());
+            }
+            FinishStatus::AlreadyExists => {
+                let _ = stderr.write_all(b"File already exists; not retrieving.\n");
+            }
+            FinishStatus::NotModified => {
+                let _ = stderr.write_all(b"The file is already fully retrieved; nothing to do.\n");
+            }
+            FinishStatus::Redirected(ref new_url) => {
+                let _ = stderr.write_all(format!("Redirected to: {}\n", new_url).as_bytes());
+            }
+        }
+
+        let _ = stderr.flush();
+    }
+
+    /// Handles URL redirection (no-op for dot mode).
+    ///
+    /// The dot progress display does not show URL information, so this
+    /// method does nothing.
+    ///
+    /// # Arguments
+    ///
+    /// * `_new_url` - The new URL after redirection.
+    fn set_redirected(&mut self, _new_url: &str) {}
+
+    /// Resets the progress display to its initial state.
+    ///
+    /// Clears all counters and resets the finished flag, preparing the
+    /// display for a new download operation.
+    fn reset(&mut self) {
+        self.current_bytes = 0;
+        self.current_dots = 0;
+        self.total_downloaded = 0;
+        self.line_count = 0;
+        self.finished = false;
+    }
+
+    /// Returns whether this display is interactive.
+    ///
+    /// Dot progress is not considered interactive as it doesn't require
+    /// terminal cursor control or line updates.
+    ///
+    /// # Returns
+    ///
+    /// Always returns `false` for dot progress display.
+    fn is_interactive(&self) -> bool {
+        false
+    }
+}
