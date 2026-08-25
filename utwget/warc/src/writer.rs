@@ -439,3 +439,375 @@ impl WarcWriterImpl {
         }
     }
 }
+
+impl WarcWriter for WarcWriterImpl {
+    /// Writes a WARC request record.
+    ///
+    /// Records an HTTP request with the given method, URL, headers, and body.
+    /// The request is formatted as a standard HTTP request line followed by
+    /// headers and body.
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - The request URL
+    /// * `method` - The HTTP method (GET, POST, etc.)
+    /// * `headers` - The HTTP request headers as bytes
+    /// * `body` - The request body bytes
+    /// * `date` - The timestamp for the record
+    ///
+    /// # Returns
+    ///
+    /// A `Result` indicating success or an error.
+    ///
+    /// # Errors
+    ///
+    /// Returns `WarcError::Io` if writing fails.
+    fn write_request(
+        &mut self,
+        url: &str,
+        method: &str,
+        headers: &[u8],
+        body: &[u8],
+        date: chrono::DateTime<Utc>,
+    ) -> Result<()> {
+        let crlf: &[u8] = b"\r\n";
+        let mut payload = Vec::new();
+        payload.extend_from_slice(method.as_bytes());
+        payload.extend_from_slice(b" ");
+        payload.extend_from_slice(url.as_bytes());
+        payload.extend_from_slice(b" HTTP/1.1");
+        payload.extend_from_slice(crlf);
+        if !headers.is_empty() {
+            payload.extend_from_slice(headers);
+        }
+        payload.extend_from_slice(crlf);
+        payload.extend_from_slice(body);
+
+        let content = self.compress_payload(&payload)?;
+        let digest = compute_sha1(&payload);
+        let header = self.make_header(
+            WarcRecordType::Request,
+            url,
+            default_content_type(self.gzip_enabled),
+            content.len() as u64,
+            format_date(date),
+        );
+
+        self.write_record(&header, &content)?;
+
+        if self.cdx_enabled {
+            self.add_cdx_entry(&header, payload.len(), &digest);
+        }
+
+        Ok(())
+    }
+
+    /// Writes a WARC response record.
+    ///
+    /// Records an HTTP response with the given status code, headers, and body.
+    /// The response is formatted with both the request and response information.
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - The request URL
+    /// * `status_code` - The HTTP response status code
+    /// * `headers` - The HTTP headers as bytes
+    /// * `body` - The response body bytes
+    /// * `content_type` - The MIME type of the content
+    /// * `date` - The timestamp for the record
+    ///
+    /// # Returns
+    ///
+    /// A `Result` indicating success or an error.
+    ///
+    /// # Errors
+    ///
+    /// Returns `WarcError::Io` if writing fails.
+    fn write_response(
+        &mut self,
+        url: &str,
+        status_code: u16,
+        headers: &[u8],
+        body: &[u8],
+        content_type: &str,
+        date: chrono::DateTime<Utc>,
+    ) -> Result<()> {
+        let payload = Self::build_response_payload(url, status_code, headers, body);
+        let content = self.compress_payload(&payload)?;
+        let digest = compute_sha1(&payload);
+        let header = self.make_header(
+            WarcRecordType::Response,
+            url,
+            content_type,
+            content.len() as u64,
+            format_date(date),
+        );
+
+        self.write_record(&header, &content)?;
+
+        if self.cdx_enabled {
+            self.add_cdx_entry(&header, payload.len(), &digest);
+        }
+
+        Ok(())
+    }
+
+    /// Writes a WARC resource record.
+    ///
+    /// Records arbitrary data as a resource with the given content type.
+    /// This is used for storing downloaded content without HTTP metadata.
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - The URL where the resource was retrieved from
+    /// * `content_type` - The MIME type of the content
+    /// * `body` - The content bytes
+    /// * `date` - The timestamp for the record
+    ///
+    /// # Returns
+    ///
+    /// A `Result` indicating success or an error.
+    ///
+    /// # Errors
+    ///
+    /// Returns `WarcError::Io` if writing fails.
+    fn write_resource(
+        &mut self,
+        url: &str,
+        content_type: &str,
+        body: &[u8],
+        date: chrono::DateTime<Utc>,
+    ) -> Result<()> {
+        let content = self.compress_payload(body)?;
+        let digest = compute_sha1(body);
+        let header = self.make_header(
+            WarcRecordType::Resource,
+            url,
+            content_type,
+            content.len() as u64,
+            format_date(date),
+        );
+
+        self.write_record(&header, &content)?;
+
+        if self.cdx_enabled {
+            self.add_cdx_entry(&header, body.len(), &digest);
+        }
+
+        Ok(())
+    }
+
+    /// Writes a WARC metadata record.
+    ///
+    /// Records additional metadata about other records, with optional
+    /// concurrent-to references to link to related records.
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - The URL the metadata relates to
+    /// * `metadata` - The metadata content as a string
+    /// * `concurrent_to` - List of record IDs this metadata relates to
+    /// * `date` - The timestamp for the record
+    ///
+    /// # Returns
+    ///
+    /// A `Result` indicating success or an error.
+    ///
+    /// # Errors
+    ///
+    /// Returns `WarcError::Io` if writing fails.
+    fn write_metadata(
+        &mut self,
+        url: &str,
+        metadata: &str,
+        concurrent_to: &[String],
+        date: chrono::DateTime<Utc>,
+    ) -> Result<()> {
+        let meta_bytes = metadata.as_bytes();
+        let content = self.compress_payload(meta_bytes)?;
+        let mut header = self.make_header(
+            WarcRecordType::Metadata,
+            url,
+            "application/warc-fields",
+            content.len() as u64,
+            format_date(date),
+        );
+        header.concurrent_to = concurrent_to.to_vec();
+
+        self.write_record(&header, &content)?;
+
+        if self.cdx_enabled {
+            self.add_cdx_entry(&header, meta_bytes.len(), "");
+        }
+
+        Ok(())
+    }
+
+    /// Creates a temporary file for accumulating large content.
+    ///
+    /// Creates a file in the configured temp directory with a unique name
+    /// based on a UUID. The caller can write to this file and later
+    /// finalize it into a WARC record.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing a tuple of the file handle and its path.
+    ///
+    /// # Errors
+    ///
+    /// Returns `WarcError::Io` if the file cannot be created.
+    fn create_temp_file(&mut self) -> Result<(Box<dyn Write + Send>, PathBuf)> {
+        let name = format!("warc-tmp-{}.tmp", generate_uuid_v4());
+        let path = self.tempdir.join(name);
+        let file = File::create(&path).map_err(WarcError::Io)?;
+        Ok((Box::new(file), path))
+    }
+
+    /// Finalizes a temporary file into a WARC resource record.
+    ///
+    /// Reads the content from the temporary file, optionally computes a digest,
+    /// writes it as a resource record, and deletes the temporary file.
+    ///
+    /// # Arguments
+    ///
+    /// * `temp_path` - Path to the temporary file
+    /// * `url` - The URL the content was retrieved from
+    /// * `content_type` - The MIME type of the content
+    /// * `date` - The timestamp for the record
+    /// * `digest_enabled` - Whether to compute a digest (overrides writer setting)
+    ///
+    /// # Returns
+    ///
+    /// A `Result` indicating success or an error.
+    ///
+    /// # Errors
+    ///
+    /// Returns `WarcError::Io` if reading, writing, or deleting fails.
+    fn finalize_temp_file(
+        &mut self,
+        temp_path: &Path,
+        url: &str,
+        content_type: &str,
+        date: chrono::DateTime<Utc>,
+        digest_enabled: bool,
+    ) -> Result<()> {
+        let data = fs::read(temp_path).map_err(WarcError::Io)?;
+
+        let digest = if digest_enabled || self.digest_enabled {
+            compute_sha1(&data)
+        } else {
+            String::new()
+        };
+
+        let content = self.compress_payload(&data)?;
+        let header = self.make_header(
+            WarcRecordType::Resource,
+            url,
+            content_type,
+            content.len() as u64,
+            format_date(date),
+        );
+
+        self.write_record(&header, &content)?;
+
+        if self.cdx_enabled {
+            self.add_cdx_entry(&header, data.len(), &digest);
+        }
+
+        let _ = fs::remove_file(temp_path);
+        Ok(())
+    }
+
+    /// Generates a new unique record ID.
+    ///
+    /// # Returns
+    ///
+    /// A URN UUID string in the format `<urn:uuid:...>`.
+    fn uuid(&self) -> String {
+        format_record_id()
+    }
+
+    /// Generates a timestamp for the current time.
+    ///
+    /// # Returns
+    ///
+    /// An ISO 8601 formatted timestamp string.
+    fn timestamp(&self) -> String {
+        format_date(Utc::now())
+    }
+
+    /// Opens a new WARC file with the given prefix.
+    ///
+    /// Creates a new WARC file with the specified name prefix, resetting
+    /// the file counter and writing a new warcinfo record.
+    ///
+    /// # Arguments
+    ///
+    /// * `prefix` - The filename prefix (empty string uses "wget")
+    ///
+    /// # Returns
+    ///
+    /// A `Result` indicating success or an error.
+    ///
+    /// # Errors
+    ///
+    /// Returns `WarcError::Io` if the file cannot be created.
+    fn open(&mut self, prefix: &str) -> Result<()> {
+        let stem = if prefix.is_empty() { "wget" } else { prefix };
+        let ext = if self.gzip_enabled { ".warc.gz" } else { ".warc" };
+        let name = format!("{}{}", stem, ext);
+        let path = self
+            .base_path
+            .parent()
+            .map(|p| p.join(&name))
+            .unwrap_or_else(|| PathBuf::from(&name));
+
+        self.filename = path.to_string_lossy().to_string();
+        self.file_counter = 1;
+        self.current_size = 0;
+
+        let raw = File::create(&path).map_err(WarcError::Io)?;
+        let boxed: Box<dyn Write + Send> = if self.gzip_enabled {
+            Box::new(GzEncoder::new(raw, Compression::default()))
+        } else {
+            Box::new(raw)
+        };
+
+        self.file = Some(boxed);
+        self.cdx_entries.clear();
+        self.write_warcinfo()?;
+
+        Ok(())
+    }
+
+    /// Closes the current WARC file and writes the CDX index if enabled.
+    ///
+    /// Flushes and closes the current file handle. If CDX indexing is enabled
+    /// and there are accumulated entries, writes them to a `.cdx` file.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` indicating success or an error.
+    ///
+    /// # Errors
+    ///
+    /// Returns `WarcError::Io` if closing or writing the CDX file fails.
+    fn close(&mut self) -> Result<()> {
+        self.file = None;
+
+        if self.cdx_enabled && !self.cdx_entries.is_empty() {
+            let cdx_name = format!("{}.cdx", self.filename);
+            let mut cdx_file = File::create(&cdx_name).map_err(WarcError::Io)?;
+            let newline: &[u8] = b"\n";
+            for entry in &self.cdx_entries {
+                cdx_file
+                    .write_all(entry.as_bytes())
+                    .map_err(WarcError::Io)?;
+                cdx_file.write_all(newline).map_err(WarcError::Io)?;
+            }
+            self.cdx_entries.clear();
+        }
+
+        Ok(())
+    }
+}
