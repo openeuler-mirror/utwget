@@ -15,3 +15,12 @@ pub trait ProgressDisplay: Send {
     fn reset(&mut self);
     fn is_interactive(&self) -> bool;
 }
+
+#[derive(Debug)]
+pub enum FinishStatus {
+    Success { downloaded: u64, elapsed: Duration },
+    Error(String),
+    AlreadyExists,
+    NotModified,
+    Redirected(String),
+}
