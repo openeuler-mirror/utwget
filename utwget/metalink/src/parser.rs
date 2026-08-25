@@ -352,3 +352,42 @@ impl MetalinkParser {
         Ok(files)
     }
 }
+
+/// Reads text content from an XML element.
+///
+/// Reads events until an end tag or empty tag is encountered,
+/// concatenating all text content.
+///
+/// # Arguments
+///
+/// * `reader` - The XML reader.
+/// * `buf` - Buffer for event reading.
+///
+/// # Returns
+///
+/// The trimmed text content of the element.
+///
+/// # Errors
+///
+/// Returns an error if XML parsing fails.
+fn read_text<R: BufRead>(
+    reader: &mut Reader<R>,
+    buf: &mut Vec<u8>,
+) -> Result<String, MetalinkError> {
+    let mut text = String::new();
+    loop {
+        let event = reader.read_event_into(buf)?;
+        match event {
+            Event::Text(e) => {
+                if let Ok(decoded) = e.unescape() {
+                    text.push_str(&decoded);
+                }
+            }
+            Event::End(_) | Event::Empty(_) => break,
+            Event::Eof => break,
+            _ => {}
+        }
+        buf.clear();
+    }
+    Ok(text.trim().to_string())
+}
