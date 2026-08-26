@@ -480,3 +480,48 @@ fn print_wget_help() {
 
     println!("{}", t("utwget.help_email"));
 }
+
+/// Daemonize the process by forking and creating a new session.
+///
+/// Returns `Ok(true)` in the parent process (should exit),
+/// `Ok(false)` in the child process (should continue), or `Err` on failure.
+///
+/// This follows the classic Unix double-fork pattern:
+/// 1. Fork first time - parent exits, child continues
+/// 2. Call setsid() to create new session
+/// 3. Fork second time - first child exits, grandchild continues
+/// 4. Redirect stdin/stdout/stderr to /dev/null
+fn daemonize() -> Result<bool, Box<dyn std::error::Error>> {
+    // First fork
+    let pid = unsafe { libc::fork() };
+    if pid < 0 {
+        return Err("fork failed".into());
+    }
+    if pid > 0 {
+        // Parent process - exit
+        return Ok(true);
+    }
+
+    // Child process - create new session
+    let sid = unsafe { libc::setsid() };
+    if sid < 0 {
+        return Err("setsid failed".into());
+    }
+
+    // Second fork (prevent the daemon from acquiring a controlling terminal)
+    let pid = unsafe { libc::fork() };
+    if pid < 0 {
+        return Err("second fork failed".into());
+    }
+    if pid > 0 {
+        // First child - exit
+        unsafe { libc::_exit(0); }
+    }
+
+    // Grandchild (daemon) process
+    // Note: stdout/stderr are NOT redirected to /dev/null here.
+    // The caller should handle output redirection if needed.
+    // This allows error messages to be visible for debugging.
+
+    Ok(false)
+}
