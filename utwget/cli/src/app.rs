@@ -822,3 +822,334 @@ impl App {
         }
     }
 }
+
+/// Build a fully-resolved `ut_core::Config` from the parsed command-line arguments.
+///
+/// Maps every CLI flag, option, and sub-option to the corresponding field on the
+/// configuration object. This includes HTTP, FTP, TLS, proxy, recursive, WARC,
+/// Metalink, progress, and miscellaneous settings.
+///
+/// # Arguments
+/// * `args` — The parsed command-line arguments.
+///
+/// # Returns
+/// A `ut_core::Config` populated with all user-specified options and defaults.
+pub fn build_config(args: &Args) -> ut_core::Config {
+    let mut config = ut_core::Config::default();
+
+    if args.quiet {
+        config.quiet = true;
+        config.verbose = 0;
+    } else if args.verbose {
+        config.verbose = 1;
+    } else if args.no_verbose {
+        config.verbose = 0;
+    }
+
+    config.debug = args.debug;
+    config.server_response = args.server_response;
+    config.background = args.background;
+    config.tries = args.tries;
+    config.retry_connrefused = args.retry_connrefused;
+    config.retry_on_host_error = args.retry_on_host_error;
+    config.retry_on_http_error = args.retry_on_http_error.clone();
+
+    config.output_document = args.output_document.clone();
+    config.input_filename = args.input_file.clone();
+    config.force_html = args.force_html;
+    config.dir_prefix = args.directory_prefix.clone();
+    config.noclobber = args.no_clobber;
+    config.unlink = args.unlink;
+    config.backups = args.backups;
+    config.continue_download = args.continue_download;
+    config.start_position = args.start_pos;
+    config.timestamping = args.timestamping;
+
+    if args.no_if_modified_since {
+        config.if_modified_since = false;
+    }
+    if args.no_use_server_timestamps {
+        config.use_server_timestamps = false;
+    }
+
+    config.quota = args.quota.as_ref().and_then(|s| ut_core::utils::parse_size_string(s));
+    config.limit_rate = args.limit_rate.as_ref().and_then(|s| ut_core::utils::parse_size_string(s));
+
+    config.wait = args.wait.map(Duration::from_secs_f64);
+    config.wait_retry = args.wait_retry.map(Duration::from_secs_f64);
+    config.random_wait = args.random_wait;
+    config.delete_after = args.delete_after;
+    config.content_disposition = args.content_disposition;
+    config.auth_without_challenge = args.auth_no_challenge;
+    config.concurrent_downloads = args.concurrency;
+
+    if args.no_netrc {
+        config.use_netrc = false;
+    }
+
+    config.http.user = args.http_user.clone().or(args.user.clone());
+    config.http.password = args.http_password.clone().or(args.password.clone());
+
+    // Handle --ask-password: prompt for password interactively
+    if args.ask_password && config.http.password.is_none() {
+        if let Some(ref user) = config.http.user {
+            config.http.password = prompt_password(&format!("Password for {}: ", user));
+        } else {
+            config.http.password = prompt_password("Password: ");
+        }
+    }
+
+    // Handle --use-askpass: use external program to get password
+    if let Some(ref askpass_cmd) = args.use_askpass {
+        if config.http.password.is_none() {
+            config.http.password = run_askpass(askpass_cmd);
+        }
+    }
+
+    config.http.headers = args.header.clone();
+    config.http.user_agent = args.user_agent.clone();
+    config.http.referer = args.referer.clone();
+    config.http.save_headers = args.save_headers;
+
+    // IRI configuration
+    if args.no_iri {
+        config.iri.enabled = false;
+    }
+    if let Some(ref enc) = args.local_encoding {
+        config.iri.locale = Some(enc.clone());
+    }
+    if let Some(ref enc) = args.remote_encoding {
+        config.iri.remote_encoding = Some(enc.clone());
+    }
+
+    config.http.save_headers = args.save_headers;
+    config.http.content_on_error = args.content_on_error;
+    config.http.https_only = args.https_only;
+    config.http.force_http2 = args.http2;
+    config.http.force_http1_1 = args.http1_1;
+
+    if args.no_http_keep_alive {
+        config.http.keep_alive = false;
+    }
+
+    if let Some(ref method) = args.method {
+        if let Ok(m) = method.parse() {
+            config.http.method = Some(m);
+        }
+    }
+
+    if let Some(ref post_data) = args.post_data {
+        config.http.post_data = Some(post_data.as_bytes().to_vec());
+    }
+    if let Some(ref post_file) = args.post_file {
+        config.http.post_file = Some(post_file.clone());
+    }
+    if let Some(ref body_data) = args.body_data {
+        config.http.body_data = Some(body_data.as_bytes().to_vec());
+    }
+    if let Some(ref body_file) = args.body_file {
+        config.http.body_file = Some(body_file.clone());
+    }
+
+    if let Some(ref page) = args.default_page {
+        config.http.default_page = page.clone();
+    }
+
+    config.ftp.user = args.ftp_user.clone();
+    config.ftp.password = args.ftp_password.clone();
+
+    if args.no_passive_ftp {
+        config.ftp.passive = false;
+    }
+    if args.no_glob {
+        config.ftp.glob = false;
+    }
+    if args.retr_symlinks {
+        config.ftp.retrieve_symlinks = true;
+    }
+    if args.no_remove_listing {
+        config.ftp.remove_listing = false;
+    }
+    if args.follow_ftp {
+        config.ftp.follow_ftp = true;
+    }
+
+    // FTPS options
+    config.ftp.ftps_implicit = args.ftps_implicit;
+    config.ftp.ftps_resume_ssl = args.ftps_resume_ssl;
+    config.ftp.ftps_clear_data = args.ftps_clear_data_connection;
+    config.ftp.ftps_fallback = args.ftps_fallback_to_ftp;
+
+    if args.no_check_certificate {
+        config.tls.check_certificate = ut_core::CheckCertMode::Off;
+    }
+    config.tls.cert_file = args.certificate.clone();
+    config.tls.private_key = args.private_key.clone();
+    config.tls.ca_cert = args.ca_certificate.clone();
+    config.tls.ca_directory = args.ca_directory.clone();
+    config.tls.crl_file = args.crl_file.clone();
+    config.tls.pinned_pubkey = args.pinnedpubkey.clone();
+    config.tls.ciphers = args.ciphers.clone();
+
+    if let Some(ref sp) = args.secure_protocol {
+        if let Ok(p) = parse_secure_protocol_arg(sp) {
+            config.tls.secure_protocol = p;
+        }
+    }
+
+    config.recursive.enabled = args.recursive;
+    // -l 0 means unlimited depth (like original wget), so set to None
+    config.recursive.max_level = if args.level == 0 { None } else { Some(args.level) };
+    config.page_requisites = args.page_requisites;
+    config.recursive.span_hosts = args.span_hosts;
+    config.recursive.no_parent = args.no_parent;
+    config.recursive.relative_only = args.relative;
+    config.recursive.spider = args.spider;
+
+    config.ignore_length = args.ignore_length;
+    config.ignore_case = args.ignore_case;
+
+    config.xattr = args.xattr;
+    config.preserve_permissions = args.preserve_permissions;
+
+    if let Some(ref tags) = args.follow_tags {
+        config.recursive.follow_tags = tags.split(',').map(String::from).collect();
+    }
+    if let Some(ref tags) = args.ignore_tags {
+        config.recursive.ignore_tags = tags.split(',').map(String::from).collect();
+    }
+    if let Some(ref patterns) = args.accept {
+        config.recursive.accept_patterns = patterns.split(',').map(String::from).collect();
+    }
+    if let Some(ref patterns) = args.reject {
+        config.recursive.reject_patterns = patterns.split(',').map(String::from).collect();
+    }
+    config.recursive.accept_regex = args.accept_regex.clone();
+    config.recursive.reject_regex = args.reject_regex.clone();
+    if let Some(ref domains) = args.domains {
+        config.recursive.domains = domains.split(',').map(String::from).collect();
+    }
+    if let Some(ref domains) = args.exclude_domains {
+        config.recursive.exclude_domains = domains.split(',').map(String::from).collect();
+    }
+    if let Some(ref dirs) = args.include_directories {
+        config.recursive.include_directories = dirs.split(',').map(String::from).collect();
+    }
+    if let Some(ref dirs) = args.exclude_directories {
+        config.recursive.exclude_directories = dirs.split(',').map(String::from).collect();
+    }
+
+    if args.use_robots == Some(false) {
+        config.recursive.use_robots = false;
+    }
+
+    config.convert_links = args.convert_links;
+    config.convert_file_only = args.convert_file_only;
+    config.backup_converted = args.backup_converted;
+    config.adjust_extension = args.adjust_extension;
+
+    if args.mirror {
+        config.recursive.enabled = true;
+        config.timestamping = true;
+        config.recursive.use_robots = false;
+        config.convert_links = true;
+        config.page_requisites = true;
+        config.recursive.max_level = Some(0);
+        config.continue_download = true;
+    }
+
+    config.max_redirect = args.max_redirect;
+
+    config.timeout = args.timeout.map(Duration::from_secs_f64);
+    config.connect_timeout = args.connect_timeout.map(Duration::from_secs_f64);
+    config.read_timeout = args.read_timeout.map(Duration::from_secs_f64);
+    config.dns_timeout = args.dns_timeout.map(Duration::from_secs_f64);
+
+    config.cookie.enabled = !args.no_cookies;
+    config.cookie.input_file = args.load_cookies.clone();
+    config.cookie.output_file = args.save_cookies.clone();
+    config.cookie.keep_session_cookies = args.keep_session_cookies;
+
+    #[cfg(feature = "hsts")]
+    {
+        config.hsts.enabled = !args.no_hsts;
+        config.hsts.file = args.hsts_file.clone();
+    }
+
+    if args.use_proxy == Some(false) {
+        config.proxy.use_proxy = false;
+    }
+    config.proxy.http_proxy = args.http_proxy.clone();
+    config.proxy.https_proxy = args.https_proxy.clone();
+    config.proxy.ftp_proxy = args.ftp_proxy.clone();
+    config.proxy.proxy_user = args.proxy_user.clone();
+    config.proxy.proxy_password = args.proxy_password.clone();
+    if let Some(ref np) = args.no_proxy {
+        config.proxy.no_proxy = np.split(',').map(String::from).collect();
+    }
+
+    config.no_host_directories = args.no_host_directories;
+    config.protocol_directories = args.protocol_directories;
+    config.no_directories = args.no_directories;
+    config.force_directories = args.force_directories;
+    config.cut_dirs = args.cut_dirs.unwrap_or(0);
+
+    config.bind_address = args.bind_address.clone();
+    config.force_ipv4 = args.inet4_only;
+    config.force_ipv6 = args.inet6_only;
+
+    // Handle compression options
+    #[cfg(feature = "compression")]
+    {
+        if args.no_compression {
+            config.compression = ut_core::types::CompressionMode::None;
+        } else if args.compression {
+            config.compression = ut_core::types::CompressionMode::Auto;
+        }
+    }
+
+    if let Some(ref family) = args.prefer_family {
+        config.prefer_family = parse_address_family_arg(family);
+    }
+
+    // WARC configuration
+    if args.warc_file.is_some() || args.warc_cdx || args.warc_dedup || args.warc_compression || args.warc_digests {
+        config.warc.enabled = true;
+        config.warc.filename = args.warc_file.clone();
+        config.warc.max_size = args.warc_maxsize;
+        config.warc.cdx = args.warc_cdx;
+        config.warc.keep_log = args.warc_keep_log;
+        config.warc.compression = args.warc_compression;
+        config.warc.digests = args.warc_digests;
+        config.warc.tempdir = args.warc_temp_dir.clone();
+        config.warc.user_headers = args.warc_header.clone();
+        // warc_dedup enables CDX dedup
+        if args.warc_dedup {
+            config.warc.cdx = true;
+        }
+    }
+    // WARC negation options
+    if args.no_warc_compression {
+        config.warc.compression = false;
+    }
+    if args.no_warc_digests {
+        config.warc.digests = false;
+    }
+    if args.no_warc_keep_log {
+        config.warc.keep_log = false;
+    }
+
+    // Metalink configuration
+    if args.metalink || args.metalink_over_http || args.input_metalink.is_some() {
+        config.metalink.enabled = true;
+        config.metalink.over_http = args.metalink_over_http;
+        config.metalink.input_file = args.input_metalink.clone();
+    }
+
+    config.progress.style = parse_progress_style_arg(&args.progress);
+    config.progress.force_noscroll = !args.show_progress || !io::stdout().is_terminal();
+
+    config.reject_log = args.reject_log.clone();
+
+    config
+}
