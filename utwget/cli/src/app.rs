@@ -1305,3 +1305,29 @@ fn parse_progress_style_arg(s: &str) -> ut_core::ProgressStyle {
         _ => ut_core::ProgressStyle::Bar,
     }
 }
+
+/// Apply `--execute` commands to a configuration object.
+///
+/// Each command in the slice is expected to be a `key=value` pair. If the value
+/// is `"on"` or `"off"` it is treated as a boolean toggle; otherwise it is
+/// treated as a string assignment. Delegates to `WgetrcParser` for the actual
+/// application logic.
+///
+/// # Arguments
+/// * `config` — The mutable configuration to modify.
+/// * `commands` — The list of `key=value` command strings from `--execute`.
+pub fn apply_execute_commands(config: &mut ut_core::Config, commands: &[String]) {
+    for cmd in commands {
+        let parts: Vec<&str> = cmd.splitn(2, '=').collect();
+        if parts.len() == 2 {
+            let key = parts[0].trim();
+            let value = parts[1].trim();
+            if value.eq_ignore_ascii_case("on") || value.eq_ignore_ascii_case("off") {
+                let flag = value.eq_ignore_ascii_case("on");
+                let _ = crate::wgetrc::WgetrcParser::apply_onoff(key, flag, config);
+            } else {
+                let _ = crate::wgetrc::WgetrcParser::apply_set(key, value, config);
+            }
+        }
+    }
+}
