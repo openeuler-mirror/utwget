@@ -1279,3 +1279,29 @@ fn parse_address_family_arg(s: &str) -> ut_core::AddressFamily {
         _ => ut_core::AddressFamily::Unspecified,
     }
 }
+
+/// Parse a `--progress` argument string into a `ProgressStyle` value.
+///
+/// Accepts the following values (case-insensitive):
+/// * `"none"` or `"silent"` — no progress output.
+/// * `"verbose"` or `"v"` — per-file verbose progress.
+/// * `"dot"` or `"d"` — classic dot-style progress (1024 bytes/dot, 50 dots/line).
+/// * Any other value — the default bar-style progress indicator.
+///
+/// # Arguments
+/// * `s` — The progress style string from the command line.
+///
+/// # Returns
+/// The resolved `ProgressStyle` variant.
+fn parse_progress_style_arg(s: &str) -> ut_core::ProgressStyle {
+    match s.to_ascii_lowercase().as_str() {
+        "none" | "silent" => ut_core::ProgressStyle::Silent,
+        "verbose" | "v" => ut_core::ProgressStyle::Verbose,
+        "dot" | "d" => ut_core::ProgressStyle::Dot {
+            bytes_per_dot: 1024,
+            dots_per_line: 50,
+            spacing: 4,
+        },
+        _ => ut_core::ProgressStyle::Bar,
+    }
+}
