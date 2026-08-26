@@ -131,3 +131,23 @@ impl ExitStatus {
         }
     }
 }
+
+/// The main application harness that orchestrates the download process.
+///
+/// `App` ties together a retriever, the user configuration, and performance
+/// bookkeeping. It supports single-shot download, recursive crawling, and
+/// Metalink-based download (when the `metalink` feature is enabled).
+pub struct App {
+    /// The fully-resolved configuration, shared across the retriever and sub-components.
+    config: Arc<ut_core::Config>,
+    /// The core download engine.
+    retriever: Retriever,
+    /// Timestamp captured at construction time, used for the final summary.
+    start_time: Instant,
+    /// Total number of URLs that were attempted (parsed and sent to the retriever).
+    urls_attempted: u32,
+    /// Total number of URLs that completed downloading successfully.
+    urls_downloaded: u32,
+    /// Tracks the worst (highest numeric) exit status across all URLs.
+    worst_status: ExitStatus,
+}
