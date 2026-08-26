@@ -705,3 +705,33 @@ impl WgetrcParser {
         Ok(())
     }
 }
+
+/// Parse a secure protocol string into a `SecureProtocol` enum value.
+///
+/// Accepts the following values (case-insensitive):
+/// - `auto` or `pfs` - Automatically select the best protocol
+/// - `tlsv1_2`, `tlsv1.2`, `tls1.2` - TLS 1.2 only
+/// - `tlsv1_3`, `tlsv1.3`, `tls1.3` - TLS 1.3 only
+///
+/// # Arguments
+///
+/// * `s` - The protocol string to parse.
+///
+/// # Returns
+///
+/// `Ok(SecureProtocol)` on success.
+///
+/// # Errors
+///
+/// Returns `ConfigError::InvalidValue` for unrecognized protocol strings.
+fn parse_secure_protocol(s: &str) -> Result<ut_core::SecureProtocol, ConfigError> {
+    match s.to_ascii_lowercase().as_str() {
+        "auto" | "pfs" => Ok(ut_core::SecureProtocol::Auto),
+        "tlsv1_2" | "tlsv1.2" | "tls1.2" => Ok(ut_core::SecureProtocol::TlsV1_2),
+        "tlsv1_3" | "tlsv1.3" | "tls1.3" => Ok(ut_core::SecureProtocol::TlsV1_3),
+        other => Err(ConfigError::InvalidValue {
+            option: "secure_protocol".to_string(),
+            reason: format!("unknown value: {}", other),
+        }),
+    }
+}
