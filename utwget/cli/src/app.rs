@@ -1153,3 +1153,57 @@ pub fn build_config(args: &Args) -> ut_core::Config {
 
     config
 }
+
+/// Prompt for password interactively from terminal.
+///
+/// Disables terminal echo on Unix platforms so the password is not displayed
+/// as it is typed. Falls back to normal (echoing) input if terminal attributes
+/// cannot be changed.
+///
+/// # Arguments
+/// * `prompt` — The prompt string to display (e.g. "Password for user: ").
+///
+/// # Returns
+/// The entered password, or `None` if input could not be read.
+fn prompt_password(prompt: &str) -> Option<String> {
+    use std::io::Write;
+
+    // Write prompt to stderr
+    let _ = std::io::stderr().write_all(prompt.as_bytes());
+    let _ = std::io::stderr().flush();
+
+    // Read password from stdin (without echo if possible)
+    #[cfg(unix)]
+    {
+        let mut term: libc::termios = unsafe { std::mem::zeroed() };
+        // Get current terminal attributes
+        if unsafe { libc::tcgetattr(libc::STDIN_FILENO, &mut term) } == 0 {
+            // Disable echo
+            let original_lflag = term.c_lflag;
+            term.c_lflag &= !libc::ECHO;
+            unsafe { libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &term) };
+
+            let mut password = String::new();
+            let result = std::io::stdin().read_line(&mut password);
+
+            // Re-enable echo
+            term.c_lflag = original_lflag;
+            unsafe { libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &term) };
+
+            // Print newline since echo was disabled
+            let _ = std::io::stderr().write_all(b"\n");
+
+            if result.is_ok() {
+                return Some(password.trim().to_string());
+            }
+        }
+    }
+
+    // Fallback: read normally (echo will be visible)
+    let mut password = String::new();
+    if std::io::stdin().read_line(&mut password).is_ok() {
+        Some(password.trim().to_string())
+    } else {
+        None
+    }
+}
