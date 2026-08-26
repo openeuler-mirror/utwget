@@ -50,3 +50,14 @@ pub unsafe fn install_signal_handlers() {
     // Ignore SIGPIPE (broken pipe) — write errors are handled in code
     libc::signal(libc::SIGPIPE, libc::SIG_IGN);
 }
+
+/// Check if we should stop the current download (SIGINT or SIGTERM received).
+pub fn should_stop() -> bool {
+    SIGINT_RECEIVED.load(Ordering::SeqCst) || SIGTERM_RECEIVED.load(Ordering::SeqCst)
+}
+
+/// Reset the SIGINT flag after handling it (for continuing to next URL).
+#[allow(dead_code)]
+pub fn reset_sigint() {
+    SIGINT_RECEIVED.store(false, Ordering::SeqCst);
+}
