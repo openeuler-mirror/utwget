@@ -61,3 +61,15 @@ pub fn should_stop() -> bool {
 pub fn reset_sigint() {
     SIGINT_RECEIVED.store(false, Ordering::SeqCst);
 }
+
+/// Check if output should be redirected to a log file (SIGHUP/SIGUSR1 received).
+#[allow(dead_code)]
+pub fn should_redirect_output() -> bool {
+    SIGHUP_RECEIVED.load(Ordering::SeqCst)
+}
+
+/// Reset the SIGHUP flag after handling it.
+#[allow(dead_code)]
+pub fn reset_sighup() {
+    SIGHUP_RECEIVED.store(false, Ordering::SeqCst);
+}
