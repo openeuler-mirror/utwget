@@ -140,7 +140,8 @@ impl MetalinkDownloader {
     /// * `MetalinkError::Io` - An I/O error occurred during verification.
     pub fn download(&self, file: &MetalinkFile, output_dir: &Path) -> Result<DownloadResult, MetalinkError> {
         let resource = self.select_best_resource(&file.resources)?;
-        let output_path = output_dir.join(&file.name);
+        let safe_name = sanitize_metalink_filename(&file.name);
+        let output_path = output_dir.join(&safe_name);
 
         info!("downloading {} from {}", file.name, resource.url);
 
@@ -349,6 +350,85 @@ impl MetalinkDownloader {
         }
 
         Ok(all_ok)
+    }
+}
+
+/// Sanitize a filename from a Metalink document to prevent path traversal.
+///
+/// Mirrors GNU wget's `metalink_check_safe_path()` (metalink.c:150-183):
+/// - Rejects absolute paths (leading `/` or drive letters).
+/// - Rejects any `..` path component (directory traversal).
+/// - Replaces backslashes with forward slashes, then strips leading slashes.
+/// - If the name is empty or resolves to a traversal, falls back to "unnamed".
+pub fn sanitize_metalink_filename(name: &str) -> String {
+    // Replace backslashes (Windows separators) with forward slashes.
+    let normalized = name.replace('\\', "/");
+
+    // Split into components and filter out dangerous ones.
+    let mut safe_parts: Vec<&str> = Vec::new();
+    for part in normalized.split('/') {
+        // Skip empty components (consecutive slashes, leading slash).
+        if part.is_empty() {
+            continue;
+        }
+        // Reject `..` (parent directory traversal).
+        if part == ".." {
+            continue;
+        }
+        // Reject `.` (current directory) — harmless but unnecessary.
+        if part == "." {
+            continue;
+        }
+        safe_parts.push(part);
+    }
+
+    if safe_parts.is_empty() {
+        return "unnamed".to_string();
+    }
+
+    safe_parts.join("/")
+}
+
+#[cfg(test)]
+mod path_traversal_tests {
+    use super::sanitize_metalink_filename;
+
+    #[test]
+    fn test_normal_name_unchanged() {
+        assert_eq!(sanitize_metalink_filename("file.iso"), "file.iso");
+        assert_eq!(sanitize_metalink_filename("dir/file.iso"), "dir/file.iso");
+    }
+
+    #[test]
+    fn test_strips_leading_slash() {
+        assert_eq!(sanitize_metalink_filename("/etc/passwd"), "etc/passwd");
+        assert_eq!(sanitize_metalink_filename("//etc/passwd"), "etc/passwd");
+    }
+
+    #[test]
+    fn test_rejects_parent_traversal() {
+        assert_eq!(sanitize_metalink_filename("../../etc/cron.d/evil"), "etc/cron.d/evil");
+        assert_eq!(sanitize_metalink_filename("../../../etc/passwd"), "etc/passwd");
+    }
+
+    #[test]
+    fn test_rejects_backslash_traversal() {
+        assert_eq!(sanitize_metalink_filename("..\\..\\evil"), "evil");
+    }
+
+    #[test]
+    fn test_empty_name_fallback() {
+        assert_eq!(sanitize_metalink_filename(""), "unnamed");
+        assert_eq!(sanitize_metalink_filename("/"), "unnamed");
+        assert_eq!(sanitize_metalink_filename("///"), "unnamed");
+        assert_eq!(sanitize_metalink_filename(".."), "unnamed");
+        assert_eq!(sanitize_metalink_filename("../.."), "unnamed");
+    }
+
+    #[test]
+    fn test_strips_dot_components() {
+        assert_eq!(sanitize_metalink_filename("./file.iso"), "file.iso");
+        assert_eq!(sanitize_metalink_filename("dir/./file.iso"), "dir/file.iso");
     }
 }
 
