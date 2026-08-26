@@ -11,3 +11,42 @@ pub static SIGTERM_RECEIVED: AtomicBool = AtomicBool::new(false);
 
 /// Counter for SIGINT — after 2 presses, force-quit immediately.
 pub static SIGINT_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+/// Install signal handlers for SIGINT, SIGTERM, SIGHUP, SIGUSR1.
+///
+/// This should be called once at program startup, before the main loop.
+///
+/// # Safety
+///
+/// Uses `libc::signal` which is unsafe. The signal handlers only set
+/// atomic flags, which is async-signal-safe.
+pub unsafe fn install_signal_handlers() {
+    extern "C" fn handle_sigint(_: libc::c_int) {
+        let count = SIGINT_COUNT.fetch_add(1, Ordering::SeqCst);
+        if count == 0 {
+            // First Ctrl+C: set flag, main loop will stop current download
+            SIGINT_RECEIVED.store(true, Ordering::SeqCst);
+        } else {
+            // Second Ctrl+C: force immediate exit
+            // We call _exit directly to avoid running destructors
+            // that might hang (e.g., waiting for network I/O)
+            unsafe { libc::_exit(130); }
+        }
+    }
+
+    extern "C" fn handle_sigterm(_: libc::c_int) {
+        SIGTERM_RECEIVED.store(true, Ordering::SeqCst);
+    }
+
+    extern "C" fn handle_sighup(_: libc::c_int) {
+        SIGHUP_RECEIVED.store(true, Ordering::SeqCst);
+    }
+
+    libc::signal(libc::SIGINT, handle_sigint as *const () as libc::sighandler_t);
+    libc::signal(libc::SIGTERM, handle_sigterm as *const () as libc::sighandler_t);
+    libc::signal(libc::SIGHUP, handle_sighup as *const () as libc::sighandler_t);
+    libc::signal(libc::SIGUSR1, handle_sighup as *const () as libc::sighandler_t);
+
+    // Ignore SIGPIPE (broken pipe) — write errors are handled in code
+    libc::signal(libc::SIGPIPE, libc::SIG_IGN);
+}
