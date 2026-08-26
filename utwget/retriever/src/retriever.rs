@@ -449,7 +449,7 @@ impl Retriever {
         // writing the new content to the original path — matches GNU wget
         // --backups behavior.
         if output_path.exists() {
-            let n_backups = self.config.backups.unwrap_or(1);
+            let n_backups = self.config.backups.unwrap_or(0);
             if n_backups > 0 {
                 debug!("file exists, rotating backups for: {:?}", output_path);
                 rotate_backups(&output_path, n_backups);
