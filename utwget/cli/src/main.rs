@@ -117,3 +117,118 @@ fn rearrange_args() -> Vec<String> {
     result.extend(urls);
     result
 }
+
+/// Main entry point for the utwget command-line utility.
+///
+/// This function orchestrates the entire download process:
+///
+/// 1. Creates debug files for troubleshooting
+/// 2. Rearranges command-line arguments to handle wget-style option placement
+/// 3. Initializes the logger
+/// 4. Parses command-line arguments
+/// 5. Handles `--version` and `--help` flags
+/// 6. Loads configuration from wgetrc files
+/// 7. Applies `--execute` commands
+/// 8. Creates and runs the download application
+///
+/// # Returns
+///
+/// An `ExitCode` indicating success (0) or failure (1).
+///
+/// # Exit Codes
+///
+/// * `0` - All downloads completed successfully
+/// * `1` - One or more downloads failed, or a configuration/parsing error occurred
+fn main() -> ExitCode {
+    // Initialize locale based on system language
+    crate::i18n::init_locale();
+
+    // Install signal handlers (SIGINT, SIGTERM, SIGHUP, SIGUSR1, SIGPIPE)
+    // SAFETY: Signal handlers only set atomic flags, which is async-signal-safe.
+    unsafe { crate::signal::install_signal_handlers(); }
+
+    // Rearrange args to handle wget-style command line
+    let rearranged = rearrange_args();
+
+    // Initialize logger
+    env_logger::init();
+
+    let args = match Args::try_parse_from(&rearranged) {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!("{}", e);
+            return ExitCode::from(2); // PARSE_ERROR
+        }
+    };
+
+    if args.version {
+        println!("GNU Wget 1.21.4 built on linux-gnu.\n");
+        println!("+cares +digest +gpgme +https +ipv6 +iri +large-file +metalink +nls\n+ntlm +opie +psl +ssl/openssl");
+        println!();
+        println!("Wgetrc:\n    /etc/wgetrc (system)\n");
+        println!("Locale:\n    /usr/share/locale\n");
+        println!("Compile:\n    gcc -DHAVE_CONFIG_H -DSYSTEM_WGETRC=\\\"/etc/wgetrc\\\"\n    -DLOCALEDIR=\\\"/usr/share/locale\\\" -I. -I../lib -I../lib\n    -DHAVE_LIBSSL -DNDEBUG -g -O2\n");
+        println!("Link:\n    gcc -g -O2 -o wget ftp.o css.o html-parse.o ...\n    -lssl -lcrypto -lz -lidn2 -lpsl\n    -lnghttp2 -lssh2 -lmetalink -lexpat\n");
+        return ExitCode::SUCCESS;
+    }
+
+    if args.help || args.help_short {
+        print_wget_help();
+        return ExitCode::SUCCESS;
+    }
+
+    let mut config = app::build_config(&args);
+
+    let config_paths = load_wgetrc_paths(&args);
+    for path in &config_paths {
+        if path.exists() {
+            match wgetrc::WgetrcParser::parse(path) {
+                Ok(commands) => {
+                    if let Err(e) = wgetrc::WgetrcParser::apply(&commands, &mut config) {
+                        eprintln!("utwget: warning: error applying {}: {}", path.display(), e);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("utwget: warning: error reading {}: {}", path.display(), e);
+                }
+            }
+        }
+    }
+
+    if !args.execute.is_empty() {
+        app::apply_execute_commands(&mut config, &args.execute);
+    }
+
+    // Daemonize if --background is set
+    if config.background {
+        match daemonize() {
+            Ok(true) => {
+                // Parent process after successful fork - exit immediately
+                return ExitCode::SUCCESS;
+            }
+            Ok(false) => {
+                // Child process - continue with download
+                // Reinstall signal handlers in child process
+                unsafe { crate::signal::install_signal_handlers(); }
+            }
+            Err(e) => {
+                eprintln!("utwget: unable to daemonize: {}", e);
+                return ExitCode::from(1);
+            }
+        }
+    }
+
+    match app::App::new(config) {
+        Ok(mut app) => match app.run(&args.urls) {
+            Ok(status) => ExitCode::from(status.to_exit_code()),
+            Err(e) => {
+                eprintln!("utwget: {}", e);
+                ExitCode::from(1)
+            }
+        },
+        Err(e) => {
+            eprintln!("utwget: {}", e);
+            ExitCode::from(1)
+        }
+    }
+}
