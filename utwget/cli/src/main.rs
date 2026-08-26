@@ -232,3 +232,35 @@ fn main() -> ExitCode {
         }
     }
 }
+
+/// Determine the paths to wgetrc configuration files.
+///
+/// Returns a prioritized list of configuration file paths to load. The order is:
+///
+/// 1. `/etc/wgetrc` - system-wide configuration
+/// 2. `~/.wgetrc` - user-specific configuration (if `HOME` environment variable is set)
+/// 3. Custom config file specified via `--config` argument
+///
+/// # Arguments
+///
+/// * `args` - The parsed command-line arguments
+///
+/// # Returns
+///
+/// A vector of `PathBuf` objects representing the configuration file paths.
+/// Not all paths may exist; the caller should check for existence before reading.
+fn load_wgetrc_paths(args: &Args) -> Vec<std::path::PathBuf> {
+    let mut paths = Vec::new();
+
+    paths.push(std::path::PathBuf::from("/etc/wgetrc"));
+
+    if let Some(home) = std::env::var_os("HOME") {
+        paths.push(std::path::PathBuf::from(home).join(".wgetrc"));
+    }
+
+    if let Some(ref config_file) = args.config_file {
+        paths.push(config_file.clone());
+    }
+
+    paths
+}
