@@ -809,10 +809,15 @@ impl FtpsClient {
         let text = resp.text.trim();
         let start = text.find('(').ok_or_else(|| FtpError::ParseError(format!("invalid PASV: {}", text)))?;
         let end = text.find(')').ok_or_else(|| FtpError::ParseError(format!("invalid PASV: {}", text)))?;
-        let nums: Vec<u8> = text[start+1..end]
+        if start + 1 >= end {
+            return Err(FtpError::ParseError(format!("invalid PASV: {}", text)));
+        }
+        let nums: Vec<u8> = text[start + 1..end]
             .split(',')
-            .filter_map(|s| s.trim().parse().ok())
-            .collect();
+            .map(|s| s.trim().parse::<u8>().map_err(|_| {
+                FtpError::ParseError(format!("invalid PASV number: {}", s.trim()))
+            }))
+            .collect::<Result<_, _>>()?;
 
         if nums.len() != 6 {
             return Err(FtpError::ParseError(format!("invalid PASV: {}", text)));
