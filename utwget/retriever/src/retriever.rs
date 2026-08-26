@@ -2323,6 +2323,7 @@ fn stream_response_body<R: Read, W: Write>(
     resume_from: u64,
     ignore_length: bool,
 ) -> Result<BodyReadResult, RetrieveError> {
+    let start = std::time::Instant::now();
     if response.is_chunked() {
         let mut received = 0u64;
         let mut chunked = ut_http::chunked::ChunkedReader::new(reader);
@@ -2332,7 +2333,7 @@ fn stream_response_body<R: Read, W: Write>(
         {
             writer.write_all(&chunk).map_err(RetrieveError::Io)?;
             received += chunk.len() as u64;
-            progress.update(resume_from + received, Duration::ZERO);
+            progress.update(resume_from + received, start.elapsed());
         }
         // Chunked bodies are terminated by a 0-length chunk (and optional
         // trailers), so the connection is fully drained and reusable.
@@ -2361,7 +2362,7 @@ fn stream_response_body<R: Read, W: Write>(
             }
             writer.write_all(&tmp[..n]).map_err(RetrieveError::Io)?;
             received += n as u64;
-            progress.update(resume_from + received, Duration::ZERO);
+            progress.update(resume_from + received, start.elapsed());
         }
         Ok(BodyReadResult {
             bytes: received,
@@ -2385,6 +2386,7 @@ fn read_until_eof<R: Read, W: Write>(
     progress: &mut dyn ProgressDisplay,
     resume_from: u64,
 ) -> Result<BodyReadResult, RetrieveError> {
+    let start = std::time::Instant::now();
     let mut received = 0u64;
     let mut tmp = [0u8; IO_BUFFER_SIZE];
     loop {
@@ -2396,7 +2398,7 @@ fn read_until_eof<R: Read, W: Write>(
         }
         writer.write_all(&tmp[..n]).map_err(RetrieveError::Io)?;
         received += n as u64;
-        progress.update(resume_from + received, Duration::ZERO);
+        progress.update(resume_from + received, start.elapsed());
     }
     Ok(BodyReadResult {
         bytes: received,
