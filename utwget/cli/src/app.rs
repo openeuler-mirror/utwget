@@ -1254,3 +1254,28 @@ fn parse_secure_protocol_arg(s: &str) -> Result<ut_core::SecureProtocol, ()> {
         _ => Err(()),
     }
 }
+
+/// Parse a `--prefer-family` argument string into an `AddressFamily` value.
+///
+/// Accepts the following values (case-insensitive):
+/// * `"ipv4"` or `"4"` — IPv4 only.
+/// * `"ipv6"` or `"6"` — IPv6 only.
+/// * `"prefer_ipv4"` or `"prefer-ipv4"` — prefer IPv4, fall back to IPv6.
+/// * `"prefer_ipv6"` or `"prefer-ipv6"` — prefer IPv6, fall back to IPv4.
+///
+/// Any unrecognized value returns `AddressFamily::Unspecified`.
+///
+/// # Arguments
+/// * `s` — The family string from the command line.
+///
+/// # Returns
+/// The resolved `AddressFamily` variant.
+fn parse_address_family_arg(s: &str) -> ut_core::AddressFamily {
+    match s.to_ascii_lowercase().as_str() {
+        "ipv4" | "4" => ut_core::AddressFamily::Ipv4,
+        "ipv6" | "6" => ut_core::AddressFamily::Ipv6,
+        "prefer_ipv4" | "prefer-ipv4" => ut_core::AddressFamily::PreferIpv4,
+        "prefer_ipv6" | "prefer-ipv6" => ut_core::AddressFamily::PreferIpv6,
+        _ => ut_core::AddressFamily::Unspecified,
+    }
+}
