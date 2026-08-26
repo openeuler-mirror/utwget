@@ -1604,70 +1604,74 @@ impl Retriever {
                 return Err(std::io::Error::last_os_error());
             }
 
-            // Bind
-            let (bind_ptr, bind_len) = match &bind {
+            // Bind — 在 match 分支内完成内存复制，避免局部 sockaddr 变量
+            // 离开作用域后产生悬垂指针 (dangling pointer) 导致 UB。
+            let bind_storage: [u8; 128] = [0u8; 128];
+            let bind_len: libc::socklen_t = match &bind {
                 std::net::SocketAddr::V4(v4) => {
                     let mut sa: libc::sockaddr_in = std::mem::zeroed();
                     sa.sin_family = libc::AF_INET as u16;
                     sa.sin_port = v4.port().to_be();
                     sa.sin_addr = libc::in_addr { s_addr: u32::from(*v4.ip()).to_be() };
-                    let sa_ptr = &sa as *const libc::sockaddr_in as *const libc::sockaddr;
-                    let sa_len = std::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
-                    (sa_ptr, sa_len)
+                    let sa_len = std::mem::size_of::<libc::sockaddr_in>();
+                    std::ptr::copy_nonoverlapping(
+                        &sa as *const libc::sockaddr_in as *const u8,
+                        bind_storage.as_ptr() as *mut u8,
+                        sa_len,
+                    );
+                    sa_len as libc::socklen_t
                 }
                 std::net::SocketAddr::V6(v6) => {
                     let mut sa: libc::sockaddr_in6 = std::mem::zeroed();
                     sa.sin6_family = libc::AF_INET6 as u16;
                     sa.sin6_port = v6.port().to_be();
                     sa.sin6_addr.s6_addr = v6.ip().octets();
-                    let sa_ptr = &sa as *const libc::sockaddr_in6 as *const libc::sockaddr;
-                    let sa_len = std::mem::size_of::<libc::sockaddr_in6>() as libc::socklen_t;
-                    (sa_ptr, sa_len)
+                    let sa_len = std::mem::size_of::<libc::sockaddr_in6>();
+                    std::ptr::copy_nonoverlapping(
+                        &sa as *const libc::sockaddr_in6 as *const u8,
+                        bind_storage.as_ptr() as *mut u8,
+                        sa_len,
+                    );
+                    sa_len as libc::socklen_t
                 }
             };
 
-            // Allocate storage for the bind address
-            let sa_storage: [u8; 128] = [0u8; 128];
-            std::ptr::copy_nonoverlapping(
-                bind_ptr as *const u8,
-                sa_storage.as_ptr() as *mut u8,
-                bind_len as usize,
-            );
-
-            if libc::bind(fd, sa_storage.as_ptr() as *const libc::sockaddr, bind_len) < 0 {
+            if libc::bind(fd, bind_storage.as_ptr() as *const libc::sockaddr, bind_len) < 0 {
                 let err = std::io::Error::last_os_error();
                 libc::close(fd);
                 return Err(err);
             }
 
-            // Connect
-            let (remote_ptr, remote_len) = match remote {
+            // Connect — 同样在 match 分支内完成复制
+            let remote_storage: [u8; 128] = [0u8; 128];
+            let remote_len: libc::socklen_t = match remote {
                 std::net::SocketAddr::V4(v4) => {
                     let mut sa: libc::sockaddr_in = std::mem::zeroed();
                     sa.sin_family = libc::AF_INET as u16;
                     sa.sin_port = v4.port().to_be();
                     sa.sin_addr = libc::in_addr { s_addr: u32::from(*v4.ip()).to_be() };
-                    let sa_ptr = &sa as *const libc::sockaddr_in as *const libc::sockaddr;
-                    let sa_len = std::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
-                    (sa_ptr, sa_len)
+                    let sa_len = std::mem::size_of::<libc::sockaddr_in>();
+                    std::ptr::copy_nonoverlapping(
+                        &sa as *const libc::sockaddr_in as *const u8,
+                        remote_storage.as_ptr() as *mut u8,
+                        sa_len,
+                    );
+                    sa_len as libc::socklen_t
                 }
                 std::net::SocketAddr::V6(v6) => {
                     let mut sa: libc::sockaddr_in6 = std::mem::zeroed();
                     sa.sin6_family = libc::AF_INET6 as u16;
                     sa.sin6_port = v6.port().to_be();
                     sa.sin6_addr.s6_addr = v6.ip().octets();
-                    let sa_ptr = &sa as *const libc::sockaddr_in6 as *const libc::sockaddr;
-                    let sa_len = std::mem::size_of::<libc::sockaddr_in6>() as libc::socklen_t;
-                    (sa_ptr, sa_len)
+                    let sa_len = std::mem::size_of::<libc::sockaddr_in6>();
+                    std::ptr::copy_nonoverlapping(
+                        &sa as *const libc::sockaddr_in6 as *const u8,
+                        remote_storage.as_ptr() as *mut u8,
+                        sa_len,
+                    );
+                    sa_len as libc::socklen_t
                 }
             };
-
-            let remote_storage: [u8; 128] = [0u8; 128];
-            std::ptr::copy_nonoverlapping(
-                remote_ptr as *const u8,
-                remote_storage.as_ptr() as *mut u8,
-                remote_len as usize,
-            );
 
             // Set non-blocking if timeout is set
             if timeout.is_some() {
@@ -1698,16 +1702,17 @@ impl Retriever {
                     // Check for errors
                     let mut soerr: libc::c_int = 0;
                     let mut soerr_len = std::mem::size_of::<libc::c_int>() as libc::socklen_t;
-                    libc::getsockopt(
+                    let getsockopt_ret = libc::getsockopt(
                         fd,
                         libc::SOL_SOCKET,
                         libc::SO_ERROR,
                         &mut soerr as *mut _ as *mut libc::c_void,
                         &mut soerr_len,
                     );
-                    if soerr != 0 {
+                    if getsockopt_ret < 0 || soerr != 0 {
                         libc::close(fd);
-                        return Err(std::io::Error::from_raw_os_error(soerr));
+                        let errno = if soerr != 0 { soerr } else { std::io::Error::last_os_error().raw_os_error().unwrap_or(0) };
+                        return Err(std::io::Error::from_raw_os_error(errno));
                     }
                 } else {
                     let err = std::io::Error::last_os_error();
