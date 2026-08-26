@@ -1207,3 +1207,29 @@ fn prompt_password(prompt: &str) -> Option<String> {
         None
     }
 }
+
+/// Run external askpass program to get password.
+///
+/// Executes the program specified by `--use-askpass` and captures its stdout
+/// as the password. This is consistent with the `SSH_ASKPASS` convention.
+///
+/// # Arguments
+/// * `program` — Path or name of the askpass executable.
+///
+/// # Returns
+/// The password text returned by the program, or `None` if the program could
+/// not be run or returned a non-zero exit code.
+fn run_askpass(program: &str) -> Option<String> {
+    use std::process::Command;
+
+    let result = Command::new(program)
+        .output()
+        .ok()?;
+
+    if result.status.success() {
+        let password = String::from_utf8_lossy(&result.stdout);
+        Some(password.trim().to_string())
+    } else {
+        None
+    }
+}
