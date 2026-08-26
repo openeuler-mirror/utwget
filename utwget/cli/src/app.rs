@@ -49,3 +49,85 @@ pub enum ExitStatus {
     /// Server returned an error response (exit code 8).
     ServerError,
 }
+
+impl ExitStatus {
+    /// Maps a `WgetError` to the corresponding exit status code.
+    ///
+    /// Uses the same priority logic as the original wget: the "worst"
+    /// (highest numeric) status wins across all URLs.
+    pub fn from_error(err: &ut_core::error::WgetError) -> Self {
+        use ut_core::error::{TlsError, FtpError};
+        match err {
+            WgetError::FtpFileNotFound(_)
+            | WgetError::FileNotFound(_)
+            | WgetError::FileExists(_)
+            | WgetError::CannotCreateDir(_)
+            | WgetError::WriteError(_) => ExitStatus::IoFail,
+
+            WgetError::HostNotFound(_)
+            | WgetError::ConnectionRefused
+            |             WgetError::ConnectionTimeout(_)
+            | WgetError::SocketError(_) => ExitStatus::NetworkFail,
+
+            WgetError::Tls(TlsError::HandshakeFailed(_))
+            | WgetError::Tls(TlsError::CertError(_))
+            | WgetError::Tls(TlsError::HostnameMismatch { .. })
+            | WgetError::Tls(TlsError::CertExpired)
+            | WgetError::Tls(TlsError::CertNotYetValid)
+            | WgetError::Tls(TlsError::SelfSigned)
+            | WgetError::Tls(TlsError::UnknownAuthority(_))
+            | WgetError::CertVerificationFailed { .. }
+            | WgetError::TlsInitFailed => ExitStatus::SslAuthFail,
+
+            WgetError::AuthFailed(_)
+            | WgetError::FtpLoginRefused
+            | WgetError::Ftp(FtpError::UnexpectedResponse { code: 530..=539, .. }) => ExitStatus::ServerAuthFail,
+
+            WgetError::Http { status: 400..=499, .. }
+            | WgetError::TooManyRedirects { .. }
+            | WgetError::UnsupportedMethod(_)
+            | WgetError::UrlParse(_)
+            | WgetError::UnsupportedScheme(_) => ExitStatus::ProtocolError,
+
+            WgetError::Http { status: 500..=599, .. }
+            | WgetError::FtpServerError(_)
+            | WgetError::Ftp(FtpError::UnexpectedResponse { .. })
+            | WgetError::Ftp(FtpError::ConnectionLost)
+            | WgetError::Ftp(FtpError::DataConnectionFailed(_))
+            | WgetError::Ftp(FtpError::PasvFailed(_))
+            | WgetError::Ftp(FtpError::PortFailed(_)) => ExitStatus::ServerError,
+
+            WgetError::RetryLimitExceeded { .. }
+            | WgetError::QuotaExceeded { .. }
+            | WgetError::MetalinkParse(_)
+            | WgetError::MetalinkDownload(_)
+            | WgetError::MetalinkChecksum { .. }
+            | WgetError::Warc(_)
+            | WgetError::Config(_) => ExitStatus::Error,
+
+            WgetError::Other(msg) => {
+                if msg.contains("DNS") || msg.contains("resolve") || msg.contains("lookup") {
+                    ExitStatus::NetworkFail
+                } else {
+                    ExitStatus::Error
+                }
+            }
+
+            _ => ExitStatus::Error,
+        }
+    }
+
+    /// Converts the exit status to the numeric exit code.
+    pub fn to_exit_code(self) -> u8 {
+        match self {
+            ExitStatus::Success => 0,
+            ExitStatus::Error => 1,
+            ExitStatus::IoFail => 3,
+            ExitStatus::NetworkFail => 4,
+            ExitStatus::SslAuthFail => 5,
+            ExitStatus::ServerAuthFail => 6,
+            ExitStatus::ProtocolError => 7,
+            ExitStatus::ServerError => 8,
+        }
+    }
+}
