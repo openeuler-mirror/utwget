@@ -147,3 +147,158 @@ impl VerboseProgress {
         }
     }
 }
+
+impl ProgressDisplay for VerboseProgress {
+    /// Initializes the verbose display for a new download.
+    ///
+    /// Outputs the initial download information including timestamp,
+    /// URL, connection status, file size, and content type.
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - The URL being downloaded.
+    /// * `total_size` - The total expected file size, if known.
+    /// * `_resume_from` - Resume offset if continuing a partial download (not used in output).
+    fn begin(&mut self, url: &str, total_size: Option<u64>, _resume_from: Option<u64>) {
+        self.url = url.to_string();
+        self.total_size = total_size;
+        self.downloaded = 0;
+        self.start_time = Instant::now();
+        self.finished = false;
+
+        let mut stderr = io::stderr();
+        let _ = stderr.write_all(format!("--{}--  {}\n", Self::timestamp_str(), url).as_bytes());
+
+        if let Some(size) = total_size {
+            let _ = stderr.write_all(format!("Resolving... connecting...\n").as_bytes());
+            let _ = stderr.write_all(format!("length: {} ({}) [{}]\n",
+                size,
+                self.length_str(),
+                self.content_type_str(),
+            ).as_bytes());
+        }
+        let _ = stderr.write_all(b"Saving to: ...\n");
+        let _ = stderr.flush();
+    }
+
+    /// Updates the progress display with the current download status.
+    ///
+    /// In verbose mode, this method primarily tracks the downloaded bytes
+    /// but does not produce continuous output. Progress information is
+    /// shown at the end of the download.
+    ///
+    /// # Arguments
+    ///
+    /// * `downloaded` - Total bytes downloaded so far.
+    /// * `_elapsed` - Time elapsed since download started (not used for intermediate output).
+    fn update(&mut self, downloaded: u64, _elapsed: Duration) {
+        self.downloaded = downloaded;
+
+        if self.finished {
+            return;
+        }
+
+        if let Some(total) = self.total_size {
+            if downloaded >= total {
+                return;
+            }
+        }
+    }
+
+    /// Finalizes the verbose display with the download result.
+    ///
+    /// Outputs the final download status including timestamp, URL,
+    /// total bytes downloaded, duration, and average transfer speed.
+    /// For error cases, outputs the error message.
+    ///
+    /// # Arguments
+    ///
+    /// * `status` - The final status of the download operation.
+    fn finish(&mut self, status: FinishStatus) {
+        self.finished = true;
+
+        let mut stderr = io::stderr();
+
+        match status {
+            FinishStatus::Success { downloaded, elapsed } => {
+                let secs = elapsed.as_secs();
+                let speed = if secs > 0 {
+                    downloaded as f64 / secs as f64
+                } else {
+                    0.0
+                };
+
+                let _ = stderr.write_all(format!("\n--{}--  finished\n", Self::timestamp_str()).as_bytes());
+                let _ = stderr.write_all(format!(
+                    "`{}' saved [{}]\n",
+                    self.url,
+                    downloaded,
+                ).as_bytes());
+
+                if self.total_size == Some(downloaded) || self.total_size.is_none() {
+                    let _ = stderr.write_all(format!(
+                        "Downloaded: {} in {} ({:.2} B/s)\n",
+                        downloaded,
+                        crate::format_duration(elapsed),
+                        speed,
+                    ).as_bytes());
+                }
+            }
+            FinishStatus::Error(ref err) => {
+                let _ = stderr.write_all(format!("--{}--  error: {}\n", Self::timestamp_str(), err).as_bytes());
+            }
+            FinishStatus::AlreadyExists => {
+                let _ = stderr.write_all(b"Server file no newer than local file -- not retrieving.\n");
+            }
+            FinishStatus::NotModified => {
+                let _ = stderr.write_all(b"The file is already fully retrieved; nothing to do.\n");
+            }
+            FinishStatus::Redirected(ref new_url) => {
+                let _ = stderr.write_all(format!("--{}--  redirected to: {}\n", Self::timestamp_str(), new_url).as_bytes());
+            }
+        }
+
+        let _ = stderr.flush();
+    }
+
+    /// Handles URL redirection by outputting a redirect notice.
+    ///
+    /// Outputs a timestamped message indicating that the download is
+    /// following a redirect to a new URL, and updates the internal
+    /// URL tracking.
+    ///
+    /// # Arguments
+    ///
+    /// * `new_url` - The new URL after redirection.
+    fn set_redirected(&mut self, new_url: &str) {
+        let mut stderr = io::stderr();
+        let _ = stderr.write_all(format!("--{}--  following redirect to: {}\n",
+            Self::timestamp_str(), new_url).as_bytes());
+        let _ = stderr.flush();
+        self.url = new_url.to_string();
+    }
+
+    /// Resets the verbose display to its initial state.
+    ///
+    /// Clears all tracking fields including URL, size, content type,
+    /// and finished flag, preparing the display for a new download.
+    fn reset(&mut self) {
+        self.url = String::new();
+        self.total_size = None;
+        self.downloaded = 0;
+        self.content_type = None;
+        self.finished = false;
+    }
+
+    /// Returns whether this display is interactive.
+    ///
+    /// Verbose progress is not considered interactive as it doesn't use
+    /// terminal cursor control or in-place line updates.
+    ///
+    /// # Returns
+    ///
+    /// Always returns `false` for verbose progress display.
+    fn is_interactive(&self) -> bool {
+        false
+    }
+}
