@@ -412,7 +412,7 @@ impl LinkConverter {
 /// # Returns
 ///
 /// A relative path string (e.g. `../other/page.html`).
-fn relative_path(from_dir: &std::path::Path, to_path: &std::path::Path) -> String {
+pub fn relative_path(from_dir: &std::path::Path, to_path: &std::path::Path) -> String {
     // Collect the path components of both the source directory and the
     // target file. We use `components()` which yields normalized components
     // (no `.` or `..` after resolution).
@@ -456,55 +456,4 @@ fn relative_path(from_dir: &std::path::Path, to_path: &std::path::Path) -> Strin
     result.push(to_file);
 
     result.to_string_lossy().to_string()
-}
-
-#[cfg(test)]
-mod relative_path_tests {
-    use super::relative_path;
-    use std::path::Path;
-
-    #[test]
-    fn test_same_directory() {
-        let result = relative_path(
-            Path::new("example.com"),
-            Path::new("example.com/page.html"),
-        );
-        assert_eq!(result, "page.html");
-    }
-
-    #[test]
-    fn test_subdirectory() {
-        let result = relative_path(
-            Path::new("example.com"),
-            Path::new("example.com/sub/page.html"),
-        );
-        assert_eq!(result, "sub/page.html");
-    }
-
-    #[test]
-    fn test_parent_directory() {
-        let result = relative_path(
-            Path::new("example.com/sub"),
-            Path::new("example.com/page.html"),
-        );
-        assert_eq!(result, "../page.html");
-    }
-
-    #[test]
-    fn test_sibling_directory() {
-        let result = relative_path(
-            Path::new("example.com/sub"),
-            Path::new("example.com/other/page.html"),
-        );
-        assert_eq!(result, "../other/page.html");
-    }
-
-    #[test]
-    fn test_deep_nesting() {
-        let result = relative_path(
-            Path::new("example.com/a/b/c"),
-            Path::new("example.com/a/x/y.html"),
-        );
-        assert_eq!(result, "../../x/y.html");
-    }
 }

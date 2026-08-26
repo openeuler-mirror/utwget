@@ -16,6 +16,7 @@
 #[path = "unit_tests/ftp_listing.rs"] mod ftp_listing;
 #[path = "unit_tests/ftp_opie.rs"] mod ftp_opie;
 #[path = "unit_tests/html_extractor.rs"] mod html_extractor;
+#[path = "unit_tests/html_converter.rs"] mod html_converter;
 #[path = "unit_tests/h2_integration.rs"] mod h2_integration;
 #[path = "unit_tests/http2.rs"] mod http2;
 #[path = "unit_tests/http_auth.rs"] mod http_auth;
@@ -24,6 +25,7 @@
 #[path = "unit_tests/http_response.rs"] mod http_response;
 #[path = "unit_tests/i18n.rs"] mod i18n;
 #[path = "unit_tests/metalink_parser.rs"] mod metalink_parser;
+#[path = "unit_tests/metalink_downloader.rs"] mod metalink_downloader;
 #[path = "unit_tests/net_proxy.rs"] mod net_proxy;
 #[path = "unit_tests/progress_bar.rs"] mod progress_bar;
 #[path = "unit_tests/retriever_types.rs"] mod retriever_types;
