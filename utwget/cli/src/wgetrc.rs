@@ -735,3 +735,85 @@ fn parse_secure_protocol(s: &str) -> Result<ut_core::SecureProtocol, ConfigError
         }),
     }
 }
+
+/// Parse a duration string into an optional `Duration`.
+///
+/// Supports the following suffixes:
+/// - `ms` - Milliseconds (e.g., `500ms` = 0.5 seconds)
+/// - `s` - Seconds (e.g., `30s` = 30 seconds)
+/// - `m` - Minutes (e.g., `5m` = 300 seconds)
+/// - `h` - Hours (e.g., `1h` = 3600 seconds)
+///
+/// If no suffix is provided, the value is interpreted as seconds.
+/// A value of 0 or negative returns `None`.
+///
+/// # Arguments
+///
+/// * `s` - The duration string to parse.
+///
+/// # Returns
+///
+/// `Ok(Some(Duration))` on success, `Ok(None)` for zero/negative values.
+///
+/// # Errors
+///
+/// Returns `ConfigError::InvalidValue` if the string cannot be parsed.
+///
+/// # Examples
+///
+/// ```ignore
+/// assert_eq!(parse_duration("30")?, Some(Duration::from_secs(30)));
+/// assert_eq!(parse_duration("500ms")?, Some(Duration::from_millis(500)));
+/// assert_eq!(parse_duration("5m")?, Some(Duration::from_secs(300)));
+/// ```
+fn parse_duration(s: &str) -> Result<Option<std::time::Duration>, ConfigError> {
+    let s = s.trim();
+    let seconds: f64 = if s.ends_with("ms") {
+        s.strip_suffix("ms")
+            .unwrap()
+            .trim()
+            .parse::<f64>()
+            .map_err(|_| ConfigError::InvalidValue {
+                option: "duration".to_string(),
+                reason: "not a number".to_string(),
+            })? / 1000.0
+    } else if s.ends_with('s') {
+        s.strip_suffix('s')
+            .unwrap()
+            .trim()
+            .parse::<f64>()
+            .map_err(|_| ConfigError::InvalidValue {
+                option: "duration".to_string(),
+                reason: "not a number".to_string(),
+            })?
+    } else if s.ends_with('m') {
+        s.strip_suffix('m')
+            .unwrap()
+            .trim()
+            .parse::<f64>()
+            .map_err(|_| ConfigError::InvalidValue {
+                option: "duration".to_string(),
+                reason: "not a number".to_string(),
+            })? * 60.0
+    } else if s.ends_with('h') {
+        s.strip_suffix('h')
+            .unwrap()
+            .trim()
+            .parse::<f64>()
+            .map_err(|_| ConfigError::InvalidValue {
+                option: "duration".to_string(),
+                reason: "not a number".to_string(),
+            })? * 3600.0
+    } else {
+        s.parse().map_err(|_| ConfigError::InvalidValue {
+            option: "duration".to_string(),
+            reason: "not a number".to_string(),
+        })?
+    };
+
+    if seconds <= 0.0 {
+        Ok(None)
+    } else {
+        Ok(Some(std::time::Duration::from_secs_f64(seconds)))
+    }
+}
