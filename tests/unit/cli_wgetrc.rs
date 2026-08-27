@@ -194,3 +194,10 @@ tries = 5
     let commands = result.unwrap();
     assert_eq!(commands.len(), 3);
 }
+
+#[test]
+fn test_parse_nonexistent_file() {
+    let path = PathBuf::from("/nonexistent/path/wgetrc");
+    let result = WgetrcParser::parse(&path);
+    assert!(result.is_err());
+}
