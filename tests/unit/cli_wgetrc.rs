@@ -234,3 +234,13 @@ fn test_apply_verbose_on() {
     assert!(result.is_ok());
     assert!(config.verbose >= 1);
 }
+
+#[test]
+fn test_apply_verbose_off() {
+    let commands = vec![WgetrcCommand::OnOff("verbose".to_string(), false)];
+    let mut config = Config::default();
+    config.verbose = 2;
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert_eq!(config.verbose, 0);
+}
