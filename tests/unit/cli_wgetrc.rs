@@ -201,3 +201,16 @@ fn test_parse_nonexistent_file() {
     let result = WgetrcParser::parse(&path);
     assert!(result.is_err());
 }
+
+// ============================================================================
+// Command Application Tests (On/Off)
+// ============================================================================
+
+#[test]
+fn test_apply_quiet_on() {
+    let commands = vec![WgetrcCommand::OnOff("quiet".to_string(), true)];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert!(config.quiet);
+}
