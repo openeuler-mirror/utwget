@@ -133,3 +133,29 @@ reject *.pdf
     assert_eq!(commands[0], WgetrcCommand::Command("accept".to_string(), vec!["*.html".to_string(), "*.css".to_string()]));
     assert_eq!(commands[1], WgetrcCommand::Command("reject".to_string(), vec!["*.pdf".to_string()]));
 }
+
+#[test]
+fn test_parse_mixed_content() {
+    let content = r#"# Configuration file for wget
+dir_prefix = /downloads
+quiet = on
+tries = 5
+# Timeout settings
+timeout = 30
+recursive = off
+accept *.html
+"#;
+    let path = create_temp_wgetrc(content);
+    let result = WgetrcParser::parse(&path);
+    cleanup_temp_file(&path);
+
+    assert!(result.is_ok());
+    let commands = result.unwrap();
+    assert_eq!(commands.len(), 6);
+    assert_eq!(commands[0], WgetrcCommand::Set("dir_prefix".to_string(), "/downloads".to_string()));
+    assert_eq!(commands[1], WgetrcCommand::OnOff("quiet".to_string(), true));
+    assert_eq!(commands[2], WgetrcCommand::Set("tries".to_string(), "5".to_string()));
+    assert_eq!(commands[3], WgetrcCommand::Set("timeout".to_string(), "30".to_string()));
+    assert_eq!(commands[4], WgetrcCommand::OnOff("recursive".to_string(), false));
+    assert_eq!(commands[5], WgetrcCommand::Command("accept".to_string(), vec!["*.html".to_string()]));
+}
