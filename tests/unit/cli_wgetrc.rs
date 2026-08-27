@@ -177,3 +177,20 @@ quiet=on
     assert_eq!(commands[1], WgetrcCommand::OnOff("quiet".to_string(), true));
     assert_eq!(commands[2], WgetrcCommand::Set("tries".to_string(), "5".to_string()));
 }
+
+#[test]
+fn test_parse_empty_lines() {
+    let content = r#"dir_prefix = /downloads
+
+quiet = on
+
+tries = 5
+"#;
+    let path = create_temp_wgetrc(content);
+    let result = WgetrcParser::parse(&path);
+    cleanup_temp_file(&path);
+
+    assert!(result.is_ok());
+    let commands = result.unwrap();
+    assert_eq!(commands.len(), 3);
+}
