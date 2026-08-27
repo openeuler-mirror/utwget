@@ -852,6 +852,24 @@ impl FtpsClient {
         let host = format!("{}.{}.{}.{}", nums[0], nums[1], nums[2], nums[3]);
         let port = ((nums[4] as u16) << 8) | (nums[5] as u16);
 
+        // FTP bounce attack protection: validate that the PASV-returned IP
+        // matches the control connection's peer. A malicious server could
+        // redirect the data connection to an arbitrary IP:port (port scan /
+        // SSRF). This mirrors the plain-FTP check in data_conn.rs:199-219.
+        if let Some(ref control_host) = self.host {
+            if control_host != &host {
+                log::warn!(
+                    "FTPS PASV address {}:{} does not match control connection host {}; \
+                     rejecting to prevent FTP bounce attack",
+                    host, port, control_host
+                );
+                return Err(FtpError::DataConnectFailed(format!(
+                    "PASV returned {}:{} but control connection is to {}; possible bounce attack",
+                    host, port, control_host
+                )));
+            }
+        }
+
         Ok((host, port))
     }
 
