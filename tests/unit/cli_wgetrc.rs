@@ -117,3 +117,19 @@ recursive = Off
     assert_eq!(commands[1], WgetrcCommand::OnOff("verbose".to_string(), false));
     assert_eq!(commands[2], WgetrcCommand::OnOff("recursive".to_string(), false));
 }
+
+#[test]
+fn test_parse_command_style() {
+    let content = r#"accept *.html *.css
+reject *.pdf
+"#;
+    let path = create_temp_wgetrc(content);
+    let result = WgetrcParser::parse(&path);
+    cleanup_temp_file(&path);
+
+    assert!(result.is_ok());
+    let commands = result.unwrap();
+    assert_eq!(commands.len(), 2);
+    assert_eq!(commands[0], WgetrcCommand::Command("accept".to_string(), vec!["*.html".to_string(), "*.css".to_string()]));
+    assert_eq!(commands[1], WgetrcCommand::Command("reject".to_string(), vec!["*.pdf".to_string()]));
+}
