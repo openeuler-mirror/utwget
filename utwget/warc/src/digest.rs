@@ -2,6 +2,35 @@ use sha1::Digest;
 
 use crate::Result;
 
+/// Encode a byte slice as lowercase base32 (RFC 4648), matching GNU wget's
+/// `base32_encode` (warc.c:587-600).
+///
+/// GNU wget writes WARC digests as `sha1:<base32>`, not `sha1:<hex>`. Using
+/// hex makes utwget's WARC output incompatible with wget and breaks
+/// `--warc-dedup` cross-tool dedup.
+const BASE32_ALPHABET: &[u8; 32] = b"abcdefghijklmnopqrstuvwxyz234567";
+
+fn base32_encode(data: &[u8]) -> String {
+    let mut result = String::with_capacity((data.len() * 8 + 4) / 5);
+    let mut buffer: u64 = 0;
+    let mut bits: u32 = 0;
+    for &byte in data {
+        buffer = (buffer << 8) | byte as u64;
+        bits += 8;
+        while bits >= 5 {
+            bits -= 5;
+            let idx = ((buffer >> bits) & 0x1f) as usize;
+            result.push(BASE32_ALPHABET[idx] as char);
+        }
+    }
+    if bits > 0 {
+        let idx = ((buffer << (5 - bits)) & 0x1f) as usize;
+        result.push(BASE32_ALPHABET[idx] as char);
+    }
+    // No padding (wget doesn't pad either).
+    result
+}
+
 /// A streaming SHA-1 digest wrapper for computing WARC block digests.
 ///
 /// WARC records require a `WARC-Block-Digest` header containing a SHA-1
@@ -51,7 +80,7 @@ impl WarcDigest {
         self.sha1.update(data);
     }
 
-    /// Finalises the digest and returns the result as a `sha1:<hex>` string.
+    /// Finalises the digest and returns the result as a `sha1:<base32>` string.
     ///
     /// This method clones the internal hasher so the struct remains usable
     /// for further updates if needed (though in typical WARC usage the
@@ -59,27 +88,15 @@ impl WarcDigest {
     ///
     /// # Returns
     ///
-    /// A string in the format `sha1:<40-hex-digit-checksum>`.
-    ///
-    /// # Examples
-    ///
-    /// ```ignore
-    /// use warc::digest::WarcDigest;
-    ///
-    /// let mut digest = WarcDigest::new();
-    /// digest.update(b"hello world");
-    /// let result = digest.finalize();
-    /// assert_eq!(result, "sha1:2aae6c35c94fcfb415dbe95f408b9ce91ee846ed");
-    /// ```
+    /// A string in the format `sha1:<base32-checksum>`, matching GNU wget.
     pub fn finalize(&self) -> String {
         let hash = self.sha1.clone().finalize();
-        let hex: String = hash.iter().map(|b| format!("{:02x}", b)).collect();
-        format!("sha1:{}", hex)
+        format!("sha1:{}", base32_encode(&hash))
     }
 }
 
 /// Computes a SHA-1 digest of the given data and returns it in
-/// `sha1:<hex>` format.
+/// `sha1:<base32>` format.
 ///
 /// This is a convenience function for one-shot hashing without creating a
 /// `WarcDigest` instance.
@@ -90,22 +107,12 @@ impl WarcDigest {
 ///
 /// # Returns
 ///
-/// A string in the format `sha1:<40-hex-digit-checksum>`.
-///
-/// # Examples
-///
-/// ```ignore
-/// use warc::digest::compute_sha1;
-///
-/// let digest = compute_sha1(b"hello world");
-/// assert_eq!(digest, "sha1:2aae6c35c94fcfb415dbe95f408b9ce91ee846ed");
-/// ```
+/// A string in the format `sha1:<base32-checksum>`, matching GNU wget.
 pub fn compute_sha1(data: &[u8]) -> String {
     let mut hasher = sha1::Sha1::new();
     hasher.update(data);
     let hash = hasher.finalize();
-    let hex: String = hash.iter().map(|b| format!("{:02x}", b)).collect();
-    format!("sha1:{}", hex)
+    format!("sha1:{}", base32_encode(&hash))
 }
 
 /// Reads a file from disk and computes its SHA-1 digest in

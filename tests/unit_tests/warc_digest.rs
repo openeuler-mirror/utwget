@@ -1,5 +1,8 @@
 // WARC digest 模块单元测试
 // 测试 SHA1 计算、digest update/finalize、已知向量验证
+//
+// 注意: GNU wget 使用 base32 编码 WARC 摘要 (warc.c:587-600)，不是 hex。
+// 测试验证 base32 格式，与 wget 兼容。
 
 use ut_warc::*;
 
@@ -7,33 +10,33 @@ use ut_warc::*;
 
 #[test]
 fn test_compute_sha1_empty() {
-    // 空输入的 SHA1 值
+    // 空输入的 SHA1 值 (base32 编码)
     let hash = digest::compute_sha1(b"");
-    assert_eq!(hash, "sha1:da39a3ee5e6b4b0d3255bfef95601890afd80709");
+    assert_eq!(hash, "sha1:3i42h3s6nnfq2msvx7xzkyayscx5qbyj");
 }
 
 #[test]
 fn test_compute_sha1_abc() {
-    // 已知向量: SHA1("abc")
+    // 已知向量: SHA1("abc") (base32 编码)
     let hash = digest::compute_sha1(b"abc");
-    assert_eq!(hash, "sha1:a9993e364706816aba3e25717850c26c9cd0d89d");
+    assert_eq!(hash, "sha1:vgmt4nsha2awvor6evyxqugcnsonbwe5");
 }
 
 #[test]
 fn test_compute_sha1_hello_world() {
-    // 已知向量: SHA1("hello world")
+    // 已知向量: SHA1("hello world") (base32 编码)
     let hash = digest::compute_sha1(b"hello world");
-    assert_eq!(hash, "sha1:2aae6c35c94fcfb415dbe95f408b9ce91ee846ed");
+    assert_eq!(hash, "sha1:fkxgynojj7h3ifo35fpubc445epoqrxn");
 }
 
 #[test]
 fn test_compute_sha1_format() {
-    // 验证输出格式: sha1:前缀 + 40位十六进制
+    // 验证输出格式: sha1:前缀 + base32 字符
     let hash = digest::compute_sha1(b"test data");
     assert!(hash.starts_with("sha1:"), "hash should start with 'sha1:' prefix");
-    let hex_part = &hash[5..];
-    assert_eq!(hex_part.len(), 40, "hex part should be 40 characters");
-    assert!(hex_part.chars().all(|c| c.is_ascii_hexdigit()), "hex part should only contain hex digits");
+    let b32_part = &hash[5..];
+    assert!(!b32_part.is_empty(), "base32 part should not be empty");
+    assert!(b32_part.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()), "base32 part should only contain lowercase alphanumeric");
 }
 
 #[test]
@@ -51,7 +54,8 @@ fn test_compute_sha1_large_input() {
     let data = vec![0u8; 10000];
     let hash = digest::compute_sha1(&data);
     assert!(hash.starts_with("sha1:"));
-    assert_eq!(hash.len(), 45); // "sha1:" (5) + hex (40)
+    // base32 of 20-byte SHA1 = ceil(160/5) = 32 chars + "sha1:" prefix
+    assert_eq!(hash.len(), 37);
 }
 
 #[test]
@@ -70,7 +74,7 @@ fn test_warc_digest_new() {
     let digest = WarcDigest::new();
     // 新实例的 finalize 应该等于空输入的 hash
     let result = digest.finalize();
-    assert_eq!(result, "sha1:da39a3ee5e6b4b0d3255bfef95601890afd80709");
+    assert_eq!(result, "sha1:3i42h3s6nnfq2msvx7xzkyayscx5qbyj");
 }
 
 #[test]
@@ -79,7 +83,7 @@ fn test_warc_digest_update_single() {
     let mut digest = WarcDigest::new();
     digest.update(b"hello world");
     let result = digest.finalize();
-    assert_eq!(result, "sha1:2aae6c35c94fcfb415dbe95f408b9ce91ee846ed");
+    assert_eq!(result, "sha1:fkxgynojj7h3ifo35fpubc445epoqrxn");
 }
 
 #[test]
@@ -90,7 +94,7 @@ fn test_warc_digest_update_multiple() {
     digest.update(b"world");
     let result = digest.finalize();
     // 应该等于 SHA1("hello world")
-    assert_eq!(result, "sha1:2aae6c35c94fcfb415dbe95f408b9ce91ee846ed");
+    assert_eq!(result, "sha1:fkxgynojj7h3ifo35fpubc445epoqrxn");
 }
 
 #[test]
@@ -165,7 +169,7 @@ fn test_compute_file_sha1_empty() {
     std::fs::write(path, b"").unwrap();
 
     let hash = digest::compute_file_sha1(path).unwrap();
-    assert_eq!(hash, "sha1:da39a3ee5e6b4b0d3255bfef95601890afd80709");
+    assert_eq!(hash, "sha1:3i42h3s6nnfq2msvx7xzkyayscx5qbyj");
 
     let _ = std::fs::remove_file(path);
 }
@@ -179,7 +183,7 @@ fn test_compute_file_sha1_binary() {
 
     let hash = digest::compute_file_sha1(path).unwrap();
     assert!(hash.starts_with("sha1:"));
-    assert_eq!(hash.len(), 45);
+    assert_eq!(hash.len(), 37);
 
     let _ = std::fs::remove_file(path);
 }
@@ -200,14 +204,14 @@ fn test_compute_file_sha1_not_found() {
 fn test_known_vector_nist_sha1_empty() {
     // NIST 空字符串 SHA1 测试向量
     let hash = digest::compute_sha1(b"");
-    assert_eq!(hash, "sha1:da39a3ee5e6b4b0d3255bfef95601890afd80709");
+    assert_eq!(hash, "sha1:3i42h3s6nnfq2msvx7xzkyayscx5qbyj");
 }
 
 #[test]
 fn test_known_vector_nist_sha1_abc() {
     // NIST "abc" SHA1 测试向量
     let hash = digest::compute_sha1(b"abc");
-    assert_eq!(hash, "sha1:a9993e364706816aba3e25717850c26c9cd0d89d");
+    assert_eq!(hash, "sha1:vgmt4nsha2awvor6evyxqugcnsonbwe5");
 }
 
 #[test]
@@ -217,7 +221,7 @@ fn test_known_vector_sha1_long_string() {
     let hash = digest::compute_sha1(input);
     // 验证格式正确
     assert!(hash.starts_with("sha1:"));
-    assert_eq!(hash.len(), 45);
+    assert_eq!(hash.len(), 37);
 }
 
 #[test]
@@ -226,5 +230,5 @@ fn test_known_vector_sha1_repeated() {
     let data = vec![b'a'; 1000];
     let hash = digest::compute_sha1(&data);
     assert!(hash.starts_with("sha1:"));
-    assert_eq!(hash.len(), 45);
+    assert_eq!(hash.len(), 37);
 }
