@@ -558,9 +558,19 @@ pub fn parse_response_head(data: &[u8]) -> Option<HttpResponse> {
 /// assert_eq!(find_header_end(data), Some(15));
 /// ```
 pub fn find_header_end(data: &[u8]) -> Option<usize> {
+    // Look for \r\n\r\n (standard) or \n\n (bare-LF, tolerated by GNU wget
+    // for non-compliant servers/proxies). Also handle \r\n\n and \n\r\n
+    // (mixed line endings).
     let windows = data.windows(4);
     for (i, w) in windows.enumerate() {
         if w == b"\r\n\r\n" {
+            return Some(i);
+        }
+    }
+    // Fall back to \n\n (bare LF only) — scan 2-byte windows.
+    let windows2 = data.windows(2);
+    for (i, w) in windows2.enumerate() {
+        if w == b"\n\n" {
             return Some(i);
         }
     }
