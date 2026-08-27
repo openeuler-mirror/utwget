@@ -65,3 +65,19 @@ fn test_parse_comments_only() {
     let commands = result.unwrap();
     assert!(commands.is_empty());
 }
+
+#[test]
+fn test_parse_simple_key_value() {
+    let content = r#"dir_prefix = /downloads
+user_agent = MyDownloader/1.0
+"#;
+    let path = create_temp_wgetrc(content);
+    let result = WgetrcParser::parse(&path);
+    cleanup_temp_file(&path);
+
+    assert!(result.is_ok());
+    let commands = result.unwrap();
+    assert_eq!(commands.len(), 2);
+    assert_eq!(commands[0], WgetrcCommand::Set("dir_prefix".to_string(), "/downloads".to_string()));
+    assert_eq!(commands[1], WgetrcCommand::Set("user_agent".to_string(), "MyDownloader/1.0".to_string()));
+}
