@@ -272,3 +272,12 @@ fn test_apply_timestamping() {
     assert!(result.is_ok());
     assert!(config.timestamping);
 }
+
+#[test]
+fn test_apply_noclobber() {
+    let commands = vec![WgetrcCommand::OnOff("noclobber".to_string(), true)];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert!(config.noclobber);
+}
