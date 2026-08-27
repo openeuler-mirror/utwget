@@ -61,3 +61,11 @@ mod tests {
         assert!(config.proxy.use_proxy);
         assert_eq!(config.proxy.http_proxy.unwrap(), "http://proxy:8080");
     }
+
+    #[test]
+    fn test_config_tls() {
+        let config = Config::default();
+        
+        // Default TLS settings
+        assert!(config.tls.check_certificate != ut_core::CheckCertMode::Off);
+    }
