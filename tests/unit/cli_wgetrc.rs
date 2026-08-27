@@ -81,3 +81,21 @@ user_agent = MyDownloader/1.0
     assert_eq!(commands[0], WgetrcCommand::Set("dir_prefix".to_string(), "/downloads".to_string()));
     assert_eq!(commands[1], WgetrcCommand::Set("user_agent".to_string(), "MyDownloader/1.0".to_string()));
 }
+
+#[test]
+fn test_parse_boolean_on() {
+    let content = r#"quiet = on
+verbose = ON
+recursive = On
+"#;
+    let path = create_temp_wgetrc(content);
+    let result = WgetrcParser::parse(&path);
+    cleanup_temp_file(&path);
+
+    assert!(result.is_ok());
+    let commands = result.unwrap();
+    assert_eq!(commands.len(), 3);
+    assert_eq!(commands[0], WgetrcCommand::OnOff("quiet".to_string(), true));
+    assert_eq!(commands[1], WgetrcCommand::OnOff("verbose".to_string(), true));
+    assert_eq!(commands[2], WgetrcCommand::OnOff("recursive".to_string(), true));
+}
