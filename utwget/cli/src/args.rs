@@ -822,6 +822,117 @@ pub struct Args {
     /// Multiple URLs can be specified. Options can appear anywhere
     /// on the command line, not just before URLs.
     pub urls: Vec<String>,
+
+    // ---- Hidden --no-FOO negation flags ----
+    // GNU wget auto-generates --no-FOO for every boolean option (main.c:540-548).
+    // The rearrange_args preprocessor converts --no-foo → --_no-foo for any
+    // boolean option that lacks an explicit --no-foo declaration in args.rs.
+    // These hidden flags are then handled in apply_args to set the
+    // corresponding config field to false.
+    #[arg(long = "_no-recursive", hide = true)]
+    pub _no_recursive: bool,
+    #[arg(long = "_no-quiet", hide = true)]
+    pub _no_quiet: bool,
+    #[arg(long = "_no-debug", hide = true)]
+    pub _no_debug: bool,
+    #[arg(long = "_no-background", hide = true)]
+    pub _no_background: bool,
+    #[arg(long = "_no-mirror", hide = true)]
+    pub _no_mirror: bool,
+    #[arg(long = "_no-timestamping", hide = true)]
+    pub _no_timestamping: bool,
+    #[arg(long = "_no-continue", hide = true)]
+    pub _no_continue: bool,
+    #[arg(long = "_no-page-requisites", hide = true)]
+    pub _no_page_requisites: bool,
+    #[arg(long = "_no-convert-links", hide = true)]
+    pub _no_convert_links: bool,
+    #[arg(long = "_no-backup-converted", hide = true)]
+    pub _no_backup_converted: bool,
+    #[arg(long = "_no-convert-file-only", hide = true)]
+    pub _no_convert_file_only: bool,
+    #[arg(long = "_no-delete-after", hide = true)]
+    pub _no_delete_after: bool,
+    #[arg(long = "_no-content-disposition", hide = true)]
+    pub _no_content_disposition: bool,
+    #[arg(long = "_no-auth-no-challenge", hide = true)]
+    pub _no_auth_no_challenge: bool,
+    #[arg(long = "_no-content-on-error", hide = true)]
+    pub _no_content_on_error: bool,
+    #[arg(long = "_no-save-headers", hide = true)]
+    pub _no_save_headers: bool,
+    #[arg(long = "_no-https-only", hide = true)]
+    pub _no_https_only: bool,
+    #[arg(long = "_no-span-hosts", hide = true)]
+    pub _no_span_hosts: bool,
+    #[arg(long = "_no-relative", hide = true)]
+    pub _no_relative: bool,
+    #[arg(long = "_no-protocol-directories", hide = true)]
+    pub _no_protocol_directories: bool,
+    #[arg(long = "_no-force-directories", hide = true)]
+    pub _no_force_directories: bool,
+    #[arg(long = "_no-retr-symlinks", hide = true)]
+    pub _no_retr_symlinks: bool,
+    #[arg(long = "_no-retry-connrefused", hide = true)]
+    pub _no_retry_connrefused: bool,
+    #[arg(long = "_no-retry-on-host-error", hide = true)]
+    pub _no_retry_on_host_error: bool,
+    #[arg(long = "_no-spider", hide = true)]
+    pub _no_spider: bool,
+    #[arg(long = "_no-strict-comments", hide = true)]
+    pub _no_strict_comments: bool,
+    #[arg(long = "_no-trust-server-names", hide = true)]
+    pub _no_trust_server_names: bool,
+    #[arg(long = "_no-unlink", hide = true)]
+    pub _no_unlink: bool,
+    #[arg(long = "_no-xattr", hide = true)]
+    pub _no_xattr: bool,
+    #[arg(long = "_no-preserve-permissions", hide = true)]
+    pub _no_preserve_permissions: bool,
+    #[arg(long = "_no-backups", hide = true)]
+    pub _no_backups: bool,
+    #[arg(long = "_no-follow-ftp", hide = true)]
+    pub _no_follow_ftp: bool,
+    #[arg(long = "_no-show-progress", hide = true)]
+    pub _no_show_progress: bool,
+    #[arg(long = "_no-keep-session-cookies", hide = true)]
+    pub _no_keep_session_cookies: bool,
+    #[arg(long = "_no-parent", hide = true)]
+    pub _no_parent: bool,
+    #[arg(long = "_no-clobber", hide = true)]
+    pub _no_clobber: bool,
+    #[arg(long = "_no-directories", hide = true)]
+    pub _no_directories: bool,
+    #[arg(long = "_no-host-directories", hide = true)]
+    pub _no_host_directories: bool,
+    #[arg(long = "_no-remove-listing", hide = true)]
+    pub _no_remove_listing: bool,
+    #[arg(long = "_no-glob", hide = true)]
+    pub _no_glob: bool,
+    #[arg(long = "_no-passive-ftp", hide = true)]
+    pub _no_passive_ftp: bool,
+    #[arg(long = "_no-check-certificate", hide = true)]
+    pub _no_check_certificate: bool,
+    #[arg(long = "_no-iri", hide = true)]
+    pub _no_iri: bool,
+    #[arg(long = "_no-netrc", hide = true)]
+    pub _no_netrc: bool,
+    #[arg(long = "_no-cache", hide = true)]
+    pub _no_cache: bool,
+    #[arg(long = "_no-use-server-timestamps", hide = true)]
+    pub _no_use_server_timestamps: bool,
+    #[arg(long = "_no-if-modified-since", hide = true)]
+    pub _no_if_modified_since: bool,
+    #[arg(long = "_no-cookies", hide = true)]
+    pub _no_cookies: bool,
+    #[arg(long = "_no-hsts", hide = true)]
+    pub _no_hsts: bool,
+    #[arg(long = "_no-dns-cache", hide = true)]
+    pub _no_dns_cache: bool,
+    #[arg(long = "_no-http-keep-alive", hide = true)]
+    pub _no_http_keep_alive: bool,
+    #[arg(long = "_no-compression", hide = true)]
+    pub _no_compression: bool,
 }
 
 /// Parse the `--level` argument: accepts a number or "inf" (which maps to 0

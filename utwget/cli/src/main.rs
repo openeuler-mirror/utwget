@@ -170,6 +170,58 @@ fn rearrange_args() -> Vec<String> {
     let mut result = vec![args[0].clone()];
     result.extend(options);
     result.extend(urls);
+
+    // GNU wget auto-generates --no-FOO for every boolean option (main.c:540-548).
+    // clap only accepts the --no-FOO forms we explicitly declared in args.rs.
+    // For all other boolean options, preprocess --no-FOO → a hidden
+    // --_no-foo flag that apply_args recognizes and converts to config.foo=false.
+    // This avoids having to declare 35+ separate clap fields.
+    let boolean_opts_needing_no: &[&str] = &[
+        "recursive", "quiet", "debug", "background", "mirror", "timestamping",
+        "continue", "page-requisites", "convert-links", "backup-converted",
+        "convert-file-only", "delete-after", "content-disposition",
+        "auth-no-challenge", "content-on-error", "save-headers",
+        "https-only", "span-hosts", "relative", "protocol-directories",
+        "force-directories", "retr-symlinks", "retry-connrefused",
+        "retry-on-host-error", "spider", "strict-comments",
+        "trust-server-names", "unlink", "xattr", "preserve-permissions",
+        "backups", "follow-ftp", "show-progress", "keep-session-cookies",
+        "parent", "clobber", "directories", "host-directories",
+        "remove-listing", "glob", "passive-ftp", "check-certificate",
+        "iri", "netrc", "cache", "use-server-timestamps",
+        "if-modified-since", "cookies", "hsts", "dns-cache",
+        "http-keep-alive", "compression",
+    ];
+
+    // --no-FOO already declared in args.rs (don't interfere with them)
+    let existing_no_opts: std::collections::HashSet<&str> = [
+        "no-cache", "no-check-certificate", "no-clobber", "no-compression",
+        "no-config", "no-cookies", "no-directories", "no-dns-cache",
+        "no-glob", "no-host-directories", "no-hsts", "no-http-keep-alive",
+        "no-if-modified-since", "no-iri", "no-netrc", "no-parent",
+        "no-passive-ftp", "no-proxy", "no-remove-listing",
+        "no-use-server-timestamps", "no-verbose", "no-warc-compression",
+        "no-warc-digests", "no-warc-keep-log",
+    ].iter().copied().collect();
+
+    let result: Vec<String> = result
+        .iter()
+        .map(|arg| {
+            if let Some(rest) = arg.strip_prefix("--no-") {
+                let opt_name = rest.split('=').next().unwrap_or("");
+                // If this --no-FOO is already declared in args.rs, leave it.
+                if existing_no_opts.contains(opt_name) {
+                    return arg.clone();
+                }
+                // If --FOO is a known boolean option, convert to hidden flag
+                if boolean_opts_needing_no.contains(&opt_name) {
+                    return format!("--_no-{}", opt_name);
+                }
+            }
+            arg.clone()
+        })
+        .collect();
+
     result
 }
 

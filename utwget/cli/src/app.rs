@@ -1698,6 +1698,65 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
     if args.reject_log.is_some() {
         config.reject_log = args.reject_log.clone();
     }
+
+    // ---- Handle --no-FOO negation flags (preprocessed from --no-foo) ----
+    // GNU wget auto-generates --no-FOO for every boolean option. These hidden
+    // flags are produced by rearrange_args and set the corresponding config
+    // field to false, overriding both the default and any wgetrc value.
+    // Field paths must match the struct hierarchy in core/src/config.rs.
+    if args._no_recursive { config.recursive.enabled = false; }
+    if args._no_quiet { config.quiet = false; config.verbose = 1; }
+    if args._no_debug { config.debug = false; }
+    if args._no_background { config.background = false; }
+    if args._no_timestamping { config.timestamping = false; }
+    if args._no_continue { config.continue_download = false; }
+    if args._no_page_requisites { config.page_requisites = false; }
+    if args._no_convert_links { config.convert_links = false; }
+    if args._no_backup_converted { config.backup_converted = false; }
+    if args._no_convert_file_only { config.convert_file_only = false; }
+    if args._no_delete_after { config.delete_after = false; }
+    if args._no_content_disposition { config.content_disposition = false; }
+    if args._no_auth_no_challenge { config.auth_without_challenge = false; }
+    if args._no_content_on_error { config.http.content_on_error = false; }
+    if args._no_save_headers { config.http.save_headers = false; }
+    if args._no_https_only { config.http.https_only = false; }
+    if args._no_span_hosts { config.recursive.span_hosts = false; }
+    if args._no_relative { config.recursive.relative_only = false; }
+    if args._no_protocol_directories { config.protocol_directories = false; }
+    if args._no_force_directories { config.force_directories = false; }
+    if args._no_retr_symlinks { config.ftp.retrieve_symlinks = false; }
+    if args._no_retry_connrefused { config.retry_connrefused = false; }
+    if args._no_retry_on_host_error { config.retry_on_host_error = false; }
+    if args._no_spider { config.recursive.spider = false; }
+    // strict_comments is a CLI-only field, not in Config — skip.
+    let _ = args._no_strict_comments;
+    if args._no_trust_server_names { config.trust_server_names = false; }
+    if args._no_unlink { config.unlink = false; }
+    if args._no_xattr { config.xattr = false; }
+    if args._no_preserve_permissions { config.preserve_permissions = false; }
+    if args._no_backups { config.backups = None; }
+    if args._no_follow_ftp { config.ftp.follow_ftp = false; }
+    // show_progress maps to progress.force_noscroll logic; skip for now.
+    let _ = args._no_show_progress;
+    if args._no_keep_session_cookies { config.cookie.keep_session_cookies = false; }
+    if args._no_parent { config.recursive.no_parent = false; }
+    if args._no_clobber { config.noclobber = false; }
+    if args._no_directories { config.no_directories = false; }
+    if args._no_host_directories { config.no_host_directories = false; }
+    if args._no_remove_listing { config.ftp.remove_listing = true; }
+    if args._no_glob { config.ftp.glob = true; }
+    if args._no_passive_ftp { config.ftp.passive = false; }
+    if args._no_check_certificate { config.tls.check_certificate = ut_core::types::CheckCertMode::On; }
+    if args._no_iri { config.iri.enabled = false; }
+    if args._no_netrc { config.use_netrc = false; }
+    if args._no_cache { config.http.no_cache = true; }
+    if args._no_use_server_timestamps { config.use_server_timestamps = true; }
+    if args._no_if_modified_since { config.if_modified_since = true; }
+    if args._no_cookies { config.cookie.enabled = true; }
+    if args._no_hsts { config.hsts.enabled = true; }
+    if args._no_dns_cache { config.no_dns_cache = false; }
+    if args._no_http_keep_alive { config.http.keep_alive = true; }
+    if args._no_compression { config.compression = ut_core::types::CompressionMode::None; }
 }
 
 /// Prompt for password interactively from terminal.
