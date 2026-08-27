@@ -132,6 +132,10 @@ pub struct FtpClient {
     binary: bool,
     /// Current working directory on the server.
     current_dir: String,
+    /// Configurable timeout for control and data connections.
+    /// Defaults to 30s for control, 60s for data (matching previous
+    /// hardcoded values), but can be overridden by --timeout/--read-timeout.
+    timeout: std::time::Duration,
 }
 
 impl FtpClient {
@@ -150,7 +154,19 @@ impl FtpClient {
             is_ipv6: false,
             binary: true,
             current_dir: String::new(),
+            timeout: std::time::Duration::from_secs(30),
         }
+    }
+
+    /// Set the timeout for control and data connections.
+    ///
+    /// This replaces the previous hardcoded 30s (control) / 60s (data)
+    /// timeouts, allowing `--timeout` / `--read-timeout` to be honored.
+    /// The data connection uses 2× this timeout (to allow more time for
+    /// large transfers), matching the previous 30s/60s ratio.
+    pub fn with_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.timeout = timeout;
+        self
     }
 
     /// Configure passive mode for data connections.
@@ -192,7 +208,7 @@ impl FtpClient {
         let addr = format!("{}:{}", host, port);
         let stream = std::net::TcpStream::connect(&addr).map_err(|e| FtpError::Connect(e.to_string()))?;
         stream.set_nonblocking(false).ok();
-        stream.set_read_timeout(Some(std::time::Duration::from_secs(30))).ok();
+        stream.set_read_timeout(Some(self.timeout)).ok();
 
         // Correctly detect IPv6 address:
         // - Starts with '[' (bracketed notation like [::1])

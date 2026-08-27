@@ -1344,7 +1344,12 @@ impl Retriever {
 
         // Regular FTP
         log::debug!("FTP passive mode: {}", self.config.ftp.passive);
-        let mut ftp_client = ut_ftp::FtpClient::new().with_passive(self.config.ftp.passive);
+        let ftp_timeout = self.config.read_timeout
+            .or(self.config.timeout)
+            .unwrap_or(std::time::Duration::from_secs(30));
+        let mut ftp_client = ut_ftp::FtpClient::new()
+            .with_passive(self.config.ftp.passive)
+            .with_timeout(ftp_timeout);
         ftp_client.connect(&url.host, url.port)
             .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("FTP connect error: {}", e))))?;
         ftp_client.login(&user, &password)
