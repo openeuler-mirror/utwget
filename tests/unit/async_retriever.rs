@@ -93,3 +93,11 @@ mod tests {
         assert!(config.cookie.enabled);
         assert!(!config.cookie.keep_session_cookies);
     }
+
+    #[test]
+    fn test_config_robots() {
+        let config = Config::default();
+        
+        // Default robots settings
+        assert!(config.recursive.use_robots);
+    }
