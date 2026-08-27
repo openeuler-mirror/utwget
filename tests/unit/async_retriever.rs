@@ -47,3 +47,17 @@ mod tests {
         let config = Config::default();
         assert!(config.http.keep_alive);
     }
+
+    #[test]
+    fn test_config_proxy() {
+        let mut config = Config::default();
+        
+        // Default proxy settings
+        assert!(config.proxy.use_proxy);
+        assert!(config.proxy.no_proxy.is_empty());
+        
+        // Set proxy
+        config.proxy.http_proxy = Some("http://proxy:8080".to_string());
+        assert!(config.proxy.use_proxy);
+        assert_eq!(config.proxy.http_proxy.unwrap(), "http://proxy:8080");
+    }
