@@ -214,3 +214,13 @@ fn test_apply_quiet_on() {
     assert!(result.is_ok());
     assert!(config.quiet);
 }
+
+#[test]
+fn test_apply_quiet_off() {
+    let commands = vec![WgetrcCommand::OnOff("quiet".to_string(), false)];
+    let mut config = Config::default();
+    config.quiet = true; // Start with quiet enabled
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert!(!config.quiet);
+}
