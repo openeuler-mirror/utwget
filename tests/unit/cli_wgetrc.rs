@@ -281,3 +281,12 @@ fn test_apply_noclobber() {
     assert!(result.is_ok());
     assert!(config.noclobber);
 }
+
+#[test]
+fn test_apply_continue_download() {
+    let commands = vec![WgetrcCommand::OnOff("continue".to_string(), true)];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert!(config.continue_download);
+}
