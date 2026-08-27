@@ -362,26 +362,29 @@ impl WarcWriterImpl {
     /// # Returns
     ///
     /// A byte vector containing the formatted response payload.
-    fn build_response_payload(url: &str, status_code: u16, headers: &[u8], body: &[u8]) -> Vec<u8> {
+    /// Build the WARC response record payload.
+    ///
+    /// GNU wget stores only the actual HTTP response (status line + response
+    /// headers + body) in the response record. The request is a separate
+    /// *request* record. The previous implementation fabricated a fake
+    /// request line and duplicated the headers block, producing malformed
+    /// response records.
+    fn build_response_payload(_url: &str, status_code: u16, headers: &[u8], body: &[u8]) -> Vec<u8> {
         let crlf: &[u8] = b"\r\n";
         let mut payload = Vec::new();
-        payload.extend_from_slice(b"GET ");
-        payload.extend_from_slice(url.as_bytes());
-        payload.extend_from_slice(b" HTTP/1.1");
-        payload.extend_from_slice(crlf);
-        if !headers.is_empty() {
-            payload.extend_from_slice(headers);
-        }
-        payload.extend_from_slice(crlf);
+        // Status line: HTTP/1.1 <code> <reason>
         payload.extend_from_slice(b"HTTP/1.1 ");
         payload.extend_from_slice(status_code.to_string().as_bytes());
         payload.push(b' ');
         payload.extend_from_slice(http_status_text(status_code).as_bytes());
         payload.extend_from_slice(crlf);
+        // Response headers (already include CRLF per header)
         if !headers.is_empty() {
             payload.extend_from_slice(headers);
         }
+        // Blank line separating headers from body
         payload.extend_from_slice(crlf);
+        // Response body
         payload.extend_from_slice(body);
         payload
     }
