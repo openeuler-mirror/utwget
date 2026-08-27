@@ -41,3 +41,9 @@ mod tests {
         config.concurrent_downloads = 4;
         assert_eq!(config.concurrent_downloads, 4);
     }
+
+    #[test]
+    fn test_config_keep_alive() {
+        let config = Config::default();
+        assert!(config.http.keep_alive);
+    }
