@@ -244,3 +244,12 @@ fn test_apply_verbose_off() {
     assert!(result.is_ok());
     assert_eq!(config.verbose, 0);
 }
+
+#[test]
+fn test_apply_recursive_on() {
+    let commands = vec![WgetrcCommand::OnOff("recursive".to_string(), true)];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert!(config.recursive.enabled);
+}
