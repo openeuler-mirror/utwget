@@ -84,3 +84,12 @@ mod tests {
         assert!(config.recursive.enabled);
         assert!(config.recursive.max_level.is_none());
     }
+
+    #[test]
+    fn test_config_cookie() {
+        let config = Config::default();
+        
+        // Default cookie settings
+        assert!(config.cookie.enabled);
+        assert!(!config.cookie.keep_session_cookies);
+    }
