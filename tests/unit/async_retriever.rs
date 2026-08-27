@@ -29,3 +29,15 @@ mod tests {
         config.http.force_http1_1 = true;
         assert!(config.http.force_http1_1);
     }
+
+    #[test]
+    fn test_config_concurrent_downloads() {
+        let mut config = Config::default();
+        
+        // Default should be 1 (sequential)
+        assert_eq!(config.concurrent_downloads, 1);
+        
+        // Set concurrent downloads
+        config.concurrent_downloads = 4;
+        assert_eq!(config.concurrent_downloads, 4);
+    }
