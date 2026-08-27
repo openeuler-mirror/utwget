@@ -290,3 +290,12 @@ fn test_apply_continue_download() {
     assert!(result.is_ok());
     assert!(config.continue_download);
 }
+
+#[test]
+fn test_apply_convert_links() {
+    let commands = vec![WgetrcCommand::OnOff("convert_links".to_string(), true)];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert!(config.convert_links);
+}
