@@ -49,3 +49,19 @@ fn test_parse_empty_file() {
     let commands = result.unwrap();
     assert!(commands.is_empty());
 }
+
+#[test]
+fn test_parse_comments_only() {
+    let content = r#"# This is a comment
+# Another comment
+# Settings below are commented out
+# quiet = on
+"#;
+    let path = create_temp_wgetrc(content);
+    let result = WgetrcParser::parse(&path);
+    cleanup_temp_file(&path);
+
+    assert!(result.is_ok());
+    let commands = result.unwrap();
+    assert!(commands.is_empty());
+}
