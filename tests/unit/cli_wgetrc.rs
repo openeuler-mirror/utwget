@@ -263,3 +263,12 @@ fn test_apply_recursive_off() {
     assert!(result.is_ok());
     assert!(!config.recursive.enabled);
 }
+
+#[test]
+fn test_apply_timestamping() {
+    let commands = vec![WgetrcCommand::OnOff("timestamping".to_string(), true)];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert!(config.timestamping);
+}
