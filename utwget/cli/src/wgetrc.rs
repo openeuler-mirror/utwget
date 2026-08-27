@@ -577,7 +577,8 @@ impl WgetrcParser {
                 config.restrict_file_names = Some(value.to_string());
             }
             _ => {
-                log::warn!("unknown wgetrc option: {}", key);
+                // GNU wget exits with code 2 on unknown wgetrc options.
+                return Err(ConfigError::UnknownOption(key.to_string()));
             }
         }
         Ok(())
@@ -808,7 +809,7 @@ impl WgetrcParser {
                 // handled at app level
             }
             _ => {
-                log::warn!("unknown wgetrc on/off option: {}", key);
+                return Err(ConfigError::UnknownOption(key.to_string()));
             }
         }
         Ok(())
