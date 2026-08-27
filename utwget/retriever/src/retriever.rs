@@ -2426,16 +2426,82 @@ fn read_until_eof<R: Read, W: Write>(
 fn read_response_head<R: Read>(
     reader: &mut R,
 ) -> Result<(HttpResponse, Vec<u8>), RetrieveError> {
+    let mut leftover: Vec<u8> = Vec::new();
     loop {
-        let (response, leftover) = read_one_response_head(reader)?;
+        // Prepend any leftover bytes from the previous 1xx response so they
+        // are not lost. If the server sent `100 Continue\r\n\r\n` and the final
+        // response in the same TCP segment, the final response bytes are in
+        // `leftover` and must be parsed before reading more from the socket.
+        let buf_to_parse = if leftover.is_empty() {
+            None
+        } else {
+            Some(std::mem::take(&mut leftover))
+        };
+
+        let (response, new_leftover) = if let Some(buf) = buf_to_parse {
+            // Try to parse the leftover bytes first; if they contain a complete
+            // response, use it; otherwise prepend to the next read.
+            match try_parse_from_buf(&buf) {
+                Some(result) => result,
+                None => {
+                    // Not enough bytes in leftover; need to read more.
+                    leftover = buf;
+                    read_one_response_head_with_prefix(reader, &mut leftover)?
+                }
+            }
+        } else {
+            read_one_response_head(reader)?
+        };
+
         if response.is_informational() {
             debug!(
                 "skipping informational response: {} {}",
                 response.status_code, response.reason
             );
+            leftover = new_leftover;
             continue;
         }
-        return Ok((response, leftover));
+        return Ok((response, new_leftover));
+    }
+}
+
+/// Try to parse a complete response head from a buffer, returning the
+/// response and any leftover body bytes.
+fn try_parse_from_buf(buf: &[u8]) -> Option<(HttpResponse, Vec<u8>)> {
+    let header_end = ut_http::response::find_header_end(buf)?;
+    let response = ut_http::response::parse_response_head(&buf[..header_end + 4])?;
+    let leftover: Vec<u8> = buf[header_end + 4..].to_vec();
+    Some((response, leftover))
+}
+
+/// Reads a single response head, using `prefix` as pre-existing bytes
+/// before reading from the reader.
+fn read_one_response_head_with_prefix<R: Read>(
+    reader: &mut R,
+    prefix: &mut Vec<u8>,
+) -> Result<(HttpResponse, Vec<u8>), RetrieveError> {
+    let mut tmp = [0u8; 8192];
+    loop {
+        if let Some(end) = ut_http::response::find_header_end(prefix) {
+            let response = ut_http::response::parse_response_head(&prefix[..end + 4])
+                .ok_or_else(|| RetrieveError::Protocol(WgetError::Other("failed to parse HTTP response".into())))?;
+            let leftover: Vec<u8> = prefix[end + 4..].to_vec();
+            return Ok((response, leftover));
+        }
+        if prefix.len() > 64 * 1024 {
+            return Err(RetrieveError::Protocol(WgetError::Other(
+                "HTTP response headers too large (>64KB)".into(),
+            )));
+        }
+        let n = reader
+            .read(&mut tmp)
+            .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("read response head: {}", e))))?;
+        if n == 0 {
+            return Err(RetrieveError::Protocol(WgetError::Other(
+                "connection closed before response headers received".into(),
+            )));
+        }
+        prefix.extend_from_slice(&tmp[..n]);
     }
 }
 
