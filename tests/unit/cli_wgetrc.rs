@@ -29,3 +29,23 @@ fn create_temp_wgetrc(content: &str) -> PathBuf {
     file.flush().expect("Failed to flush temp file");
     path
 }
+
+/// Clean up a temporary file.
+fn cleanup_temp_file(path: &PathBuf) {
+    let _ = fs::remove_file(path);
+}
+
+// ============================================================================
+// File Parsing Tests
+// ============================================================================
+
+#[test]
+fn test_parse_empty_file() {
+    let path = create_temp_wgetrc("");
+    let result = WgetrcParser::parse(&path);
+    cleanup_temp_file(&path);
+
+    assert!(result.is_ok());
+    let commands = result.unwrap();
+    assert!(commands.is_empty());
+}
