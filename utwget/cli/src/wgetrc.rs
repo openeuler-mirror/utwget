@@ -817,3 +817,35 @@ fn parse_duration(s: &str) -> Result<Option<std::time::Duration>, ConfigError> {
         Ok(Some(std::time::Duration::from_secs_f64(seconds)))
     }
 }
+
+/// Parse an address family preference string into an `AddressFamily` enum value.
+///
+/// Accepts the following values (case-insensitive):
+/// - `ipv4` or `4` - IPv4 only
+/// - `ipv6` or `6` - IPv6 only
+/// - `prefer_ipv4` or `prefer-ipv4` - Prefer IPv4, fall back to IPv6
+/// - `prefer_ipv6` or `prefer-ipv6` - Prefer IPv6, fall back to IPv4
+///
+/// # Arguments
+///
+/// * `s` - The address family string to parse.
+///
+/// # Returns
+///
+/// `Ok(AddressFamily)` on success.
+///
+/// # Errors
+///
+/// Returns `ConfigError::InvalidValue` for unrecognized family strings.
+fn parse_address_family(s: &str) -> Result<ut_core::AddressFamily, ConfigError> {
+    match s.to_ascii_lowercase().as_str() {
+        "ipv4" | "4" => Ok(ut_core::AddressFamily::Ipv4),
+        "ipv6" | "6" => Ok(ut_core::AddressFamily::Ipv6),
+        "prefer_ipv4" | "prefer-ipv4" => Ok(ut_core::AddressFamily::PreferIpv4),
+        "prefer_ipv6" | "prefer-ipv6" => Ok(ut_core::AddressFamily::PreferIpv6),
+        other => Err(ConfigError::InvalidValue {
+            option: "prefer_family".to_string(),
+            reason: format!("unknown value: {}", other),
+        }),
+    }
+}
