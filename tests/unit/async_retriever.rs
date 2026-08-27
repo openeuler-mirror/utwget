@@ -69,3 +69,18 @@ mod tests {
         // Default TLS settings
         assert!(config.tls.check_certificate != ut_core::CheckCertMode::Off);
     }
+
+    #[test]
+    fn test_config_recursive() {
+        let mut config = Config::default();
+        
+        // Default recursive settings
+        assert!(!config.recursive.enabled);
+        assert_eq!(config.recursive.max_level, Some(5));
+        
+        // Set recursive
+        config.recursive.enabled = true;
+        config.recursive.max_level = None; // Unlimited
+        assert!(config.recursive.enabled);
+        assert!(config.recursive.max_level.is_none());
+    }
