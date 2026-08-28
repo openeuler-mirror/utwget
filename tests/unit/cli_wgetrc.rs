@@ -450,3 +450,18 @@ fn test_apply_ftp_user_password() {
     assert_eq!(config.ftp.user, Some("ftpuser".to_string()));
     assert_eq!(config.ftp.password, Some("ftppass".to_string()));
 }
+
+#[test]
+fn test_apply_proxy_settings() {
+    let commands = vec![
+        WgetrcCommand::Set("http_proxy".to_string(), "http://proxy.example.com:8080".to_string()),
+        WgetrcCommand::Set("https_proxy".to_string(), "http://proxy.example.com:8080".to_string()),
+        WgetrcCommand::Set("ftp_proxy".to_string(), "http://proxy.example.com:8080".to_string()),
+    ];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert_eq!(config.proxy.http_proxy, Some("http://proxy.example.com:8080".to_string()));
+    assert_eq!(config.proxy.https_proxy, Some("http://proxy.example.com:8080".to_string()));
+    assert_eq!(config.proxy.ftp_proxy, Some("http://proxy.example.com:8080".to_string()));
+}
