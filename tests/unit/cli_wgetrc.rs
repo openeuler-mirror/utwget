@@ -344,3 +344,12 @@ fn test_apply_page_requisites() {
     assert!(result.is_ok());
     assert!(config.page_requisites);
 }
+
+#[test]
+fn test_apply_span_hosts() {
+    let commands = vec![WgetrcCommand::OnOff("span_hosts".to_string(), true)];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert!(config.recursive.span_hosts);
+}
