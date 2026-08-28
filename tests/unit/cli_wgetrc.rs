@@ -465,3 +465,12 @@ fn test_apply_proxy_settings() {
     assert_eq!(config.proxy.https_proxy, Some("http://proxy.example.com:8080".to_string()));
     assert_eq!(config.proxy.ftp_proxy, Some("http://proxy.example.com:8080".to_string()));
 }
+
+#[test]
+fn test_apply_no_proxy() {
+    let commands = vec![WgetrcCommand::Set("no_proxy".to_string(), "localhost,example.com,.local".to_string())];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert_eq!(config.proxy.no_proxy, vec!["localhost", "example.com", ".local"]);
+}
