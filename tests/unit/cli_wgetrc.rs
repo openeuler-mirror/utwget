@@ -437,3 +437,16 @@ fn test_apply_http_user_password() {
     assert_eq!(config.http.user, Some("testuser".to_string()));
     assert_eq!(config.http.password, Some("testpass".to_string()));
 }
+
+#[test]
+fn test_apply_ftp_user_password() {
+    let commands = vec![
+        WgetrcCommand::Set("ftp_user".to_string(), "ftpuser".to_string()),
+        WgetrcCommand::Set("ftp_password".to_string(), "ftppass".to_string()),
+    ];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert_eq!(config.ftp.user, Some("ftpuser".to_string()));
+    assert_eq!(config.ftp.password, Some("ftppass".to_string()));
+}
