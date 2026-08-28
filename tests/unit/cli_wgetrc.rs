@@ -501,3 +501,12 @@ fn test_apply_accept_patterns() {
     assert!(result.is_ok());
     assert_eq!(config.recursive.accept_patterns, vec!["*.html", "*.css", "*.js"]);
 }
+
+#[test]
+fn test_apply_reject_patterns() {
+    let commands = vec![WgetrcCommand::Set("reject".to_string(), "*.pdf,*.zip".to_string())];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert_eq!(config.recursive.reject_patterns, vec!["*.pdf", "*.zip"]);
+}
