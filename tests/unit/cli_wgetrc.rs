@@ -335,3 +335,12 @@ fn test_apply_cookies() {
     assert!(result.is_ok());
     assert!(config.cookie.enabled);
 }
+
+#[test]
+fn test_apply_page_requisites() {
+    let commands = vec![WgetrcCommand::OnOff("page_requisites".to_string(), true)];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert!(config.page_requisites);
+}
