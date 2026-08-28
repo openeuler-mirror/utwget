@@ -12,6 +12,10 @@ pub struct FtpEntry {
     pub name: String,
     /// Whether this entry is a directory.
     pub is_dir: bool,
+    /// Whether this entry is a symbolic link.
+    pub is_symlink: bool,
+    /// The symlink target path, if this entry is a symbolic link.
+    pub linkto: Option<String>,
     /// The size of the file in bytes (0 for directories).
     pub size: u64,
     /// The modification date string as returned by the server.
@@ -46,6 +50,8 @@ pub struct FtpEntry {
 ///     FtpEntry {
 ///         name: "docs".to_string(),
 ///         is_dir: true,
+///         is_symlink: false,
+///         linkto: None,
 ///         size: 0,
 ///         date: "2024-01-01".to_string(),
 ///         permissions: "rwxr-xr-x".to_string(),
