@@ -71,6 +71,31 @@ pub fn format_speed(bytes_per_sec: f64) -> String {
     format!("{:4.*}{}", precision, speed, UNITS[unit_idx])
 }
 
+/// Formats download speed with a 2-space prefix, matching GNU wget's
+/// `"  %4.*f%s"` format used in the progress bar.
+///
+/// The result is always 10 characters wide for KB/s and above:
+/// - 2 leading spaces
+/// - 4-char wide number with variable precision
+/// - 4-char unit string (KB/s, MB/s, etc.)
+pub fn format_speed_with_prefix(bytes_per_sec: f64) -> String {
+    const UNITS: &[&str] = &[" B/s", "KB/s", "MB/s", "GB/s", "TB/s"];
+    const BIBYTE: f64 = 1024.0;
+
+    let mut speed = bytes_per_sec;
+    let mut unit_idx = 0;
+    while speed >= BIBYTE && unit_idx < UNITS.len() - 1 {
+        speed /= BIBYTE;
+        unit_idx += 1;
+    }
+    if unit_idx == UNITS.len() - 1 && speed > 99.99 {
+        speed = 99.99;
+    }
+
+    let precision = if speed >= 99.95 { 0 } else if speed >= 9.995 { 1 } else { 2 };
+    format!("  {:4.*}{}", precision, speed, UNITS[unit_idx])
+}
+
 /// Formats an ETA (estimated time of arrival) in a short human-readable form,
 /// matching GNU wget's `eta_to_human_short()` function.
 ///
