@@ -6,6 +6,7 @@
 use crate::{format_duration, format_eta, format_size, format_speed_with_prefix, FinishStatus, ProgressDisplay};
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
+use unicode_width::UnicodeWidthStr;
 
 /// A progress bar display that shows download progress visually.
 ///
@@ -106,14 +107,90 @@ impl BarProgress {
         let term_width = terminal_size::terminal_size()
             .map(|(w, _)| w.0 as usize)
             .unwrap_or(80);
+
         // GNU wget: MAX_FILENAME_COLS = width / 4
         let max_filename_cols = term_width / 4;
-        // Reserve space for: filename(1/4 width+1) + pct(4) + bar(2) + size(8) + speed(10) + eta(15)
-        let reserved = max_filename_cols + 1 + 4 + 2 + 8 + 10 + 15;
-        let bar_width = if term_width > reserved {
-            term_width - reserved
+
+        // Build the non-bar components first, measuring their *display width*
+        // (CJK characters occupy 2 terminal columns but count as 1 char).
+        let pct_str = format!("{:>3}%", pct);
+
+        let size_str = format_size(self.downloaded);
+        let size_padded = format!("{:>8}", size_str);
+
+        let speed_str = if self.downloaded == 0 || elapsed_secs <= 0.0 {
+            "  --.-KB/s".to_string()
+        } else if self.report_speed_bytes {
+            format!("{:.0} B/s", speed)
         } else {
-            10
+            format_speed_with_prefix(speed)
+        };
+
+        // ETA / elapsed time area (15 display columns, PROGRESS_ETA_LEN)
+        const ETA_COLS: usize = 15;
+        let eta_str = if done {
+            let time_str = if elapsed_secs >= 10.0 {
+                format_eta(elapsed_secs.round() as u64)
+            } else {
+                format!("{:.1}s", elapsed_secs)
+            };
+            let label = ut_core::i18n::translate_with_args("utwget.progress_elapsed", &[("time", time_str)]);
+            let label_width = label.width();
+            if label_width < ETA_COLS {
+                format!("{}{}", label, " ".repeat(ETA_COLS - label_width))
+            } else {
+                label
+            }
+        } else if total > self.downloaded && elapsed_secs > 3.0 && speed > 1.0 {
+            let remaining = total - self.downloaded;
+            let eta_secs = (remaining as f64 / speed) as u64;
+            let time_str = format_eta(eta_secs);
+            let label = ut_core::i18n::translate_with_args("utwget.progress_eta", &[("time", time_str)]);
+            let label_width = label.width();
+            if label_width < ETA_COLS {
+                format!("{}{}", label, " ".repeat(ETA_COLS - label_width))
+            } else {
+                label
+            }
+        } else {
+            " ".repeat(ETA_COLS)
+        };
+
+        // Filename: truncate to max_filename_cols (display width), then pad
+        let filename_padded = {
+            let fname_width = self.filename.width();
+            if fname_width > max_filename_cols {
+                // Truncate by display width (handles CJK correctly)
+                let mut truncated = String::new();
+                let mut w = 0;
+                for ch in self.filename.chars() {
+                    let cw = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0);
+                    if w + cw > max_filename_cols {
+                        break;
+                    }
+                    truncated.push(ch);
+                    w += cw;
+                }
+                // Pad to max_filename_cols + 1
+                let pad = max_filename_cols + 1 - w;
+                format!("{}{}", truncated, " ".repeat(pad))
+            } else {
+                let pad = max_filename_cols + 1 - fname_width;
+                format!("{}{}", self.filename, " ".repeat(pad))
+            }
+        };
+
+        // Calculate bar_width so the total line fits exactly term_width columns.
+        let non_bar_width = filename_padded.width()
+            + pct_str.width()
+            + size_padded.width()
+            + speed_str.width()
+            + eta_str.width();
+        // bar includes 2 bracket chars + bar_width interior
+        let bar_width = if term_width > non_bar_width + 2 {
+            term_width - non_bar_width - 2
+        } else {
+            5
         };
         let bar_width = bar_width.max(5);
 
@@ -127,8 +204,6 @@ impl BarProgress {
 
         let mut bar = String::with_capacity(bar_width + 2);
         bar.push('[');
-        // GNU wget: draw filled-1 '=' chars, then one '>' at the leading edge.
-        // When filled == 0, the bar is all spaces.
         if filled > 0 {
             for _ in 0..filled - 1 {
                 bar.push('=');
@@ -140,78 +215,22 @@ impl BarProgress {
         }
         bar.push(']');
 
-        // Filename: pad to max_filename_cols + 1 (matching GNU wget)
-        let filename_display = if self.filename.chars().count() > max_filename_cols {
-            &self.filename[..max_filename_cols]
-        } else {
-            &self.filename
-        };
-        let filename_padded = format!("{:<width$}", filename_display, width = max_filename_cols + 1);
-
-        // Downloaded size: right-aligned to 8 chars (PROGRESS_FILESIZE_LEN = 7 + 1)
-        let size_str = format_size(self.downloaded);
-        let size_padded = format!("{:>8}", size_str);
-
-        // Speed format: "  %4.*f%s" with 2-space prefix
-        // Show --.-KB/s when no data or elapsed <= 0
-        let speed_str = if self.downloaded == 0 || elapsed_secs <= 0.0 {
-            "  --.-KB/s".to_string()
-        } else if self.report_speed_bytes {
-            format!("{:.0} B/s", speed)
-        } else {
-            format_speed_with_prefix(speed)
-        };
-
-        // ETA / elapsed time area (15 chars total, PROGRESS_ETA_LEN)
-        const ETA_LEN: usize = 15;
-        let eta_str = if done {
-            // Download complete: show elapsed time ("  用时 Xs" or "  用时 Xm Ys")
-            let time_str = if elapsed_secs >= 10.0 {
-                format_eta(elapsed_secs.round() as u64)
-            } else {
-                format!("{:.1}s", elapsed_secs)
-            };
-            let label = ut_core::i18n::translate_with_args("utwget.progress_elapsed", &[("time", time_str.clone())]);
-            if label.chars().count() < ETA_LEN {
-                format!("{}{}", label, " ".repeat(ETA_LEN - label.chars().count()))
-            } else {
-                label
-            }
-        } else if total > self.downloaded && elapsed_secs > 3.0 && speed > 1.0 {
-            // Show ETA only after 3 seconds of downloading
-            let remaining = total - self.downloaded;
-            let eta_secs = (remaining as f64 / speed) as u64;
-            let time_str = format_eta(eta_secs);
-            let label = ut_core::i18n::translate_with_args("utwget.progress_eta", &[("time", time_str)]);
-            if label.chars().count() < ETA_LEN {
-                format!("{}{}", label, " ".repeat(ETA_LEN - label.chars().count()))
-            } else {
-                label
-            }
-        } else {
-            // Not enough data for ETA: pad with spaces
-            " ".repeat(ETA_LEN)
-        };
-
-        // Format: "filename   xx%[bar]   nnn.nnK  ddd.ddKB/s  eta Xm Ys"
-        // (matching GNU wget's create_image layout)
-        // Note: no leading \r here; the caller adds it via display_image.
-        // speed_str already includes 2-space prefix, so no extra space needed.
+        // Assemble the line (exactly term_width display columns)
         let line = format!(
-            "{}{:>3}%{}{}{}{}",
+            "{}{}{}{}{}{}",
             filename_padded,
-            pct,
+            pct_str,
             bar,
             size_padded,
             speed_str,
             eta_str,
         );
 
-        // Pad to full terminal width so old characters are overwritten
-        // (matching GNU wget's create_image padding logic).
-        let line_cols = line.chars().count();
-        if line_cols < term_width {
-            format!("{}{}", line, " ".repeat(term_width - line_cols))
+        // Safety net: if line is still wider than term_width (shouldn't happen),
+        // pad with spaces to overwrite any residual characters.
+        let line_width = line.width();
+        if line_width < term_width {
+            format!("{}{}", line, " ".repeat(term_width - line_width))
         } else {
             line
         }
