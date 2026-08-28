@@ -2020,6 +2020,11 @@ impl Retriever {
             let proxy = resolve_proxy(url, &self.config);
             let proxy_host = proxy.host.clone();
             let proxy_port = proxy.port;
+            // Use URL-embedded credentials as fallback for --proxy-user/--proxy-password
+            let proxy_user = self.config.proxy.proxy_user.as_deref()
+                .or(proxy.user.as_deref());
+            let proxy_pass = self.config.proxy.proxy_password.as_deref()
+                .or(proxy.password.as_deref());
             debug!("connecting via proxy {}:{}", proxy_host, proxy_port);
 
             let mut stream = self.create_tcp_stream(&proxy_host, proxy_port)?;
@@ -2057,8 +2062,8 @@ impl Retriever {
                     request,
                     &url.host,
                     url.port,
-                    self.config.proxy.proxy_user.as_deref(),
-                    self.config.proxy.proxy_password.as_deref(),
+                    proxy_user,
+                    proxy_pass,
                 );
                 let serialized = proxy_req.serialize().map_err(RetrieveError::Io)?;
                 stream.write_all(&serialized).map_err(RetrieveError::Io)?;
