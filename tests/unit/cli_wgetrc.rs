@@ -299,3 +299,21 @@ fn test_apply_convert_links() {
     assert!(result.is_ok());
     assert!(config.convert_links);
 }
+
+#[test]
+fn test_apply_check_certificate() {
+    use ut_core::CheckCertMode;
+
+    // Test check_certificate = on
+    let commands = vec![WgetrcCommand::OnOff("check_certificate".to_string(), true)];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert_eq!(config.tls.check_certificate, CheckCertMode::On);
+
+    // Test check_certificate = off
+    let commands = vec![WgetrcCommand::OnOff("check_certificate".to_string(), false)];
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert_eq!(config.tls.check_certificate, CheckCertMode::Off);
+}
