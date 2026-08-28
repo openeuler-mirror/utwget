@@ -33,30 +33,64 @@ pub enum FinishStatus {
 }
 
 pub fn format_size(bytes: u64) -> String {
-    const KB: u64 = 1024;
-    const MB: u64 = 1024 * KB;
-    const GB: u64 = 1024 * MB;
+    const UNITS: &[&str] = &["K", "M", "G", "T", "P", "E"];
 
-    if bytes >= GB {
-        format!("{:.1}G", bytes as f64 / GB as f64)
-    } else if bytes >= MB {
-        format!("{:.1}M", bytes as f64 / MB as f64)
-    } else if bytes >= KB {
-        format!("{}K", bytes / KB)
+    if bytes < 1024 {
+        return format!("{}", bytes);
+    }
+
+    let mut value = bytes as f64 / 1024.0;
+    let mut unit_idx = 0;
+    while value >= 1024.0 && unit_idx < UNITS.len() - 1 {
+        value /= 1024.0;
+        unit_idx += 1;
+    }
+
+    if value < 1000.0 {
+        format!("{:.2}{}", value, UNITS[unit_idx])
     } else {
-        format!("{}B", bytes)
+        format!("{:.0}{}", value, UNITS[unit_idx])
     }
 }
 
 pub fn format_speed(bytes_per_sec: f64) -> String {
-    if bytes_per_sec >= 1024.0 * 1024.0 * 1024.0 {
-        format!("{:.1}G/s", bytes_per_sec / (1024.0 * 1024.0 * 1024.0))
-    } else if bytes_per_sec >= 1024.0 * 1024.0 {
-        format!("{:.1}M/s", bytes_per_sec / (1024.0 * 1024.0))
-    } else if bytes_per_sec >= 1024.0 {
-        format!("{:.0}K/s", bytes_per_sec / 1024.0)
+    const UNITS: &[&str] = &[" B/s", "KB/s", "MB/s", "GB/s", "TB/s"];
+    const BIBYTE: f64 = 1024.0;
+
+    let mut speed = bytes_per_sec;
+    let mut unit_idx = 0;
+    while speed >= BIBYTE && unit_idx < UNITS.len() - 1 {
+        speed /= BIBYTE;
+        unit_idx += 1;
+    }
+    if unit_idx == UNITS.len() - 1 && speed > 99.99 {
+        speed = 99.99;
+    }
+
+    let precision = if speed >= 99.95 { 0 } else if speed >= 9.995 { 1 } else { 2 };
+    format!("{:4.*}{}", precision, speed, UNITS[unit_idx])
+}
+
+/// Formats an ETA (estimated time of arrival) in a short human-readable form,
+/// matching GNU wget's `eta_to_human_short()` function.
+///
+/// Format rules:
+/// - `< 100s`: `"36s"`
+/// - `< 6000s (100m)`: `"6m 51s"`
+/// - `< 48h`: `"1h 23m"`
+/// - `< 100d`: `"2d 5h"`
+/// - `>= 100d`: `"365d"`
+pub fn format_eta(secs: u64) -> String {
+    if secs < 100 {
+        format!("{}s", secs)
+    } else if secs < 100 * 60 {
+        format!("{}m {}s", secs / 60, secs % 60)
+    } else if secs < 48 * 3600 {
+        format!("{}h {}m", secs / 3600, (secs / 60) % 60)
+    } else if secs < 100 * 86400 {
+        format!("{}d {}h", secs / 86400, (secs / 3600) % 24)
     } else {
-        format!("{:.0}B/s", bytes_per_sec)
+        format!("{}d", secs / 86400)
     }
 }
 
