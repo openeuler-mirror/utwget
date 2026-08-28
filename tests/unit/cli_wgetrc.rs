@@ -424,3 +424,16 @@ fn test_apply_timeout_with_suffix() {
     assert!(result.is_ok());
     assert_eq!(config.timeout, Some(Duration::from_millis(500)));
 }
+
+#[test]
+fn test_apply_http_user_password() {
+    let commands = vec![
+        WgetrcCommand::Set("http_user".to_string(), "testuser".to_string()),
+        WgetrcCommand::Set("http_password".to_string(), "testpass".to_string()),
+    ];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert_eq!(config.http.user, Some("testuser".to_string()));
+    assert_eq!(config.http.password, Some("testpass".to_string()));
+}
