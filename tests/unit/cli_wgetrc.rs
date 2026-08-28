@@ -317,3 +317,12 @@ fn test_apply_check_certificate() {
     assert!(result.is_ok());
     assert_eq!(config.tls.check_certificate, CheckCertMode::Off);
 }
+
+#[test]
+fn test_apply_use_proxy() {
+    let commands = vec![WgetrcCommand::OnOff("use_proxy".to_string(), true)];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert!(config.proxy.use_proxy);
+}
