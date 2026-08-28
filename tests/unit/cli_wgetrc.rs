@@ -353,3 +353,16 @@ fn test_apply_span_hosts() {
     assert!(result.is_ok());
     assert!(config.recursive.span_hosts);
 }
+
+// ============================================================================
+// Configuration Setting Tests
+// ============================================================================
+
+#[test]
+fn test_apply_dir_prefix() {
+    let commands = vec![WgetrcCommand::Set("dir_prefix".to_string(), "/downloads".to_string())];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert_eq!(config.dir_prefix, Some(PathBuf::from("/downloads")));
+}
