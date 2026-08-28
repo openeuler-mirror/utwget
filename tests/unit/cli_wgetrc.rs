@@ -384,3 +384,12 @@ fn test_apply_tries() {
     assert!(result.is_ok());
     assert_eq!(config.tries, 10);
 }
+
+#[test]
+fn test_apply_timeout() {
+    let commands = vec![WgetrcCommand::Set("timeout".to_string(), "30".to_string())];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert_eq!(config.timeout, Some(Duration::from_secs(30)));
+}
