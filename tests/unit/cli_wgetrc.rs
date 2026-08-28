@@ -393,3 +393,34 @@ fn test_apply_timeout() {
     assert!(result.is_ok());
     assert_eq!(config.timeout, Some(Duration::from_secs(30)));
 }
+
+#[test]
+fn test_apply_timeout_with_suffix() {
+    // Test with 's' suffix
+    let commands = vec![WgetrcCommand::Set("timeout".to_string(), "30s".to_string())];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert_eq!(config.timeout, Some(Duration::from_secs(30)));
+
+    // Test with 'm' suffix
+    let commands = vec![WgetrcCommand::Set("timeout".to_string(), "5m".to_string())];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert_eq!(config.timeout, Some(Duration::from_secs(300)));
+
+    // Test with 'h' suffix
+    let commands = vec![WgetrcCommand::Set("timeout".to_string(), "1h".to_string())];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert_eq!(config.timeout, Some(Duration::from_secs(3600)));
+
+    // Test with 'ms' suffix
+    let commands = vec![WgetrcCommand::Set("timeout".to_string(), "500ms".to_string())];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert_eq!(config.timeout, Some(Duration::from_millis(500)));
+}
