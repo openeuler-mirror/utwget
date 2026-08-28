@@ -175,3 +175,35 @@ fn test_metalink_parse_multiple_checksums() {
     assert_eq!(files[0].hashes[1].hash_type, ChecksumType::Sha1);
     assert_eq!(files[0].hashes[2].hash_type, ChecksumType::Sha256);
 }
+
+#[test]
+fn test_metalink_parse_extended_checksums() {
+    let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<metalink version="3.0">
+  <file name="file.zip">
+    <size>1000</size>
+    <hash type="sha-224">aaa</hash>
+    <hash type="sha-384">bbb</hash>
+    <hash type="sha-512">ccc</hash>
+    <url>http://example.com/file.zip</url>
+  </file>
+</metalink>"#;
+    let files = MetalinkParser::parse(Cursor::new(xml)).unwrap();
+    assert_eq!(files[0].hashes.len(), 3);
+    assert_eq!(files[0].hashes[0].hash_type, ChecksumType::Sha224);
+    assert_eq!(files[0].hashes[1].hash_type, ChecksumType::Sha384);
+    assert_eq!(files[0].hashes[2].hash_type, ChecksumType::Sha512);
+}
+
+#[test]
+fn test_checksum_type_from_str_all() {
+    assert_eq!(ChecksumType::from_str("md5"), Some(ChecksumType::Md5));
+    assert_eq!(ChecksumType::from_str("sha-1"), Some(ChecksumType::Sha1));
+    assert_eq!(ChecksumType::from_str("sha1"), Some(ChecksumType::Sha1));
+    assert_eq!(ChecksumType::from_str("sha-224"), Some(ChecksumType::Sha224));
+    assert_eq!(ChecksumType::from_str("sha-256"), Some(ChecksumType::Sha256));
+    assert_eq!(ChecksumType::from_str("sha-384"), Some(ChecksumType::Sha384));
+    assert_eq!(ChecksumType::from_str("sha-512"), Some(ChecksumType::Sha512));
+    assert_eq!(ChecksumType::from_str("SHA-512"), Some(ChecksumType::Sha512));
+    assert_eq!(ChecksumType::from_str("unknown"), None);
+}
