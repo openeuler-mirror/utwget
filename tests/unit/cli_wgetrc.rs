@@ -366,3 +366,12 @@ fn test_apply_dir_prefix() {
     assert!(result.is_ok());
     assert_eq!(config.dir_prefix, Some(PathBuf::from("/downloads")));
 }
+
+#[test]
+fn test_apply_user_agent() {
+    let commands = vec![WgetrcCommand::Set("user_agent".to_string(), "MyDownloader/1.0".to_string())];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert_eq!(config.http.user_agent, Some("MyDownloader/1.0".to_string()));
+}
