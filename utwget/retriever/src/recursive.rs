@@ -249,7 +249,7 @@ impl RecursiveRetriever {
                         let depth_limit = max_depth.unwrap_or(u32::MAX);
                         let at_or_beyond_limit = entry.depth >= depth_limit;
                         let dash_p_leaf = page_requisites && at_or_beyond_limit
-                            && (entry.depth == depth_limit || entry.depth == depth_limit + 1);
+                            && (entry.depth == depth_limit || entry.depth == depth_limit.saturating_add(1));
 
                         // Descend if we haven't hit the depth limit, or if -p
                         // allows inline links at the leaf level.
@@ -278,7 +278,7 @@ impl RecursiveRetriever {
                         let depth_limit = max_depth.unwrap_or(u32::MAX);
                         let at_or_beyond_limit = entry.depth >= depth_limit;
                         let dash_p_leaf = page_requisites && at_or_beyond_limit
-                            && (entry.depth == depth_limit || entry.depth == depth_limit + 1);
+                            && (entry.depth == depth_limit || entry.depth == depth_limit.saturating_add(1));
                         let descend = entry.depth < depth_limit || dash_p_leaf;
 
                         if descend {
