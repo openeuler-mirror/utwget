@@ -492,3 +492,12 @@ fn test_apply_level() {
     assert!(result.is_ok());
     assert_eq!(config.recursive.max_level, Some(3));
 }
+
+#[test]
+fn test_apply_accept_patterns() {
+    let commands = vec![WgetrcCommand::Set("accept".to_string(), "*.html,*.css,*.js".to_string())];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert_eq!(config.recursive.accept_patterns, vec!["*.html", "*.css", "*.js"]);
+}
