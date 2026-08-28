@@ -195,15 +195,26 @@ impl BarProgress {
 
         // Format: "filename   xx%[bar]   nnn.nnK  ddd.ddKB/s  eta Xm Ys"
         // (matching GNU wget's create_image layout)
-        format!(
-            "\r{}{:>3}%{}{} {}{}",
+        // Note: no leading \r here; the caller adds it via display_image.
+        // speed_str already includes 2-space prefix, so no extra space needed.
+        let line = format!(
+            "{}{:>3}%{}{}{}{}",
             filename_padded,
             pct,
             bar,
             size_padded,
             speed_str,
             eta_str,
-        )
+        );
+
+        // Pad to full terminal width so old characters are overwritten
+        // (matching GNU wget's create_image padding logic).
+        let line_cols = line.chars().count();
+        if line_cols < term_width {
+            format!("{}{}", line, " ".repeat(term_width - line_cols))
+        } else {
+            line
+        }
     }
 
     /// Renders the progress display when the total file size is unknown.
@@ -227,7 +238,7 @@ impl BarProgress {
         };
 
         format!(
-            "\r{:>10} {}",
+            "{:>10}{}",
             format_size(self.downloaded),
             speed_str,
         )
@@ -315,11 +326,10 @@ impl ProgressDisplay for BarProgress {
             self.render_unknown_size()
         };
 
-        if self.force_noscroll {
-            eprint!("{}  \r", line);
-        } else {
-            eprint!("{}", line);
-        }
+        // GNU wget's display_image: output \r then the buffer content.
+        // The buffer is padded to full terminal width so the entire line
+        // is overwritten on each update (no leftover characters).
+        eprint!("\r{}", line);
         self.flush_line();
     }
 
@@ -347,15 +357,12 @@ impl ProgressDisplay for BarProgress {
                 self.downloaded = downloaded;
                 if self.total_size.is_some() {
                     let line = self.render_known_size_with_done(true);
-                    eprint!("{}\r", line);
+                    eprint!("\r{}", line);
                     self.flush_line();
                 }
 
-                if self.force_noscroll {
-                    eprint!("\r{:>80}  \n", "");
-                } else {
-                    eprintln!();
-                }
+                // Move to next line after the progress bar
+                eprintln!();
 
         let speed_str = if self.report_speed_bytes {
             format!("{:.0} B/s", speed)
