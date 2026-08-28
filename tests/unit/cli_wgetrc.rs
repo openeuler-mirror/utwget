@@ -474,3 +474,12 @@ fn test_apply_no_proxy() {
     assert!(result.is_ok());
     assert_eq!(config.proxy.no_proxy, vec!["localhost", "example.com", ".local"]);
 }
+
+#[test]
+fn test_apply_max_redirect() {
+    let commands = vec![WgetrcCommand::Set("max_redirect".to_string(), "10".to_string())];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert_eq!(config.max_redirect, 10);
+}
