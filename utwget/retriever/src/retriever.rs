@@ -2705,12 +2705,29 @@ impl Retriever {
             && !self.config.no_directories;
 
         let file_name = if url.file.is_empty() { "index.html".to_string() } else { url.file.clone() };
-        let safe_file = ut_core::utils::safe_filename(&file_name);
+        let r = &self.config.filename_restrictions;
+        let restrictions_active = self.config.restrict_file_names.is_some()
+            || (r.restrict_os, r.restrict_ctrl_chars, r.restrict_nonascii, r.case_restriction)
+                != (ut_core::types::RestrictOs::default(), true, false, ut_core::types::CaseRestriction::None);
+        let sanitize = move |s: &str| -> String {
+            let mut name = if restrictions_active {
+                ut_core::utils::safe_filename_with_restrictions(
+                    s, r.restrict_os, r.restrict_ctrl_chars, r.restrict_nonascii, r.case_restriction,
+                )
+            } else {
+                ut_core::utils::safe_filename(s)
+            };
+            if name == "." || name == ".." {
+                name = "_".to_string();
+            }
+            name
+        };
+        let safe_file = sanitize(&file_name);
 
         // Directory components from url.dir, sanitized and with --cut-dirs applied.
         let dir_parts: Vec<String> = url.dir.split('/')
             .filter(|s| !s.is_empty())
-            .map(|s| ut_core::utils::safe_filename(s))
+            .map(|s| sanitize(s))
             // Final guard: never allow a ".." component into the path, even
             // if it somehow survived normalization (e.g. from a malformed dir).
             .filter(|s| s != ".." && s != ".")
@@ -2726,7 +2743,7 @@ impl Retriever {
 
         // Host directory (unless -nH or saving flat without -r/-x)
         if !self.config.no_host_directories && create_dirs {
-            path.push(ut_core::utils::safe_filename(&url.host));
+            path.push(sanitize(&url.host));
         }
 
         // Protocol directory (--protocol-directories)
