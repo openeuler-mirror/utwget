@@ -326,3 +326,12 @@ fn test_apply_use_proxy() {
     assert!(result.is_ok());
     assert!(config.proxy.use_proxy);
 }
+
+#[test]
+fn test_apply_cookies() {
+    let commands = vec![WgetrcCommand::OnOff("cookies".to_string(), true)];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert!(config.cookie.enabled);
+}
