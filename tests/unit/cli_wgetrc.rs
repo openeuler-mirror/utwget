@@ -667,3 +667,20 @@ fn test_case_insensitive_keys() {
     assert!(config.quiet);
     assert!(config.recursive.enabled);
 }
+
+#[test]
+fn test_case_insensitive_on_off() {
+    // The parser should handle ON/OFF case-insensitively
+    let content = r#"quiet = ON
+verbose = oFf
+"#;
+    let path = create_temp_wgetrc(content);
+    let result = WgetrcParser::parse(&path);
+    cleanup_temp_file(&path);
+
+    assert!(result.is_ok());
+    let commands = result.unwrap();
+    assert_eq!(commands.len(), 2);
+    assert_eq!(commands[0], WgetrcCommand::OnOff("quiet".to_string(), true));
+    assert_eq!(commands[1], WgetrcCommand::OnOff("verbose".to_string(), false));
+}
