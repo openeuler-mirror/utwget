@@ -589,3 +589,16 @@ fn test_apply_cut_dirs() {
     assert!(result.is_ok());
     assert_eq!(config.cut_dirs, 2);
 }
+
+#[test]
+fn test_apply_load_save_cookies() {
+    let commands = vec![
+        WgetrcCommand::Set("load_cookies".to_string(), "/tmp/cookies.txt".to_string()),
+        WgetrcCommand::Set("save_cookies".to_string(), "/tmp/cookies_new.txt".to_string()),
+    ];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert_eq!(config.cookie.input_file, Some(PathBuf::from("/tmp/cookies.txt")));
+    assert_eq!(config.cookie.output_file, Some(PathBuf::from("/tmp/cookies_new.txt")));
+}
