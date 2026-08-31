@@ -580,3 +580,12 @@ fn test_apply_bind_address() {
     assert!(result.is_ok());
     assert_eq!(config.bind_address, Some("192.168.1.100".to_string()));
 }
+
+#[test]
+fn test_apply_cut_dirs() {
+    let commands = vec![WgetrcCommand::Set("cut_dirs".to_string(), "2".to_string())];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert_eq!(config.cut_dirs, 2);
+}
