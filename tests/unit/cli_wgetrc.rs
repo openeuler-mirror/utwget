@@ -684,3 +684,28 @@ verbose = oFf
     assert_eq!(commands[0], WgetrcCommand::OnOff("quiet".to_string(), true));
     assert_eq!(commands[1], WgetrcCommand::OnOff("verbose".to_string(), false));
 }
+
+// ============================================================================
+// Key Alias Tests
+// ============================================================================
+
+#[test]
+fn test_key_aliases() {
+    let commands = vec![
+        // directory_prefix is alias for dir_prefix
+        WgetrcCommand::Set("directory_prefix".to_string(), "/downloads".to_string()),
+        // user-agent is alias for user_agent
+        WgetrcCommand::Set("user-agent".to_string(), "Test/1.0".to_string()),
+        // no_clobber is alias for noclobber
+        WgetrcCommand::OnOff("no_clobber".to_string(), true),
+        // continue-download is alias for continue
+        WgetrcCommand::OnOff("continue-download".to_string(), true),
+    ];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert_eq!(config.dir_prefix, Some(PathBuf::from("/downloads")));
+    assert_eq!(config.http.user_agent, Some("Test/1.0".to_string()));
+    assert!(config.noclobber);
+    assert!(config.continue_download);
+}
