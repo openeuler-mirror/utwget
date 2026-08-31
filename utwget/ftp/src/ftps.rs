@@ -524,7 +524,8 @@ impl FtpsClient {
         let versions: &[&'static rustls::SupportedProtocolVersion] = match self.config.secure_protocol {
             SecureProtocol::TlsV1_2 => &[&rustls::version::TLS12],
             SecureProtocol::TlsV1_3 => &[&rustls::version::TLS13],
-            SecureProtocol::Auto | SecureProtocol::Pfs => rustls::ALL_VERSIONS,
+            SecureProtocol::Auto => rustls::ALL_VERSIONS,
+            SecureProtocol::Pfs => rustls::ALL_VERSIONS,
         };
 
         if self.config.verify_certificate {
@@ -561,6 +562,10 @@ impl FtpsClient {
                     .map_err(|e| FtpError::Connect(format!("cannot set client auth: {}", e)))?,
                 None => cfg.with_no_client_auth(),
             };
+            let mut cfg = cfg;
+            if self.config.secure_protocol == SecureProtocol::Pfs {
+                cfg.resumption = rustls::client::Resumption::disabled();
+            }
             Ok(Arc::new(cfg))
         } else {
             // Skip certificate verification
@@ -575,6 +580,10 @@ impl FtpsClient {
                     .map_err(|e| FtpError::Connect(format!("cannot set client auth: {}", e)))?,
                 None => cfg.with_no_client_auth(),
             };
+            let mut cfg = cfg;
+            if self.config.secure_protocol == SecureProtocol::Pfs {
+                cfg.resumption = rustls::client::Resumption::disabled();
+            }
             Ok(Arc::new(cfg))
         }
     }
