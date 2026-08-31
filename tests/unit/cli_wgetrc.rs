@@ -725,3 +725,16 @@ fn test_later_commands_override_earlier() {
     assert!(result.is_ok());
     assert_eq!(config.tries, 10);
 }
+
+#[test]
+fn test_multiple_onoff_same_key() {
+    let commands = vec![
+        WgetrcCommand::OnOff("quiet".to_string(), true),
+        WgetrcCommand::OnOff("quiet".to_string(), false),
+        WgetrcCommand::OnOff("quiet".to_string(), true),
+    ];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert!(config.quiet);
+}
