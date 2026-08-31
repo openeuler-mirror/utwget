@@ -630,3 +630,11 @@ fn test_error_invalid_secure_protocol() {
     let result = WgetrcParser::apply(&commands, &mut config);
     assert!(result.is_err());
 }
+
+#[test]
+fn test_error_invalid_prefer_family() {
+    let commands = vec![WgetrcCommand::Set("prefer_family".to_string(), "invalid".to_string())];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_err());
+}
