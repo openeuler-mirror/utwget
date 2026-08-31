@@ -510,3 +510,12 @@ fn test_apply_reject_patterns() {
     assert!(result.is_ok());
     assert_eq!(config.recursive.reject_patterns, vec!["*.pdf", "*.zip"]);
 }
+
+#[test]
+fn test_apply_domains() {
+    let commands = vec![WgetrcCommand::Set("domains".to_string(), "example.com,test.com".to_string())];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert_eq!(config.recursive.domains, vec!["example.com", "test.com"]);
+}
