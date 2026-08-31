@@ -571,3 +571,12 @@ fn test_apply_prefer_family() {
     assert!(result.is_ok());
     assert_eq!(config.prefer_family, AddressFamily::PreferIpv4);
 }
+
+#[test]
+fn test_apply_bind_address() {
+    let commands = vec![WgetrcCommand::Set("bind_address".to_string(), "192.168.1.100".to_string())];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert_eq!(config.bind_address, Some("192.168.1.100".to_string()));
+}
