@@ -738,3 +738,88 @@ fn test_multiple_onoff_same_key() {
     assert!(result.is_ok());
     assert!(config.quiet);
 }
+
+// ============================================================================
+// Integration Tests
+// ============================================================================
+
+#[test]
+fn test_full_wgetrc_file() {
+    let content = r#"# Sample wgetrc configuration file
+
+# Directory settings
+dir_prefix = /var/downloads
+cut_dirs = 2
+
+# Download behavior
+tries = 3
+timeout = 60
+continue = on
+noclobber = on
+timestamping = on
+
+# Output settings
+quiet = off
+verbose = on
+
+# HTTP settings
+user_agent = Mozilla/5.0 (compatible; MyDownloader/1.0)
+http_user = myuser
+http_password = mypassword
+
+# Proxy settings
+use_proxy = on
+http_proxy = http://proxy.example.com:8080
+
+# TLS settings
+check_certificate = on
+secure_protocol = auto
+
+# Recursive settings
+recursive = off
+level = 5
+accept = *.html,*.css,*.js
+reject = *.pdf,*.zip
+
+# Cookie settings
+cookies = on
+load_cookies = /tmp/cookies.txt
+
+# Misc settings
+max_redirect = 20
+"#;
+    let path = create_temp_wgetrc(content);
+    let result = WgetrcParser::parse(&path);
+    cleanup_temp_file(&path);
+
+    assert!(result.is_ok());
+    let commands = result.unwrap();
+
+    // Apply all commands
+    let mut config = Config::default();
+    let apply_result = WgetrcParser::apply(&commands, &mut config);
+    assert!(apply_result.is_ok());
+
+    // Verify all settings were applied
+    assert_eq!(config.dir_prefix, Some(PathBuf::from("/var/downloads")));
+    assert_eq!(config.cut_dirs, 2);
+    assert_eq!(config.tries, 3);
+    assert_eq!(config.timeout, Some(Duration::from_secs(60)));
+    assert!(config.continue_download);
+    assert!(config.noclobber);
+    assert!(config.timestamping);
+    assert!(!config.quiet);
+    assert!(config.verbose >= 1);
+    assert_eq!(config.http.user_agent, Some("Mozilla/5.0 (compatible; MyDownloader/1.0)".to_string()));
+    assert_eq!(config.http.user, Some("myuser".to_string()));
+    assert_eq!(config.http.password, Some("mypassword".to_string()));
+    assert!(config.proxy.use_proxy);
+    assert_eq!(config.proxy.http_proxy, Some("http://proxy.example.com:8080".to_string()));
+    assert!(!config.recursive.enabled);
+    assert_eq!(config.recursive.max_level, Some(5));
+    assert_eq!(config.recursive.accept_patterns, vec!["*.html", "*.css", "*.js"]);
+    assert_eq!(config.recursive.reject_patterns, vec!["*.pdf", "*.zip"]);
+    assert!(config.cookie.enabled);
+    assert_eq!(config.cookie.input_file, Some(PathBuf::from("/tmp/cookies.txt")));
+    assert_eq!(config.max_redirect, 20);
+}
