@@ -545,3 +545,29 @@ fn test_apply_secure_protocol() {
     assert!(result.is_ok());
     assert_eq!(config.tls.secure_protocol, SecureProtocol::TlsV1_3);
 }
+
+#[test]
+fn test_apply_prefer_family() {
+    use ut_core::AddressFamily;
+
+    // Test IPv4
+    let commands = vec![WgetrcCommand::Set("prefer_family".to_string(), "ipv4".to_string())];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert_eq!(config.prefer_family, AddressFamily::Ipv4);
+
+    // Test IPv6
+    let commands = vec![WgetrcCommand::Set("prefer_family".to_string(), "ipv6".to_string())];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert_eq!(config.prefer_family, AddressFamily::Ipv6);
+
+    // Test prefer-ipv4
+    let commands = vec![WgetrcCommand::Set("prefer_family".to_string(), "prefer-ipv4".to_string())];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert_eq!(config.prefer_family, AddressFamily::PreferIpv4);
+}
