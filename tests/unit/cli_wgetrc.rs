@@ -646,3 +646,24 @@ fn test_error_invalid_max_redirect() {
     let result = WgetrcParser::apply(&commands, &mut config);
     assert!(result.is_err());
 }
+
+// ============================================================================
+// Case Insensitivity Tests
+// ============================================================================
+
+#[test]
+fn test_case_insensitive_keys() {
+    let commands = vec![
+        WgetrcCommand::Set("DIR_PREFIX".to_string(), "/downloads".to_string()),
+        WgetrcCommand::Set("User_Agent".to_string(), "Test/1.0".to_string()),
+        WgetrcCommand::OnOff("QUIET".to_string(), true),
+        WgetrcCommand::OnOff("Recursive".to_string(), true),
+    ];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert_eq!(config.dir_prefix, Some(PathBuf::from("/downloads")));
+    assert_eq!(config.http.user_agent, Some("Test/1.0".to_string()));
+    assert!(config.quiet);
+    assert!(config.recursive.enabled);
+}
