@@ -602,3 +602,15 @@ fn test_apply_load_save_cookies() {
     assert_eq!(config.cookie.input_file, Some(PathBuf::from("/tmp/cookies.txt")));
     assert_eq!(config.cookie.output_file, Some(PathBuf::from("/tmp/cookies_new.txt")));
 }
+
+// ============================================================================
+// Error Handling Tests
+// ============================================================================
+
+#[test]
+fn test_error_invalid_tries() {
+    let commands = vec![WgetrcCommand::Set("tries".to_string(), "not_a_number".to_string())];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_err());
+}
