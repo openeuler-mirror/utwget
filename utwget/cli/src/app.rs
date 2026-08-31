@@ -1512,6 +1512,7 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
     if args.convert_file_only { config.convert_file_only = true; }
     if args.backup_converted { config.backup_converted = true; }
     if args.adjust_extension { config.adjust_extension = true; }
+    if args.html_extension { config.adjust_extension = true; }
 
     if args.mirror {
         // --mirror is equivalent to -N -r -l inf --no-remove-listing in GNU wget

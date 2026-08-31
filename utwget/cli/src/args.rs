@@ -267,6 +267,10 @@ pub struct Args {
     #[arg(short = 'E', long = "adjust-extension")]
     pub adjust_extension: bool,
 
+    /// Deprecated alias for --adjust-extension.
+    #[arg(long = "html-extension", hide = true)]
+    pub html_extension: bool,
+
     /// Set HTTP authentication user.
     #[arg(long = "http-user")]
     pub http_user: Option<String>,
