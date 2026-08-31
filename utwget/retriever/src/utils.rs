@@ -155,11 +155,14 @@ pub(crate) fn is_url_proxied(url: &ParsedUrl, config: &Config) -> bool {
         return false;
     }
 
-    // Check --no-proxy domains
-    let host = url.host.as_str();
+    // Check --no-proxy domains (case-insensitive, supports subdomain matching)
+    let host_lower = url.host.to_ascii_lowercase();
     for domain in &config.proxy.no_proxy {
-        let domain = domain.trim();
-        if domain == host || (domain.starts_with('.') && host.ends_with(domain)) {
+        let domain = domain.trim().to_ascii_lowercase();
+        if domain == host_lower
+            || (domain.starts_with('.') && host_lower.ends_with(&domain))
+            || host_lower == domain.trim_start_matches('.')
+        {
             return false;
         }
     }
