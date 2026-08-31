@@ -614,3 +614,11 @@ fn test_error_invalid_tries() {
     let result = WgetrcParser::apply(&commands, &mut config);
     assert!(result.is_err());
 }
+
+#[test]
+fn test_error_invalid_timeout() {
+    let commands = vec![WgetrcCommand::Set("timeout".to_string(), "invalid".to_string())];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_err());
+}
