@@ -709,3 +709,19 @@ fn test_key_aliases() {
     assert!(config.noclobber);
     assert!(config.continue_download);
 }
+
+// ============================================================================
+// Override Tests
+// ============================================================================
+
+#[test]
+fn test_later_commands_override_earlier() {
+    let commands = vec![
+        WgetrcCommand::Set("tries".to_string(), "5".to_string()),
+        WgetrcCommand::Set("tries".to_string(), "10".to_string()),
+    ];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert_eq!(config.tries, 10);
+}
