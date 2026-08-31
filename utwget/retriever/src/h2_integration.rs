@@ -55,12 +55,13 @@ fn h2_runtime() -> &'static tokio::runtime::Runtime {
     })
 }
 
-/// A generic connection pool keyed by (host, port).
+/// A generic connection pool keyed by (host, port) with LRU eviction.
 ///
 /// Generic over the connection type `T` so the pool logic can be unit-tested
 /// with a mock connection type. In production, `T = ut_http::h2::H2Client`.
 pub struct ConnectionPool<T> {
     cache: Mutex<std::collections::HashMap<(String, u16), T>>,
+    order: Mutex<std::collections::VecDeque<(String, u16)>>,
     max_entries: usize,
 }
 
@@ -69,6 +70,7 @@ impl<T> ConnectionPool<T> {
     pub fn new(max_entries: usize) -> Self {
         ConnectionPool {
             cache: Mutex::new(std::collections::HashMap::new()),
+            order: Mutex::new(std::collections::VecDeque::new()),
             max_entries: max_entries.max(1),
         }
     }
@@ -79,25 +81,40 @@ impl<T> ConnectionPool<T> {
     /// takes ownership. If the connection turns out to be dead, the caller
     /// should not return it via `put`.
     pub fn take(&self, host: &str, port: u16) -> Option<T> {
+        let key = (host.to_string(), port);
         let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
-        cache.remove(&(host.to_string(), port))
+        let conn = cache.remove(&key);
+        if conn.is_some() {
+            let mut order = self.order.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(pos) = order.iter().position(|k| k == &key) {
+                order.remove(pos);
+            }
+        }
+        conn
     }
 
     /// Return a connection to the pool for reuse.
     ///
-    /// If the pool is full, the oldest entry (by `HashMap` iteration order)
-    /// is evicted to make room.
+    /// If the pool is full, the least-recently-used entry is evicted.
     pub fn put(&self, host: String, port: u16, conn: T) {
+        let key = (host, port);
         let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
-        // Evict an arbitrary entry if at capacity. HashMap iteration order is
-        // effectively random, providing simple eviction.
-        if cache.len() >= self.max_entries && !cache.contains_key(&(host.clone(), port)) {
-            if let Some(key) = cache.keys().next().cloned() {
-                cache.remove(&key);
-                debug!("evicted H2 pool entry for {}:{}", key.0, key.1);
+        let mut order = self.order.lock().unwrap_or_else(|e| e.into_inner());
+
+        cache.remove(&key);
+        if let Some(pos) = order.iter().position(|k| k == &key) {
+            order.remove(pos);
+        }
+
+        if cache.len() >= self.max_entries {
+            if let Some(evicted_key) = order.pop_front() {
+                cache.remove(&evicted_key);
+                debug!("evicted H2 pool entry (LRU) for {}:{}", evicted_key.0, evicted_key.1);
             }
         }
-        cache.insert((host, port), conn);
+
+        cache.insert(key.clone(), conn);
+        order.push_back(key);
     }
 
     /// Number of cached connections.
