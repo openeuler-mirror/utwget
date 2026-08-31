@@ -638,3 +638,11 @@ fn test_error_invalid_prefer_family() {
     let result = WgetrcParser::apply(&commands, &mut config);
     assert!(result.is_err());
 }
+
+#[test]
+fn test_error_invalid_max_redirect() {
+    let commands = vec![WgetrcCommand::Set("max_redirect".to_string(), "abc".to_string())];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_err());
+}
