@@ -519,3 +519,29 @@ fn test_apply_domains() {
     assert!(result.is_ok());
     assert_eq!(config.recursive.domains, vec!["example.com", "test.com"]);
 }
+
+#[test]
+fn test_apply_secure_protocol() {
+    use ut_core::SecureProtocol;
+
+    // Test auto
+    let commands = vec![WgetrcCommand::Set("secure_protocol".to_string(), "auto".to_string())];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert_eq!(config.tls.secure_protocol, SecureProtocol::Auto);
+
+    // Test TLSv1.2
+    let commands = vec![WgetrcCommand::Set("secure_protocol".to_string(), "tlsv1.2".to_string())];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert_eq!(config.tls.secure_protocol, SecureProtocol::TlsV1_2);
+
+    // Test TLSv1.3
+    let commands = vec![WgetrcCommand::Set("secure_protocol".to_string(), "tlsv1.3".to_string())];
+    let mut config = Config::default();
+    let result = WgetrcParser::apply(&commands, &mut config);
+    assert!(result.is_ok());
+    assert_eq!(config.tls.secure_protocol, SecureProtocol::TlsV1_3);
+}
