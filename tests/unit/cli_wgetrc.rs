@@ -823,3 +823,41 @@ max_redirect = 20
     assert_eq!(config.cookie.input_file, Some(PathBuf::from("/tmp/cookies.txt")));
     assert_eq!(config.max_redirect, 20);
 }
+
+#[test]
+fn test_wgetrc_command_equality() {
+    // Test that WgetrcCommand implements PartialEq correctly
+    let cmd1 = WgetrcCommand::Set("key".to_string(), "value".to_string());
+    let cmd2 = WgetrcCommand::Set("key".to_string(), "value".to_string());
+    let cmd3 = WgetrcCommand::Set("key".to_string(), "other".to_string());
+    assert_eq!(cmd1, cmd2);
+    assert_ne!(cmd1, cmd3);
+
+    let cmd4 = WgetrcCommand::OnOff("key".to_string(), true);
+    let cmd5 = WgetrcCommand::OnOff("key".to_string(), true);
+    let cmd6 = WgetrcCommand::OnOff("key".to_string(), false);
+    assert_eq!(cmd4, cmd5);
+    assert_ne!(cmd4, cmd6);
+
+    let cmd7 = WgetrcCommand::Command("accept".to_string(), vec!["*.html".to_string()]);
+    let cmd8 = WgetrcCommand::Command("accept".to_string(), vec!["*.html".to_string()]);
+    let cmd9 = WgetrcCommand::Command("accept".to_string(), vec!["*.css".to_string()]);
+    assert_eq!(cmd7, cmd8);
+    assert_ne!(cmd7, cmd9);
+}
+
+#[test]
+fn test_wgetrc_command_debug() {
+    // Test that WgetrcCommand implements Debug correctly
+    let cmd = WgetrcCommand::Set("key".to_string(), "value".to_string());
+    let debug_str = format!("{:?}", cmd);
+    assert!(debug_str.contains("Set"));
+    assert!(debug_str.contains("key"));
+    assert!(debug_str.contains("value"));
+
+    let cmd = WgetrcCommand::OnOff("quiet".to_string(), true);
+    let debug_str = format!("{:?}", cmd);
+    assert!(debug_str.contains("OnOff"));
+    assert!(debug_str.contains("quiet"));
+    assert!(debug_str.contains("true"));
+}
