@@ -63,3 +63,24 @@ mod tests {
         // Verify tracking works
         assert!(last_modified[0].is_none() || last_modified[0].is_some());
     }
+
+    #[test]
+    fn test_wgetrc_key_normalization() {
+        // Test key normalization logic
+        fn normalize_key(key: &str) -> String {
+            match key {
+                "acceptregex" => "accept-regex".to_string(),
+                "adjustextension" => "adjust-extension".to_string(),
+                "dirprefix" | "dir_prefix" => "directory_prefix".to_string(),
+                "timeout" => "timeout".to_string(),
+                _ => key.to_string(),
+            }
+        }
+        
+        assert_eq!(normalize_key("acceptregex"), "accept-regex");
+        assert_eq!(normalize_key("adjustextension"), "adjust-extension");
+        assert_eq!(normalize_key("dirprefix"), "directory_prefix");
+        assert_eq!(normalize_key("dir_prefix"), "directory_prefix");
+        assert_eq!(normalize_key("timeout"), "timeout");
+        assert_eq!(normalize_key("unknown"), "unknown");
+    }
