@@ -16,3 +16,11 @@ mod tests {
         flag.store(true, Ordering::SeqCst);
         assert!(flag.load(Ordering::SeqCst));
     }
+
+    #[test]
+    fn test_config_reload_flag_swap() {
+        let flag = AtomicBool::new(true);
+        let old = flag.swap(false, Ordering::SeqCst);
+        assert!(old);
+        assert!(!flag.load(Ordering::SeqCst));
+    }
