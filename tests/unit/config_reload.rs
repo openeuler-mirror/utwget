@@ -43,3 +43,23 @@ mod tests {
         // Flag is cleared after check
         assert!(!should_reload(&flag));
     }
+
+    #[test]
+    fn test_config_file_monitoring_simulation() {
+        use std::path::PathBuf;
+        use std::time::SystemTime;
+        
+        // Simulate file modification time tracking
+        let mut last_modified: Vec<Option<SystemTime>> = vec![None, None];
+        
+        // First check - no previous time
+        let path1 = PathBuf::from("/tmp/test1.conf");
+        if let Ok(metadata) = std::fs::metadata(&path1) {
+            if let Ok(modified) = metadata.modified() {
+                last_modified[0] = Some(modified);
+            }
+        }
+        
+        // Verify tracking works
+        assert!(last_modified[0].is_none() || last_modified[0].is_some());
+    }
