@@ -89,3 +89,21 @@ fn test_parse_cookie_expires() {
     // Note: This cookie may be expired, so we just check parsing worked
     assert_eq!(jar.len(), 1);
 }
+
+#[test]
+fn test_parse_cookie_multiple_attributes() {
+    let mut jar = CookieJar::new();
+    jar.parse_set_cookie(
+        "session=xyz; Domain=.example.com; Path=/app; Secure; HttpOnly; Max-Age=86400",
+        "www.example.com",
+        "/app",
+    );
+
+    let cookies = jar.match_request("www.example.com", "/app/page", Scheme::Https);
+    assert_eq!(cookies.len(), 1);
+    assert_eq!(cookies[0].name, "session");
+    assert_eq!(cookies[0].domain, "example.com");
+    assert_eq!(cookies[0].path, "/app");
+    assert!(cookies[0].secure);
+    assert!(cookies[0].httponly);
+}
