@@ -54,3 +54,13 @@ fn test_parse_cookie_secure() {
     assert_eq!(cookies_https.len(), 1);
     assert!(cookies_https[0].secure);
 }
+
+#[test]
+fn test_parse_cookie_httponly() {
+    let mut jar = CookieJar::new();
+    jar.parse_set_cookie("id=123; HttpOnly", "example.com", "/");
+
+    let cookies = jar.match_request("example.com", "/", Scheme::Http);
+    assert_eq!(cookies.len(), 1);
+    assert!(cookies[0].httponly);
+}
