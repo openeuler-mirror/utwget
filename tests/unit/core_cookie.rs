@@ -134,3 +134,21 @@ fn test_match_subdomain() {
     let cookies = jar.match_request("example.com", "/", Scheme::Http);
     assert_eq!(cookies.len(), 1);
 }
+
+#[test]
+fn test_match_path() {
+    let mut jar = CookieJar::new();
+    jar.parse_set_cookie("id=123; Path=/app", "example.com", "/");
+
+    // Should match for exact path
+    let cookies = jar.match_request("example.com", "/app", Scheme::Http);
+    assert_eq!(cookies.len(), 1);
+
+    // Should match for subpath
+    let cookies = jar.match_request("example.com", "/app/page", Scheme::Http);
+    assert_eq!(cookies.len(), 1);
+
+    // Should not match for different path
+    let cookies = jar.match_request("example.com", "/other", Scheme::Http);
+    assert_eq!(cookies.len(), 0);
+}
