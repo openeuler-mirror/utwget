@@ -29,3 +29,13 @@ fn test_parse_cookie_with_path() {
     assert_eq!(cookies.len(), 1);
     assert_eq!(cookies[0].path, "/app");
 }
+
+#[test]
+fn test_parse_cookie_with_domain() {
+    let mut jar = CookieJar::new();
+    jar.parse_set_cookie("id=123; Domain=.example.com", "www.example.com", "/");
+
+    let cookies = jar.match_request("www.example.com", "/", Scheme::Http);
+    assert_eq!(cookies.len(), 1);
+    assert_eq!(cookies[0].domain, "example.com");
+}
