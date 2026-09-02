@@ -19,3 +19,13 @@ fn test_parse_simple_cookie() {
     assert_eq!(cookies[0].name, "session");
     assert_eq!(cookies[0].value, "abc123");
 }
+
+#[test]
+fn test_parse_cookie_with_path() {
+    let mut jar = CookieJar::new();
+    jar.parse_set_cookie("id=123; Path=/app", "example.com", "/");
+
+    let cookies = jar.match_request("example.com", "/app", Scheme::Http);
+    assert_eq!(cookies.len(), 1);
+    assert_eq!(cookies[0].path, "/app");
+}
