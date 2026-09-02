@@ -39,3 +39,18 @@ fn test_parse_cookie_with_domain() {
     assert_eq!(cookies.len(), 1);
     assert_eq!(cookies[0].domain, "example.com");
 }
+
+#[test]
+fn test_parse_cookie_secure() {
+    let mut jar = CookieJar::new();
+    jar.parse_set_cookie("id=123; Secure", "example.com", "/");
+
+    // Should not match for HTTP
+    let cookies_http = jar.match_request("example.com", "/", Scheme::Http);
+    assert_eq!(cookies_http.len(), 0);
+
+    // Should match for HTTPS
+    let cookies_https = jar.match_request("example.com", "/", Scheme::Https);
+    assert_eq!(cookies_https.len(), 1);
+    assert!(cookies_https[0].secure);
+}
