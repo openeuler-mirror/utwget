@@ -152,3 +152,13 @@ fn test_match_path() {
     let cookies = jar.match_request("example.com", "/other", Scheme::Http);
     assert_eq!(cookies.len(), 0);
 }
+
+#[test]
+fn test_match_root_path() {
+    let mut jar = CookieJar::new();
+    jar.parse_set_cookie("id=123; Path=/", "example.com", "/");
+
+    // Root path should match all paths
+    let cookies = jar.match_request("example.com", "/any/path", Scheme::Http);
+    assert_eq!(cookies.len(), 1);
+}
