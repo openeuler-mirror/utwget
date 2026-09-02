@@ -120,3 +120,17 @@ fn test_match_exact_domain() {
     let cookies = jar.match_request("example.com", "/", Scheme::Http);
     assert_eq!(cookies.len(), 1);
 }
+
+#[test]
+fn test_match_subdomain() {
+    let mut jar = CookieJar::new();
+    jar.parse_set_cookie("id=123; Domain=.example.com", "example.com", "/");
+
+    // Should match for subdomain
+    let cookies = jar.match_request("www.example.com", "/", Scheme::Http);
+    assert_eq!(cookies.len(), 1);
+
+    // Should also match for the domain itself
+    let cookies = jar.match_request("example.com", "/", Scheme::Http);
+    assert_eq!(cookies.len(), 1);
+}
