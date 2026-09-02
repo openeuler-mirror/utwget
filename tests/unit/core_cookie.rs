@@ -75,3 +75,17 @@ fn test_parse_cookie_max_age() {
     assert!(cookies[0].expires.is_some());
     assert!(cookies[0].persistent);
 }
+
+#[test]
+fn test_parse_cookie_expires() {
+    let mut jar = CookieJar::new();
+    jar.parse_set_cookie(
+        "id=123; Expires=Wed, 21 Oct 2015 07:28:00 GMT",
+        "example.com",
+        "/",
+    );
+
+    let cookies = jar.match_request("example.com", "/", Scheme::Http);
+    // Note: This cookie may be expired, so we just check parsing worked
+    assert_eq!(jar.len(), 1);
+}
