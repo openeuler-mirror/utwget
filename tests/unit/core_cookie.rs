@@ -107,3 +107,16 @@ fn test_parse_cookie_multiple_attributes() {
     assert!(cookies[0].secure);
     assert!(cookies[0].httponly);
 }
+
+// ============================================================================
+// Cookie Matching Tests
+// ============================================================================
+
+#[test]
+fn test_match_exact_domain() {
+    let mut jar = CookieJar::new();
+    jar.parse_set_cookie("id=123", "example.com", "/");
+
+    let cookies = jar.match_request("example.com", "/", Scheme::Http);
+    assert_eq!(cookies.len(), 1);
+}
