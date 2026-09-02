@@ -64,3 +64,14 @@ fn test_parse_cookie_httponly() {
     assert_eq!(cookies.len(), 1);
     assert!(cookies[0].httponly);
 }
+
+#[test]
+fn test_parse_cookie_max_age() {
+    let mut jar = CookieJar::new();
+    jar.parse_set_cookie("id=123; Max-Age=3600", "example.com", "/");
+
+    let cookies = jar.match_request("example.com", "/", Scheme::Http);
+    assert_eq!(cookies.len(), 1);
+    assert!(cookies[0].expires.is_some());
+    assert!(cookies[0].persistent);
+}
