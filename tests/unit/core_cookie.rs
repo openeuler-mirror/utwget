@@ -218,3 +218,20 @@ fn test_store_overwrite() {
     let cookies = jar.match_request("example.com", "/", Scheme::Http);
     assert_eq!(cookies[0].value, "2");
 }
+
+// ============================================================================
+// Cookie Serialization Tests
+// ============================================================================
+
+#[test]
+fn test_serialize_for_header() {
+    let mut jar = CookieJar::new();
+    jar.parse_set_cookie("a=1", "example.com", "/");
+    jar.parse_set_cookie("b=2", "example.com", "/");
+
+    let header = jar.serialize_for_header("example.com", "/", Scheme::Http);
+    assert!(header.is_some());
+    let header = header.unwrap();
+    assert!(header.contains("a=1"));
+    assert!(header.contains("b=2"));
+}
