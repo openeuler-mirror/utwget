@@ -173,3 +173,15 @@ fn test_match_multiple_cookies() {
     let cookies = jar.match_request("example.com", "/app/admin/page", Scheme::Http);
     assert_eq!(cookies.len(), 3);
 }
+
+#[test]
+fn test_match_path_ordering() {
+    let mut jar = CookieJar::new();
+    jar.parse_set_cookie("a=1; Path=/", "example.com", "/");
+    jar.parse_set_cookie("b=2; Path=/app", "example.com", "/app");
+
+    let cookies = jar.match_request("example.com", "/app/page", Scheme::Http);
+    // Longer path should come first
+    assert_eq!(cookies[0].path, "/app");
+    assert_eq!(cookies[1].path, "/");
+}
