@@ -321,3 +321,10 @@ fn test_parse_cookie_with_spaces() {
     assert_eq!(cookies[0].name, "id");
     assert_eq!(cookies[0].value, "123");
 }
+
+#[test]
+fn test_cookie_jar_empty() {
+    let jar = CookieJar::new();
+    assert!(jar.is_empty());
+    assert_eq!(jar.len(), 0);
+}
