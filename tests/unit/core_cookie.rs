@@ -328,3 +328,13 @@ fn test_cookie_jar_empty() {
     assert!(jar.is_empty());
     assert_eq!(jar.len(), 0);
 }
+
+#[test]
+fn test_domain_matching_case_insensitive() {
+    let mut jar = CookieJar::new();
+    jar.parse_set_cookie("id=123", "Example.COM", "/");
+
+    // Domain matching should be case-insensitive
+    let cookies = jar.match_request("example.com", "/", Scheme::Http);
+    assert_eq!(cookies.len(), 1);
+}
