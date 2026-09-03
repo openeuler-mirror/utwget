@@ -242,3 +242,20 @@ fn test_serialize_for_header_no_match() {
     let header = jar.serialize_for_header("example.com", "/", Scheme::Http);
     assert!(header.is_none());
 }
+
+#[test]
+fn test_save_and_load_cookies() {
+    let mut jar = CookieJar::new();
+    jar.parse_set_cookie("session=abc; Max-Age=3600", "example.com", "/");
+    jar.parse_set_cookie("id=123; Max-Age=7200", "other.com", "/");
+
+    // Save to buffer
+    let mut buffer = Vec::new();
+    jar.save_to_writer(&mut buffer).unwrap();
+
+    // Load from buffer
+    let mut jar2 = CookieJar::new();
+    jar2.load_from_reader(Cursor::new(&buffer)).unwrap();
+
+    assert_eq!(jar2.len(), 2);
+}
