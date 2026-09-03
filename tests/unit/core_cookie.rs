@@ -185,3 +185,25 @@ fn test_match_path_ordering() {
     assert_eq!(cookies[0].path, "/app");
     assert_eq!(cookies[1].path, "/");
 }
+
+// ============================================================================
+// Cookie Storage Tests
+// ============================================================================
+
+#[test]
+fn test_store_cookie() {
+    let mut jar = CookieJar::new();
+    let cookie = Cookie {
+        domain: "example.com".to_string(),
+        path: "/".to_string(),
+        name: "test".to_string(),
+        value: "value".to_string(),
+        expires: None,
+        secure: false,
+        httponly: false,
+        persistent: false,
+    };
+
+    jar.store(cookie);
+    assert_eq!(jar.len(), 1);
+}
