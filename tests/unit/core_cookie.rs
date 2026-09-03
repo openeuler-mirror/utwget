@@ -302,3 +302,11 @@ fn test_parse_empty_cookie() {
     jar.parse_set_cookie("", "example.com", "/");
     assert!(jar.is_empty());
 }
+
+#[test]
+fn test_parse_cookie_no_value() {
+    let mut jar = CookieJar::new();
+    jar.parse_set_cookie("name", "example.com", "/");
+    // Cookie without = should be ignored
+    assert!(jar.is_empty());
+}
