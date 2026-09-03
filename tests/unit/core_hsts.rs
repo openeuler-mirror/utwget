@@ -15,3 +15,12 @@ fn test_hsts_store_new() {
     assert!(store.is_empty());
     assert_eq!(store.len(), 0);
 }
+
+#[test]
+fn test_hsts_add_entry() {
+    let mut store = HstsStore::new();
+    store.add("example.com", false, 86400);
+
+    assert!(!store.is_empty());
+    assert_eq!(store.len(), 1);
+}
