@@ -291,3 +291,14 @@ fn test_is_expired() {
     // Cookie without expiration is not expired
     assert!(!cookie.is_expired());
 }
+
+// ============================================================================
+// Edge Cases
+// ============================================================================
+
+#[test]
+fn test_parse_empty_cookie() {
+    let mut jar = CookieJar::new();
+    jar.parse_set_cookie("", "example.com", "/");
+    assert!(jar.is_empty());
+}
