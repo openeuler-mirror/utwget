@@ -235,3 +235,10 @@ fn test_serialize_for_header() {
     assert!(header.contains("a=1"));
     assert!(header.contains("b=2"));
 }
+
+#[test]
+fn test_serialize_for_header_no_match() {
+    let jar = CookieJar::new();
+    let header = jar.serialize_for_header("example.com", "/", Scheme::Http);
+    assert!(header.is_none());
+}
