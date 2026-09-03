@@ -24,3 +24,13 @@ fn test_hsts_add_entry() {
     assert!(!store.is_empty());
     assert_eq!(store.len(), 1);
 }
+
+#[test]
+fn test_hsts_add_with_subdomains() {
+    let mut store = HstsStore::new();
+    store.add("example.com", true, 86400);
+
+    let result = store.lookup("example.com");
+    assert!(result.is_some());
+    assert!(result.unwrap()); // include_subdomains should be true
+}
