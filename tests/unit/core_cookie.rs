@@ -310,3 +310,14 @@ fn test_parse_cookie_no_value() {
     // Cookie without = should be ignored
     assert!(jar.is_empty());
 }
+
+#[test]
+fn test_parse_cookie_with_spaces() {
+    let mut jar = CookieJar::new();
+    jar.parse_set_cookie("  id = 123  ;  Path = /app  ", "example.com", "/");
+
+    let cookies = jar.match_request("example.com", "/app", Scheme::Http);
+    assert_eq!(cookies.len(), 1);
+    assert_eq!(cookies[0].name, "id");
+    assert_eq!(cookies[0].value, "123");
+}
