@@ -207,3 +207,14 @@ fn test_store_cookie() {
     jar.store(cookie);
     assert_eq!(jar.len(), 1);
 }
+
+#[test]
+fn test_store_overwrite() {
+    let mut jar = CookieJar::new();
+    jar.parse_set_cookie("id=1", "example.com", "/");
+    jar.parse_set_cookie("id=2", "example.com", "/");
+
+    assert_eq!(jar.len(), 1);
+    let cookies = jar.match_request("example.com", "/", Scheme::Http);
+    assert_eq!(cookies[0].value, "2");
+}
