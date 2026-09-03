@@ -274,3 +274,20 @@ fn test_remove_expired() {
     // The cookie should be removed
     // Note: Due to timing, this might not always work as expected
 }
+
+#[test]
+fn test_is_expired() {
+    let cookie = Cookie {
+        domain: "example.com".to_string(),
+        path: "/".to_string(),
+        name: "test".to_string(),
+        value: "value".to_string(),
+        expires: None,
+        secure: false,
+        httponly: false,
+        persistent: false,
+    };
+
+    // Cookie without expiration is not expired
+    assert!(!cookie.is_expired());
+}
