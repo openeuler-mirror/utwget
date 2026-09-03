@@ -44,3 +44,16 @@ fn test_hsts_add_without_subdomains() {
     assert!(result.is_some());
     assert!(!result.unwrap()); // include_subdomains should be false
 }
+
+// ============================================================================
+// HSTS Lookup Tests
+// ============================================================================
+
+#[test]
+fn test_lookup_exact_match() {
+    let mut store = HstsStore::new();
+    store.add("example.com", false, 86400);
+
+    assert!(store.lookup("example.com").is_some());
+    assert!(store.lookup("other.com").is_none());
+}
