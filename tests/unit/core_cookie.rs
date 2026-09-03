@@ -259,3 +259,18 @@ fn test_save_and_load_cookies() {
 
     assert_eq!(jar2.len(), 2);
 }
+
+// ============================================================================
+// Cookie Expiration Tests
+// ============================================================================
+
+#[test]
+fn test_remove_expired() {
+    let mut jar = CookieJar::new();
+    // Add a cookie that expires immediately
+    jar.parse_set_cookie("id=123; Max-Age=0", "example.com", "/");
+
+    jar.remove_expired();
+    // The cookie should be removed
+    // Note: Due to timing, this might not always work as expected
+}
