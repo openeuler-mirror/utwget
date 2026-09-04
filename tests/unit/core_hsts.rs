@@ -116,3 +116,12 @@ fn test_should_upgrade_https_unchanged() {
     let result = store.should_upgrade("example.com", Scheme::Https);
     assert_eq!(result, Scheme::Https);
 }
+
+#[test]
+fn test_should_upgrade_no_hsts() {
+    let store = HstsStore::new();
+
+    // Without HSTS, HTTP should remain HTTP
+    let result = store.should_upgrade("example.com", Scheme::Http);
+    assert_eq!(result, Scheme::Http);
+}
