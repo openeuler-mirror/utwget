@@ -135,3 +135,17 @@ fn test_should_upgrade_subdomain() {
     let result = store.should_upgrade("www.example.com", Scheme::Http);
     assert_eq!(result, Scheme::Https);
 }
+
+// ============================================================================
+// HSTS Removal Tests
+// ============================================================================
+
+#[test]
+fn test_remove_entry() {
+    let mut store = HstsStore::new();
+    store.add("example.com", false, 86400);
+    assert_eq!(store.len(), 1);
+
+    store.remove("example.com");
+    assert!(store.is_empty());
+}
