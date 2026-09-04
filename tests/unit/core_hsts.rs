@@ -169,3 +169,29 @@ fn test_add_with_zero_max_age_removes() {
     store.add("example.com", false, 0);
     assert!(store.is_empty());
 }
+
+// ============================================================================
+// HSTS Persistence Tests
+// ============================================================================
+
+#[test]
+fn test_save_and_load() {
+    let mut store = HstsStore::new();
+    store.add("example.com", false, 86400);
+    store.add("secure.com", true, 172800);
+
+    // Save to temp file
+    let temp_path = std::env::temp_dir().join("utwget_hsts_test.json");
+    store.save_to_file(&temp_path).unwrap();
+
+    // Load into new store
+    let mut store2 = HstsStore::new();
+    store2.load_from_file(&temp_path).unwrap();
+
+    assert_eq!(store2.len(), 2);
+    assert!(store2.lookup("example.com").is_some());
+    assert!(store2.lookup("secure.com").is_some());
+
+    // Cleanup
+    let _ = fs::remove_file(&temp_path);
+}
