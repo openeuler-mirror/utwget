@@ -106,3 +106,13 @@ fn test_should_upgrade_http_to_https() {
     let result = store.should_upgrade("example.com", Scheme::Http);
     assert_eq!(result, Scheme::Https);
 }
+
+#[test]
+fn test_should_upgrade_https_unchanged() {
+    let mut store = HstsStore::new();
+    store.add("example.com", false, 86400);
+
+    // HTTPS should remain HTTPS
+    let result = store.should_upgrade("example.com", Scheme::Https);
+    assert_eq!(result, Scheme::Https);
+}
