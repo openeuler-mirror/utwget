@@ -227,3 +227,21 @@ fn test_merge_persisted() {
     // Cleanup
     let _ = fs::remove_file(&temp_path);
 }
+
+// ============================================================================
+// HSTS Expiration Tests
+// ============================================================================
+
+#[test]
+fn test_prune_expired() {
+    let mut store = HstsStore::new();
+    // Add entry with very short max-age
+    store.add("example.com", false, 1);
+
+    // Wait a bit
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+
+    store.prune_expired();
+    // Entry should be removed
+    assert!(store.lookup("example.com").is_none());
+}
