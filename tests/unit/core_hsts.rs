@@ -77,3 +77,12 @@ fn test_lookup_subdomain() {
     assert!(store.lookup("api.example.com").is_some());
     assert!(store.lookup("deep.sub.example.com").is_some());
 }
+
+#[test]
+fn test_lookup_subdomain_not_included() {
+    let mut store = HstsStore::new();
+    store.add("example.com", false, 86400);
+
+    // Subdomain should NOT match when include_subdomains is false
+    assert!(store.lookup("www.example.com").is_none());
+}
