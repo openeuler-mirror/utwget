@@ -205,3 +205,25 @@ fn test_load_nonexistent_file() {
     let result = store.load_from_file(&path);
     assert!(result.is_ok());
 }
+
+#[test]
+fn test_merge_persisted() {
+    let mut store1 = HstsStore::new();
+    store1.add("example.com", false, 86400);
+
+    // Save to temp file
+    let temp_path = std::env::temp_dir().join("utwget_hsts_merge_test.json");
+    store1.save_to_file(&temp_path).unwrap();
+
+    // Create another store and merge
+    let mut store2 = HstsStore::new();
+    store2.add("other.com", true, 86400);
+    store2.merge_persisted(&temp_path);
+
+    // Should have both entries
+    assert!(store2.lookup("example.com").is_some());
+    assert!(store2.lookup("other.com").is_some());
+
+    // Cleanup
+    let _ = fs::remove_file(&temp_path);
+}
