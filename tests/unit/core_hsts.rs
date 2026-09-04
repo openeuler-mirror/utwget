@@ -125,3 +125,13 @@ fn test_should_upgrade_no_hsts() {
     let result = store.should_upgrade("example.com", Scheme::Http);
     assert_eq!(result, Scheme::Http);
 }
+
+#[test]
+fn test_should_upgrade_subdomain() {
+    let mut store = HstsStore::new();
+    store.add("example.com", true, 86400);
+
+    // Subdomain should also be upgraded
+    let result = store.should_upgrade("www.example.com", Scheme::Http);
+    assert_eq!(result, Scheme::Https);
+}
