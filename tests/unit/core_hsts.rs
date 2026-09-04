@@ -258,3 +258,12 @@ fn test_empty_host() {
     // Empty host should still work
     assert!(store.lookup("").is_some());
 }
+
+#[test]
+fn test_very_long_max_age() {
+    let mut store = HstsStore::new();
+    // Very long max-age (10 years in seconds)
+    store.add("example.com", false, 10 * 365 * 24 * 60 * 60);
+
+    assert!(store.lookup("example.com").is_some());
+}
