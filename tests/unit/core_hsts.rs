@@ -86,3 +86,9 @@ fn test_lookup_subdomain_not_included() {
     // Subdomain should NOT match when include_subdomains is false
     assert!(store.lookup("www.example.com").is_none());
 }
+
+#[test]
+fn test_lookup_no_match() {
+    let store = HstsStore::new();
+    assert!(store.lookup("example.com").is_none());
+}
