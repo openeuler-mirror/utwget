@@ -57,3 +57,12 @@ fn test_lookup_exact_match() {
     assert!(store.lookup("example.com").is_some());
     assert!(store.lookup("other.com").is_none());
 }
+
+#[test]
+fn test_lookup_case_insensitive() {
+    let mut store = HstsStore::new();
+    store.add("Example.COM", false, 86400);
+
+    assert!(store.lookup("example.com").is_some());
+    assert!(store.lookup("EXAMPLE.COM").is_some());
+}
