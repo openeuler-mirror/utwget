@@ -92,3 +92,17 @@ fn test_lookup_no_match() {
     let store = HstsStore::new();
     assert!(store.lookup("example.com").is_none());
 }
+
+// ============================================================================
+// HSTS Upgrade Tests
+// ============================================================================
+
+#[test]
+fn test_should_upgrade_http_to_https() {
+    let mut store = HstsStore::new();
+    store.add("example.com", false, 86400);
+
+    // HTTP should be upgraded to HTTPS
+    let result = store.should_upgrade("example.com", Scheme::Http);
+    assert_eq!(result, Scheme::Https);
+}
