@@ -195,3 +195,13 @@ fn test_save_and_load() {
     // Cleanup
     let _ = fs::remove_file(&temp_path);
 }
+
+#[test]
+fn test_load_nonexistent_file() {
+    let mut store = HstsStore::new();
+    let path = PathBuf::from("/nonexistent/path/hsts.json");
+
+    // Loading nonexistent file should succeed without error
+    let result = store.load_from_file(&path);
+    assert!(result.is_ok());
+}
