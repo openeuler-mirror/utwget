@@ -245,3 +245,16 @@ fn test_prune_expired() {
     // Entry should be removed
     assert!(store.lookup("example.com").is_none());
 }
+
+// ============================================================================
+// Edge Cases
+// ============================================================================
+
+#[test]
+fn test_empty_host() {
+    let mut store = HstsStore::new();
+    store.add("", false, 86400);
+
+    // Empty host should still work
+    assert!(store.lookup("").is_some());
+}
