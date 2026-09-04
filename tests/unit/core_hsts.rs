@@ -66,3 +66,14 @@ fn test_lookup_case_insensitive() {
     assert!(store.lookup("example.com").is_some());
     assert!(store.lookup("EXAMPLE.COM").is_some());
 }
+
+#[test]
+fn test_lookup_subdomain() {
+    let mut store = HstsStore::new();
+    store.add("example.com", true, 86400);
+
+    // Subdomain should match when include_subdomains is true
+    assert!(store.lookup("www.example.com").is_some());
+    assert!(store.lookup("api.example.com").is_some());
+    assert!(store.lookup("deep.sub.example.com").is_some());
+}
