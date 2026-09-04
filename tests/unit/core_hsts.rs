@@ -158,3 +158,14 @@ fn test_remove_nonexistent() {
     store.remove("other.com");
     assert_eq!(store.len(), 1);
 }
+
+#[test]
+fn test_add_with_zero_max_age_removes() {
+    let mut store = HstsStore::new();
+    store.add("example.com", false, 86400);
+    assert_eq!(store.len(), 1);
+
+    // Adding with max_age=0 should remove the entry
+    store.add("example.com", false, 0);
+    assert!(store.is_empty());
+}
