@@ -149,3 +149,12 @@ fn test_remove_entry() {
     store.remove("example.com");
     assert!(store.is_empty());
 }
+
+#[test]
+fn test_remove_nonexistent() {
+    let mut store = HstsStore::new();
+    store.add("example.com", false, 86400);
+
+    store.remove("other.com");
+    assert_eq!(store.len(), 1);
+}
