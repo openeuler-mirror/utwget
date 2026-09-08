@@ -17,7 +17,7 @@ mod app;
 mod wgetrc;
 mod i18n;
 mod signal;
-mod config_reload;
+
 
 use std::process::ExitCode;
 

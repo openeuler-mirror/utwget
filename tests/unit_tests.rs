@@ -6,7 +6,6 @@
 
 #[path = "unit_tests/cli_wgetrc.rs"] mod cli_wgetrc;
 #[path = "unit_tests/connection_pool.rs"] mod connection_pool;
-#[path = "unit_tests/config_reload.rs"] mod config_reload;
 #[path = "unit_tests/core_cookie.rs"] mod core_cookie;
 #[path = "unit_tests/core_hsts.rs"] mod core_hsts;
 #[path = "unit_tests/core_netrc.rs"] mod core_netrc;

@@ -152,7 +152,6 @@ fn get_translation(locale: &str, key: &str) -> Option<&'static str> {
         ("en", "utwget.error_downloading", "utwget: error downloading %{url}: %{error}"),
         ("en", "utwget.response_saved", "Server response saved to %{path}"),
         ("en", "utwget.request_sent", "Sent request, waiting for response..."),
-        ("en", "utwget.config_reloaded", "Configuration reloaded"),
 
         // ===================
         // Help text
@@ -382,7 +381,6 @@ fn get_translation(locale: &str, key: &str) -> Option<&'static str> {
         ("zh-CN", "utwget.resume_partial", "检测到部分下载，从字节 %{pos} 继续"),
         ("zh-CN", "utwget.resume_complete", "下载已完成"),
         ("zh-CN", "utwget.signal_interrupted", "已中断。正在保存当前下载状态..."),
-        ("zh-CN", "utwget.config_reloaded", "配置已重新加载"),
         ("zh-CN", "utwget.signal_graceful", "收到终止信号，正在优雅关闭..."),
         ("zh-CN", "utwget.error", "错误: %{reason}"),
         ("zh-CN", "utwget.downloading_to", "正在将 %{url} 下载到 %{path}"),

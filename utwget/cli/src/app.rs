@@ -343,11 +343,6 @@ impl App {
                 break;
             }
 
-            // Check for configuration reload
-            if crate::config_reload::ConfigReloader::should_reload() && self.config.verbose >= 1 {
-                eprintln!("{}", crate::i18n::translate("utwget.config_reloaded"));
-            }
-
             let expanded = self.expand_url(url_str);
             let url_str = expanded.as_str();
 
