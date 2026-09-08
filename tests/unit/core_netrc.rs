@@ -181,3 +181,17 @@ password mypass
     let creds = db.lookup("ftp.example.com").unwrap();
     assert_eq!(creds.username, "myuser");
 }
+
+#[test]
+fn test_parse_with_whitespace() {
+    let content = r#"
+machine   ftp.example.com
+login   myuser
+password   mypass
+"#;
+    let mut db = NetrcDb::new();
+    db.load_from_str(content);
+
+    let creds = db.lookup("ftp.example.com").unwrap();
+    assert_eq!(creds.username, "myuser");
+}
