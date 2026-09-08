@@ -121,3 +121,17 @@ password mypass
 
     assert!(db.lookup("other.com").is_none());
 }
+
+#[test]
+fn test_lookup_no_match_no_default() {
+    let content = r#"
+machine ftp.example.com
+login myuser
+password mypass
+"#;
+    let mut db = NetrcDb::new();
+    db.load_from_str(content);
+
+    // No default, so unknown host returns None
+    assert!(db.lookup("unknown.com").is_none());
+}
