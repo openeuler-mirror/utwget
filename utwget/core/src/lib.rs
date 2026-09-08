@@ -12,7 +12,7 @@ pub mod types;
 pub mod url;
 pub mod utils;
 
-pub use config::{Config, ConfigProvider, HttpConfig, FtpConfig, ProxyConfig, ProgressConfig};
+pub use config::{Config, HttpConfig, FtpConfig, ProxyConfig, ProgressConfig};
 #[cfg(feature = "hsts")]
 pub use hsts::HstsStore;
 pub use cookie::CookieJar;

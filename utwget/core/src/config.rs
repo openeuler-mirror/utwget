@@ -767,60 +767,6 @@ impl Default for IriConfig {
     }
 }
 
-/// Trait for providing configuration access.
-///
-/// This trait defines the interface for accessing and manipulating
-/// configuration settings. Implementations can load configuration from
-/// files, environment variables, or other sources.
-///
-/// # Thread Safety
-///
-/// Implementations must be `Send + Sync` to allow access from multiple threads.
-pub trait ConfigProvider: Send + Sync {
-    /// Returns a reference to the current configuration.
-    ///
-    /// # Returns
-    ///
-    /// Reference to the active `Config` instance.
-    fn config(&self) -> &Config;
+// 2026-09-08: 全仓库零 impl 的 ConfigProvider trait 已删除。
+// 如未来需要多源配置抽象，可在 ut_core 重新引入；当前直接用 Arc<Config> 已够。
 
-    /// Loads configuration from a file.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path to the configuration file.
-    ///
-    /// # Returns
-    ///
-    /// `Ok(())` on success, or a `ConfigError` on failure.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the file cannot be read or parsed.
-    fn load_from_file(&mut self, path: &Path) -> std::result::Result<(), ConfigError>;
-
-    /// Gets proxy configuration for a given URL scheme.
-    ///
-    /// # Arguments
-    ///
-    /// * `scheme` - The URL scheme (HTTP, HTTPS, FTP).
-    ///
-    /// # Returns
-    ///
-    /// `Some(ProxyConfig)` if a proxy is configured for the scheme,
-    /// `None` otherwise.
-    fn get_proxy(&self, scheme: Scheme) -> Option<ProxyConfig>;
-
-    /// Gets credentials for a given scheme and host.
-    ///
-    /// # Arguments
-    ///
-    /// * `scheme` - The URL scheme (HTTP, HTTPS, FTP).
-    /// * `host` - The hostname.
-    ///
-    /// # Returns
-    ///
-    /// `Some(Credentials)` if credentials are configured for the host,
-    /// `None` otherwise.
-    fn get_credentials(&self, scheme: Scheme, host: &str) -> Option<Credentials>;
-}
