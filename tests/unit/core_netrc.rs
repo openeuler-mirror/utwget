@@ -72,3 +72,18 @@ password anon@example.com
     let creds = db.lookup("unknown.example.com").unwrap();
     assert_eq!(creds.username, "anonymous");
 }
+
+#[test]
+fn test_parse_with_account() {
+    let content = r#"
+machine ftp.example.com
+login myuser
+password mypass
+account myaccount
+"#;
+    let mut db = NetrcDb::new();
+    db.load_from_str(content);
+
+    assert!(!db.is_empty());
+    // Account is stored but not returned by lookup
+}
