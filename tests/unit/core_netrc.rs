@@ -28,3 +28,24 @@ password mypass
     assert_eq!(creds.username, "myuser");
     assert_eq!(creds.password, "mypass");
 }
+
+#[test]
+fn test_parse_multiple_machines() {
+    let content = r#"
+machine host1.example.com
+login user1
+password pass1
+
+machine host2.example.com
+login user2
+password pass2
+"#;
+    let mut db = NetrcDb::new();
+    db.load_from_str(content);
+
+    let creds1 = db.lookup("host1.example.com").unwrap();
+    assert_eq!(creds1.username, "user1");
+
+    let creds2 = db.lookup("host2.example.com").unwrap();
+    assert_eq!(creds2.username, "user2");
+}
