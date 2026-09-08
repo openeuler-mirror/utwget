@@ -49,3 +49,26 @@ password pass2
     let creds2 = db.lookup("host2.example.com").unwrap();
     assert_eq!(creds2.username, "user2");
 }
+
+#[test]
+fn test_parse_with_default() {
+    let content = r#"
+machine specific.example.com
+login specificuser
+password specificpass
+
+default
+login anonymous
+password anon@example.com
+"#;
+    let mut db = NetrcDb::new();
+    db.load_from_str(content);
+
+    // Specific machine should match
+    let creds = db.lookup("specific.example.com").unwrap();
+    assert_eq!(creds.username, "specificuser");
+
+    // Unknown machine should use default
+    let creds = db.lookup("unknown.example.com").unwrap();
+    assert_eq!(creds.username, "anonymous");
+}
