@@ -205,3 +205,18 @@ fn test_parse_with_tabs() {
     let creds = db.lookup("ftp.example.com").unwrap();
     assert_eq!(creds.username, "myuser");
 }
+
+#[test]
+fn test_parse_with_quoted_strings() {
+    let content = r#"
+machine ftp.example.com
+login 'my user'
+password 'my pass'
+"#;
+    let mut db = NetrcDb::new();
+    db.load_from_str(content);
+
+    let creds = db.lookup("ftp.example.com").unwrap();
+    assert_eq!(creds.username, "my user");
+    assert_eq!(creds.password, "my pass");
+}
