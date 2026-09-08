@@ -108,3 +108,16 @@ password mypass
     let creds = db.lookup("EXAMPLE.COM").unwrap();
     assert_eq!(creds.username, "myuser");
 }
+
+#[test]
+fn test_lookup_no_match() {
+    let content = r#"
+machine ftp.example.com
+login myuser
+password mypass
+"#;
+    let mut db = NetrcDb::new();
+    db.load_from_str(content);
+
+    assert!(db.lookup("other.com").is_none());
+}
