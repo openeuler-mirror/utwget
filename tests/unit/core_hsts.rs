@@ -280,3 +280,15 @@ fn test_multiple_entries() {
     assert!(store.lookup("b.com").is_some());
     assert!(store.lookup("c.com").is_some());
 }
+
+#[test]
+fn test_update_existing() {
+    let mut store = HstsStore::new();
+    store.add("example.com", false, 86400);
+    store.add("example.com", true, 172800); // Update with different values
+
+    assert_eq!(store.len(), 1);
+    let result = store.lookup("example.com");
+    assert!(result.is_some());
+    assert!(result.unwrap()); // Should have updated include_subdomains
+}
