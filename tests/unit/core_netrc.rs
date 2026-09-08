@@ -161,3 +161,23 @@ password mypass
     // Entry without login should return None
     assert!(db.lookup("ftp.example.com").is_none());
 }
+
+// ============================================================================
+// Format Variations Tests
+// ============================================================================
+
+#[test]
+fn test_parse_with_comments() {
+    let content = r#"
+# This is a comment
+machine ftp.example.com
+login myuser
+password mypass
+# Another comment
+"#;
+    let mut db = NetrcDb::new();
+    db.load_from_str(content);
+
+    let creds = db.lookup("ftp.example.com").unwrap();
+    assert_eq!(creds.username, "myuser");
+}
