@@ -135,3 +135,16 @@ password mypass
     // No default, so unknown host returns None
     assert!(db.lookup("unknown.com").is_none());
 }
+
+#[test]
+fn test_lookup_missing_password() {
+    let content = r#"
+machine ftp.example.com
+login myuser
+"#;
+    let mut db = NetrcDb::new();
+    db.load_from_str(content);
+
+    // Entry without password should return None
+    assert!(db.lookup("ftp.example.com").is_none());
+}
