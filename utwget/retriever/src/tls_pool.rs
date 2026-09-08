@@ -5,7 +5,7 @@
 //! improve performance for multiple requests to the same host.
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use ut_net::transport::Transport;
@@ -48,10 +48,19 @@ struct ConnectionEntry {
 /// Maximum number of distinct (host, port) pool entries to prevent unbounded growth.
 const MAX_POOL_ENTRIES: usize = 256;
 
+/// A clonable handle to a shared TLS/TCP connection pool.
+///
+/// 内部状态用 `Arc<Mutex<...>>` 包装，多个 `TlsConnectionPool` 实例可
+/// 共享同一池（如 AsyncRetriever 在 N 个 `spawn_blocking` 任务里复用同一
+/// 个 pool），从而真正复用 keep-alive 连接。`Clone` 是廉价的 Arc 引用计数。
+#[derive(Clone)]
 pub struct TlsConnectionPool {
     /// Pooled connections keyed by (host, port, use_tls).
-    pools: Mutex<HashMap<(String, u16, bool), Vec<ConnectionEntry>>>,
+    /// Arc 让多个 Retriever / AsyncRetriever 任务共享同一连接池。
+    pools: Arc<Mutex<HashMap<(String, u16, bool), Vec<ConnectionEntry>>>>,
     /// Maximum connections per pool key.
+    /// 所有 clone 共享同一 max_per_pool（因为 Arc<Mutex<HashMap>> 共享，
+    /// max_per_pool 在 clone 时复制为相同值即可）。
     max_per_pool: usize,
 }
 
@@ -63,7 +72,7 @@ impl TlsConnectionPool {
     /// * `max_per_pool` - Maximum number of connections to pool per (host, port, use_tls) key.
     pub fn new(max_per_pool: usize) -> Self {
         TlsConnectionPool {
-            pools: Mutex::new(HashMap::new()),
+            pools: Arc::new(Mutex::new(HashMap::new())),
             max_per_pool,
         }
     }

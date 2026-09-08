@@ -149,6 +149,21 @@ impl Retriever {
     ///
     /// A new `Retriever` instance.
     pub fn new(config: Arc<Config>, progress: Box<dyn ProgressDisplay>) -> Self {
+        Self::with_connection_pool(config, progress, TlsConnectionPool::new(5))
+    }
+
+    /// Create a Retriever that shares a TLS connection pool with other Retriever
+    /// instances.
+    ///
+    /// 用于 `-j N` 并发场景：多个 `spawn_blocking` 任务 clone 同一个
+    /// `TlsConnectionPool`，传入此构造器后所有 Retriever 共享同一池，从而
+    /// 真正复用 keep-alive 连接。`TlsConnectionPool` 内部用 `Arc<Mutex<>>`
+    /// 实现 Clone，clone 仅增加引用计数。
+    pub fn with_connection_pool(
+        config: Arc<Config>,
+        progress: Box<dyn ProgressDisplay>,
+        pool: TlsConnectionPool,
+    ) -> Self {
         let mut cookie_jar = CookieJar::new();
         if let Some(ref cookie_file) = config.cookie.input_file {
             if cookie_file.exists() {
@@ -245,7 +260,7 @@ impl Retriever {
             start_time: Instant::now(),
             #[cfg(feature = "warc")]
             warc: None,
-            connection_pool: TlsConnectionPool::new(5), // Max 5 connections per pool
+            connection_pool: pool,
             pending_body_reader: None,
             pending_return_info: None,
             pending_keep_alive: false,
