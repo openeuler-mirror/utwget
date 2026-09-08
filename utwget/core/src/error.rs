@@ -155,6 +155,17 @@ pub enum TlsError {
     #[error("invalid private key file: {0}")]
     InvalidKeyFile(PathBuf),
 
+    /// Private key file permissions are too permissive (group/other can read).
+    /// Matches ssh-style protection: refuse to use a key accessible by anyone
+    /// except the owner.
+    #[error("private key file permissions too open: {0} (mode should be 0600 or stricter)")]
+    InsecureKeyFile(PathBuf),
+
+    /// Client certificate file permissions are too permissive.
+    /// Soft warning: we still load it but the user should fix the perms.
+    #[error("client certificate file permissions too open: {0} (recommended mode 0644 or stricter)")]
+    InsecureCertFile(PathBuf),
+
     /// Unsupported TLS protocol version.
     #[error("unsupported protocol version: {0}")]
     UnsupportedProtocol(String),
