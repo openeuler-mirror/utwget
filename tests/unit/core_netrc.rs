@@ -87,3 +87,24 @@ account myaccount
     assert!(!db.is_empty());
     // Account is stored but not returned by lookup
 }
+
+// ============================================================================
+// Lookup Tests
+// ============================================================================
+
+#[test]
+fn test_lookup_case_insensitive() {
+    let content = r#"
+machine Example.COM
+login myuser
+password mypass
+"#;
+    let mut db = NetrcDb::new();
+    db.load_from_str(content);
+
+    let creds = db.lookup("example.com").unwrap();
+    assert_eq!(creds.username, "myuser");
+
+    let creds = db.lookup("EXAMPLE.COM").unwrap();
+    assert_eq!(creds.username, "myuser");
+}
