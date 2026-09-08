@@ -1082,7 +1082,6 @@ fn test_ftp_listing_empty() {
 #[test]
 fn test_warc_writer_create_and_close() {
     use ut_warc::WarcWriterImpl;
-    use ut_warc::WarcWriter;
     
     let dir = std::env::temp_dir().join("wget_test_warc");
     std::fs::create_dir_all(&dir).ok();
@@ -1101,7 +1100,6 @@ fn test_warc_writer_create_and_close() {
 #[test]
 fn test_warc_writer_write_resource() {
     use ut_warc::WarcWriterImpl;
-    use ut_warc::WarcWriter;
     
     let dir = std::env::temp_dir().join("wget_test_warc_res");
     std::fs::create_dir_all(&dir).ok();
@@ -1177,7 +1175,6 @@ fn test_warc_record_type_display() {
 #[test]
 fn test_warc_cdx_entries() {
     use ut_warc::WarcWriterImpl;
-    use ut_warc::WarcWriter;
     
     let dir = std::env::temp_dir().join("wget_test_warc_cdx");
     std::fs::create_dir_all(&dir).ok();

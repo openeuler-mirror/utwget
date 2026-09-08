@@ -41,7 +41,7 @@ use crate::utils::{
 };
 
 #[cfg(feature = "warc")]
-use ut_warc::{WarcWriterImpl, WarcWriter};
+use ut_warc::WarcWriterImpl;
 
 /// Process-wide DNS cache, keyed by hostname.
 ///

@@ -225,7 +225,6 @@ fn test_warc_format_record_id() {
 #[test]
 fn test_warc_cdx_line_field_count() {
     use ut_warc::WarcWriterImpl;
-    use ut_warc::WarcWriter;
     
     let dir = std::env::temp_dir().join("wget_test_cdx_fields");
     std::fs::create_dir_all(&dir).ok();
@@ -251,7 +250,6 @@ fn test_warc_cdx_line_field_count() {
 #[test]
 fn test_warc_cdx_url_field() {
     use ut_warc::WarcWriterImpl;
-    use ut_warc::WarcWriter;
     
     let dir = std::env::temp_dir().join("wget_test_cdx_url");
     std::fs::create_dir_all(&dir).ok();

@@ -8,7 +8,7 @@ use flate2::Compression;
 
 use crate::digest::compute_sha1;
 use crate::format::{default_content_type, request_content_type, record_separator, WarcHeader, WarcRecordType};
-use crate::{format_date, format_record_id, generate_uuid_v4, Result, WarcError, WarcWriter};
+use crate::{format_date, format_record_id, generate_uuid_v4, Result, WarcError};
 
 /// Open a file for writing with 0600 permissions (owner-only) to protect
 /// sensitive data (cookies, URLs with credentials) stored in WARC files.
@@ -532,7 +532,9 @@ impl WarcWriterImpl {
     }
 }
 
-impl WarcWriter for WarcWriterImpl {
+// 2026-09-08: 原 `impl WarcWriter for WarcWriterImpl` 已合并为本 inherent impl。
+// trait WarcWriter 仅一个 impl 且无 dyn 使用，简化为具体类型。
+impl WarcWriterImpl {
     /// Writes a WARC request record.
     ///
     /// Records an HTTP request with the given method, URL, headers, and body.
@@ -554,7 +556,7 @@ impl WarcWriter for WarcWriterImpl {
     /// # Errors
     ///
     /// Returns `WarcError::Io` if writing fails.
-    fn write_request(
+    pub fn write_request(
         &mut self,
         url: &str,
         method: &str,
@@ -617,7 +619,7 @@ impl WarcWriter for WarcWriterImpl {
     /// # Errors
     ///
     /// Returns `WarcError::Io` if writing fails.
-    fn write_response(
+    pub fn write_response(
         &mut self,
         url: &str,
         status_code: u16,
@@ -667,7 +669,7 @@ impl WarcWriter for WarcWriterImpl {
     /// # Errors
     ///
     /// Returns `WarcError::Io` if writing fails.
-    fn write_resource(
+    pub fn write_resource(
         &mut self,
         url: &str,
         content_type: &str,
@@ -714,7 +716,7 @@ impl WarcWriter for WarcWriterImpl {
     /// # Errors
     ///
     /// Returns `WarcError::Io` if writing fails.
-    fn write_metadata(
+    pub fn write_metadata(
         &mut self,
         url: &str,
         metadata: &str,
@@ -756,7 +758,7 @@ impl WarcWriter for WarcWriterImpl {
     /// # Errors
     ///
     /// Returns `WarcError::Io` if the file cannot be created.
-    fn create_temp_file(&mut self) -> Result<(Box<dyn Write + Send>, PathBuf)> {
+    pub fn create_temp_file(&mut self) -> Result<(Box<dyn Write + Send>, PathBuf)> {
         let name = format!("warc-tmp-{}.tmp", generate_uuid_v4()?);
         let path = self.tempdir.join(name);
         let file = create_restricted_file(&path).map_err(WarcError::Io)?;
@@ -783,7 +785,7 @@ impl WarcWriter for WarcWriterImpl {
     /// # Errors
     ///
     /// Returns `WarcError::Io` if reading, writing, or deleting fails.
-    fn finalize_temp_file(
+    pub fn finalize_temp_file(
         &mut self,
         temp_path: &Path,
         url: &str,
@@ -825,7 +827,7 @@ impl WarcWriter for WarcWriterImpl {
     /// # Returns
     ///
     /// A URN UUID string in the format `<urn:uuid:...>`.
-    fn uuid(&self) -> String {
+    pub fn uuid(&self) -> String {
         format_record_id().unwrap_or_else(|_| "<urn:uuid:00000000-0000-0000-0000-000000000000>".to_string())
     }
 
@@ -834,7 +836,7 @@ impl WarcWriter for WarcWriterImpl {
     /// # Returns
     ///
     /// An ISO 8601 formatted timestamp string.
-    fn timestamp(&self) -> String {
+    pub fn timestamp(&self) -> String {
         format_date(Utc::now())
     }
 
@@ -854,7 +856,7 @@ impl WarcWriter for WarcWriterImpl {
     /// # Errors
     ///
     /// Returns `WarcError::Io` if the file cannot be created.
-    fn open(&mut self, prefix: &str) -> Result<()> {
+    pub fn open(&mut self, prefix: &str) -> Result<()> {
         let stem = if prefix.is_empty() { "wget" } else { prefix };
         let ext = if self.gzip_enabled { ".warc.gz" } else { ".warc" };
         let name = format!("{}{}", stem, ext);
@@ -894,7 +896,7 @@ impl WarcWriter for WarcWriterImpl {
     /// # Errors
     ///
     /// Returns `WarcError::Io` if closing or writing the CDX file fails.
-    fn close(&mut self) -> Result<()> {
+    pub fn close(&mut self) -> Result<()> {
         self.file = None;
 
         if self.cdx_enabled && !self.cdx_entries.is_empty() {
