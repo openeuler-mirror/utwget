@@ -169,7 +169,7 @@ impl DigestAuthenticator {
         nonce: &str,
         cnonce: &str,
     ) -> Result<String, AuthError> {
-        let base = format!("{}:{}:{}", credentials.username, realm, credentials.password);
+        let base = format!("{}:{}:{}", credentials.username, realm, credentials.password_str());
         let ha1_base = algorithm.hash_func(base.as_bytes())?;
 
         match algorithm {

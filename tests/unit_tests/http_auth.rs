@@ -11,10 +11,7 @@ use ut_core::types::Credentials;
 
 /// Helper to create credentials.
 fn make_credentials(username: &str, password: &str) -> Credentials {
-    Credentials {
-        username: username.to_string(),
-        password: password.to_string(),
-    }
+    Credentials::new(username.to_string(), password.to_string())
 }
 
 /// Helper to create a Basic challenge.

@@ -275,12 +275,18 @@ impl Default for CompressionMode {
 }
 
 /// Username and password credentials.
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// 密码以 `Zeroizing<String>` 存储，离开作用域时自动 zeroize 内存，
+/// 减少 core dump / 进程内存取证 / 调试日志中的密码泄露窗口。
+///
+/// Serde 序列化时跳过密码字段（避免明文进入任何持久化路径）；
+/// 反序列化时密码默认为空字符串。
+#[derive(Clone, PartialEq, Eq, Default)]
 pub struct Credentials {
     /// The username.
     pub username: String,
-    /// The password.
-    pub password: String,
+    /// The password (zeroized on drop).
+    pub password: zeroize::Zeroizing<String>,
 }
 
 impl std::fmt::Debug for Credentials {
@@ -289,5 +295,57 @@ impl std::fmt::Debug for Credentials {
             .field("username", &self.username)
             .field("password", &"<redacted>")
             .finish()
+    }
+}
+
+impl Credentials {
+    /// Create a new `Credentials` from username and password strings.
+    ///
+    /// The password is wrapped in `Zeroizing<String>` so it is wiped from
+    /// memory when this `Credentials` is dropped.
+    pub fn new(username: impl Into<String>, password: impl Into<String>) -> Self {
+        Self {
+            username: username.into(),
+            password: zeroize::Zeroizing::new(password.into()),
+        }
+    }
+
+    /// View the password as `&str`.
+    ///
+    /// Borrows the inner string without cloning. The caller must not retain
+    /// the reference beyond the lifetime of this `Credentials`.
+    pub fn password_str(&self) -> &str {
+        self.password.as_str()
+    }
+}
+
+// Serde: 密码字段不参与序列化（避免明文进入任何 JSON / TOML / WARC 等持久化路径）。
+// 反序列化时密码默认为空字符串，调用方需自行用 `Credentials::new` 或直接赋值填充。
+impl Serialize for Credentials {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("Credentials", 1)?;
+        state.serialize_field("username", &self.username)?;
+        state.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for Credentials {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Helper {
+            username: String,
+        }
+        let h = Helper::deserialize(deserializer)?;
+        Ok(Credentials {
+            username: h.username,
+            password: zeroize::Zeroizing::new(String::new()),
+        })
     }
 }

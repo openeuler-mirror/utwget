@@ -2916,16 +2916,10 @@ impl Retriever {
     /// `Some(Credentials)` if credentials are found, `None` otherwise.
     fn resolve_credentials(&self, url: &ParsedUrl) -> Option<ut_core::types::Credentials> {
         if let (Some(ref u), Some(ref p)) = (&self.config.http.user, &self.config.http.password) {
-            return Some(ut_core::types::Credentials {
-                username: u.clone(),
-                password: p.clone(),
-            });
+            return Some(ut_core::types::Credentials::new(u.clone(), p.clone()));
         }
         if let (Some(ref u), Some(ref p)) = (&url.user, &url.password) {
-            return Some(ut_core::types::Credentials {
-                username: u.clone(),
-                password: p.clone(),
-            });
+            return Some(ut_core::types::Credentials::new(u.clone(), p.clone()));
         }
         self.netrc.lookup(&url.host)
     }

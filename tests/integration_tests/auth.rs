@@ -16,7 +16,7 @@ fn test_auth_dispatcher_basic_scheme() {
         algorithm: None, charset: None, userhash: None,
         stale: None, domain: None, ntlm_type2_msg: None,
     };
-    let creds = Credentials { username: "user".into(), password: "pass".into() };
+    let creds = Credentials::new("user", "pass");
     let result = dispatcher.authenticate(&challenge, &creds, "GET", "/", None).unwrap();
     assert!(result.is_some());
     assert!(result.unwrap().starts_with("Basic "));
@@ -33,7 +33,7 @@ fn test_auth_dispatcher_unsupported_scheme_returns_none() {
         algorithm: None, charset: None, userhash: None,
         stale: None, domain: None, ntlm_type2_msg: None,
     };
-    let creds = Credentials { username: "u".into(), password: "p".into() };
+    let creds = Credentials::new("u", "p");
     let result = dispatcher.authenticate(&challenge, &creds, "GET", "/", None).unwrap();
     assert!(result.is_none());
 }
@@ -43,7 +43,7 @@ fn test_auth_dispatcher_preemptive_auth() {
     use ut_http::auth::AuthDispatcher;
     use ut_core::types::Credentials;
     let mut dispatcher = AuthDispatcher::new();
-    let creds = Credentials { username: "admin".into(), password: "secret".into() };
+    let creds = Credentials::new("admin", "secret");
     let result = dispatcher.preemptive_auth(&creds, "/admin", "GET");
     assert!(result.is_some());
     let header = result.unwrap();
@@ -64,7 +64,7 @@ fn test_auth_dispatcher_custom_authenticators() {
         algorithm: None, charset: None, userhash: None,
         stale: None, domain: None, ntlm_type2_msg: None,
     };
-    let creds = Credentials { username: "test".into(), password: "test".into() };
+    let creds = Credentials::new("test", "test");
     let result = dispatcher.authenticate(&challenge, &creds, "GET", "/", None).unwrap();
     assert!(result.is_some());
 }
@@ -89,7 +89,7 @@ fn test_digest_md5_hash_known_vector_empty() {
         charset: None, userhash: None, stale: None,
         domain: None, ntlm_type2_msg: None,
     };
-    let creds = Credentials { username: "".into(), password: "".into() };
+    let creds = Credentials::new("", "");
     let result = auth.authenticate(&challenge, &creds, "GET", "/", None).unwrap();
     assert!(result.is_some());
     let header = result.unwrap();
@@ -122,7 +122,7 @@ fn test_digest_sha256_hash_known_vector_empty() {
         charset: None, userhash: None, stale: None,
         domain: None, ntlm_type2_msg: None,
     };
-    let creds = Credentials { username: "".into(), password: "".into() };
+    let creds = Credentials::new("", "");
     let result = auth.authenticate(&challenge, &creds, "GET", "/", None).unwrap();
     assert!(result.is_some());
     let header = result.unwrap();
@@ -147,7 +147,7 @@ fn test_digest_response_with_qop_auth() {
         charset: None, userhash: None, stale: None,
         domain: None, ntlm_type2_msg: None,
     };
-    let creds = Credentials { username: "alice".into(), password: "secret".into() };
+    let creds = Credentials::new("alice", "secret");
     let result = auth.authenticate(&challenge, &creds, "POST", "/api/data", Some(b"{}")).unwrap();
     assert!(result.is_some());
     let header = result.unwrap();
@@ -175,7 +175,7 @@ fn test_digest_response_no_qop() {
         charset: None, userhash: None, stale: None,
         domain: None, ntlm_type2_msg: None,
     };
-    let creds = Credentials { username: "u".into(), password: "p".into() };
+    let creds = Credentials::new("u", "p");
     let result = auth.authenticate(&challenge, &creds, "GET", "/", None).unwrap();
     assert!(result.is_some());
     let header = result.unwrap();
@@ -199,7 +199,7 @@ fn test_basic_auth_base64_roundtrip() {
         algorithm: None, charset: None, userhash: None,
         stale: None, domain: None, ntlm_type2_msg: None,
     };
-    let creds = Credentials { username: "testuser".into(), password: "testpass".into() };
+    let creds = Credentials::new("testuser", "testpass");
     let result = auth.authenticate(&challenge, &creds, "GET", "/index.html", None).unwrap();
     let header = result.unwrap();
     let encoded = header.strip_prefix("Basic ").unwrap();
@@ -221,7 +221,7 @@ fn test_basic_auth_special_characters() {
         algorithm: None, charset: None, userhash: None,
         stale: None, domain: None, ntlm_type2_msg: None,
     };
-    let creds = Credentials { username: "user@domain".into(), password: "p@ss:w0rd!".into() };
+    let creds = Credentials::new("user@domain", "p@ss:w0rd!");
     let result = auth.authenticate(&challenge, &creds, "GET", "/", None).unwrap();
     assert!(result.is_some());
     let header = result.unwrap();
@@ -244,7 +244,7 @@ fn test_basic_auth_empty_password() {
         algorithm: None, charset: None, userhash: None,
         stale: None, domain: None, ntlm_type2_msg: None,
     };
-    let creds = Credentials { username: "anonymous".into(), password: "".into() };
+    let creds = Credentials::new("anonymous", "");
     let result = auth.authenticate(&challenge, &creds, "GET", "/", None).unwrap();
     assert!(result.is_some());
     let header = result.unwrap();
