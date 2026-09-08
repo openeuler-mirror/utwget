@@ -267,3 +267,16 @@ fn test_very_long_max_age() {
 
     assert!(store.lookup("example.com").is_some());
 }
+
+#[test]
+fn test_multiple_entries() {
+    let mut store = HstsStore::new();
+    store.add("a.com", false, 86400);
+    store.add("b.com", true, 86400);
+    store.add("c.com", false, 86400);
+
+    assert_eq!(store.len(), 3);
+    assert!(store.lookup("a.com").is_some());
+    assert!(store.lookup("b.com").is_some());
+    assert!(store.lookup("c.com").is_some());
+}
