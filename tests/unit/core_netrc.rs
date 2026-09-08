@@ -148,3 +148,16 @@ login myuser
     // Entry without password should return None
     assert!(db.lookup("ftp.example.com").is_none());
 }
+
+#[test]
+fn test_lookup_missing_login() {
+    let content = r#"
+machine ftp.example.com
+password mypass
+"#;
+    let mut db = NetrcDb::new();
+    db.load_from_str(content);
+
+    // Entry without login should return None
+    assert!(db.lookup("ftp.example.com").is_none());
+}
