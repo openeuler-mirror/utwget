@@ -317,3 +317,18 @@ fn test_parse_only_comments() {
 
     assert!(db.is_empty());
 }
+
+#[test]
+fn test_parse_only_default() {
+    let content = r#"
+default
+login anonymous
+password anon@example.com
+"#;
+    let mut db = NetrcDb::new();
+    db.load_from_str(content);
+
+    // Default should match any host
+    let creds = db.lookup("any.example.com").unwrap();
+    assert_eq!(creds.username, "anonymous");
+}
