@@ -200,17 +200,11 @@ impl App {
     /// # Returns
     /// A configured `App` instance, or a `WgetError` if construction fails.
     pub fn new(config: ut_core::Config) -> Result<Self, WgetError> {
-        // --crl-file and --pinnedpubkey are accepted for wget compatibility,
-        // but the current TLS backend (rustls) does not implement CRL
-        // verification or public-key pinning. Fail closed: refuse to start so
-        // that scripts cannot silently run without the requested protection
-        // (security-by-warning is unsafe — stderr is often ignored/captured
-        // away). Exit code 2 mirrors wget's "syntax/argument error".
-        if config.tls.crl_file.is_some() {
-            return Err(WgetError::Other(
-                "--crl-file is not implemented in this build; refusing to start to avoid running without the requested CRL verification".into(),
-            ));
-        }
+        // --pinnedpubkey is accepted for wget compatibility, but the current
+        // TLS backend (rustls) does not implement public-key pinning.
+        // Fail closed: refuse to start so that scripts cannot silently run
+        // without the requested protection (security-by-warning is unsafe).
+        // --crl-file is now implemented (CRL loading + revocation checking).
         if config.tls.pinned_pubkey.is_some() {
             return Err(WgetError::Other(
                 "--pinnedpubkey is not implemented in this build; refusing to start to avoid running without the requested public-key pinning".into(),
