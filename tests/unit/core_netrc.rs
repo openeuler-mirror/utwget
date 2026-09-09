@@ -344,3 +344,22 @@ fn test_load_from_str_clears_previous() {
     assert!(db.lookup("a.com").is_none());
     assert!(db.lookup("b.com").is_some());
 }
+
+#[test]
+fn test_multiple_defaults() {
+    // Only one default should be used (the last one)
+    let content = r#"
+default
+login user1
+password pass1
+
+default
+login user2
+password pass2
+"#;
+    let mut db = NetrcDb::new();
+    db.load_from_str(content);
+
+    let creds = db.lookup("unknown.com").unwrap();
+    assert_eq!(creds.username, "user2");
+}
