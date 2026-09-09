@@ -1306,17 +1306,17 @@ impl Retriever {
             if self.config.ftp.ftps_implicit {
                 // Implicit FTPS: connect with TLS from the start
                 ftps_client.connect_implicit(&url.host, port)
-                    .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("FTPS connect error: {}", e))))?;
+                    .map_err(|e| RetrieveError::Protocol(WgetError::FtpIo(format!("FTPS connect error: {}", e))))?;
             } else {
                 // Explicit FTPS: connect plain, then upgrade with AUTH TLS
                 ftps_client.connect_explicit(&url.host, port)
-                    .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("FTPS connect error: {}", e))))?;
+                    .map_err(|e| RetrieveError::Protocol(WgetError::FtpIo(format!("FTPS connect error: {}", e))))?;
             }
 
             ftps_client.login(&user, &password)
                 .map_err(|_| RetrieveError::Protocol(WgetError::FtpLoginRefused))?;
             ftps_client.type_binary()
-                .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("FTP type error: {}", e))))?;
+                .map_err(|e| RetrieveError::Protocol(WgetError::FtpIo(format!("FTP type error: {}", e))))?;
 
             let path_segments: Vec<&str> = url.path.trim_start_matches('/')
                 .split('/').filter(|s| !s.is_empty()).collect();
@@ -1365,7 +1365,7 @@ impl Retriever {
 
             let mut rate_writer = apply_rate_limit(file, self.config.limit_rate);
             let total_bytes = ftps_client.retr(filename, &mut rate_writer, Some(state.resume_position))
-                .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("FTPS transfer error: {}", e))))?;
+                .map_err(|e| RetrieveError::Protocol(WgetError::FtpIo(format!("FTPS transfer error: {}", e))))?;
 
             // Apply server timestamp (MDTM) before closing the connection
             if let Some(mdtm) = ftps_client.mdtm(filename).ok().flatten() {
@@ -1373,7 +1373,7 @@ impl Retriever {
             }
 
             ftps_client.quit()
-                .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("FTPS quit error: {}", e))))?;
+                .map_err(|e| RetrieveError::Protocol(WgetError::FtpIo(format!("FTPS quit error: {}", e))))?;
 
             let elapsed = start.elapsed();
             self.progress.finish(ut_progress::FinishStatus::Success {
@@ -1407,11 +1407,11 @@ impl Retriever {
             .with_passive(self.config.ftp.passive)
             .with_timeout(ftp_timeout);
         ftp_client.connect(&url.host, url.port)
-            .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("FTP connect error: {}", e))))?;
+            .map_err(|e| RetrieveError::Protocol(WgetError::FtpIo(format!("FTP connect error: {}", e))))?;
         ftp_client.login(&user, &password)
             .map_err(|_| RetrieveError::Protocol(WgetError::FtpLoginRefused))?;
         ftp_client.type_binary()
-            .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("FTP type error: {}", e))))?;
+            .map_err(|e| RetrieveError::Protocol(WgetError::FtpIo(format!("FTP type error: {}", e))))?;
 
         let path_segments: Vec<&str> = url.path.trim_start_matches('/')
             .split('/').filter(|s| !s.is_empty()).collect();
@@ -1460,13 +1460,13 @@ impl Retriever {
 
         let mut rate_writer = apply_rate_limit(file, self.config.limit_rate);
         let total_bytes = ftp_client.retr(filename, &mut rate_writer, Some(state.resume_position))
-            .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("FTP transfer error: {}", e))))?;
+            .map_err(|e| RetrieveError::Protocol(WgetError::FtpIo(format!("FTP transfer error: {}", e))))?;
 
         // Get server timestamp before closing connection
         let mdtm = ftp_client.mdtm(filename).ok().flatten();
 
         ftp_client.quit()
-            .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("FTP quit error: {}", e))))?;
+            .map_err(|e| RetrieveError::Protocol(WgetError::FtpIo(format!("FTP quit error: {}", e))))?;
 
         let elapsed = start.elapsed();
         self.progress.finish(ut_progress::FinishStatus::Success {
@@ -1570,35 +1570,35 @@ impl Retriever {
             let mut ftps = ut_ftp::FtpsClient::with_config(ftps_cfg);
             if self.config.ftp.ftps_implicit {
                 ftps.connect_implicit(&url.host, port)
-                    .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("FTPS connect error: {}", e))))?;
+                    .map_err(|e| RetrieveError::Protocol(WgetError::FtpIo(format!("FTPS connect error: {}", e))))?;
             } else {
                 ftps.connect_explicit(&url.host, port)
-                    .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("FTPS connect error: {}", e))))?;
+                    .map_err(|e| RetrieveError::Protocol(WgetError::FtpIo(format!("FTPS connect error: {}", e))))?;
             }
             ftps.login(&user, &password)
                 .map_err(|_| RetrieveError::Protocol(WgetError::FtpLoginRefused))?;
             ftps.type_binary()
-                .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("FTP type error: {}", e))))?;
+                .map_err(|e| RetrieveError::Protocol(WgetError::FtpIo(format!("FTP type error: {}", e))))?;
             for dir in &path_segments[..path_segments.len().saturating_sub(1)] {
                 let _ = ftps.cwd(dir);
             }
             let entries = ftps.nlst(None)
-                .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("FTP NLST error: {}", e))))?;
+                .map_err(|e| RetrieveError::Protocol(WgetError::FtpIo(format!("FTP NLST error: {}", e))))?;
             let _ = ftps.quit();
             filter_glob_entries(&entries, glob_pattern, self.config.ignore_case)
         } else {
             let mut ftp = ut_ftp::FtpClient::new().with_passive(self.config.ftp.passive);
             ftp.connect(&url.host, url.port)
-                .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("FTP connect error: {}", e))))?;
+                .map_err(|e| RetrieveError::Protocol(WgetError::FtpIo(format!("FTP connect error: {}", e))))?;
             ftp.login(&user, &password)
                 .map_err(|_| RetrieveError::Protocol(WgetError::FtpLoginRefused))?;
             ftp.type_binary()
-                .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("FTP type error: {}", e))))?;
+                .map_err(|e| RetrieveError::Protocol(WgetError::FtpIo(format!("FTP type error: {}", e))))?;
             for dir in &path_segments[..path_segments.len().saturating_sub(1)] {
                 let _ = ftp.cwd(dir);
             }
             let entries = ftp.nlst(None)
-                .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("FTP NLST error: {}", e))))?;
+                .map_err(|e| RetrieveError::Protocol(WgetError::FtpIo(format!("FTP NLST error: {}", e))))?;
             let _ = ftp.quit();
             filter_glob_entries(&entries, glob_pattern, self.config.ignore_case)
         };
@@ -2105,7 +2105,7 @@ impl Retriever {
                 // Send request over TLS
                 let serialized = request.serialize().map_err(RetrieveError::Io)?;
                 debug!("HTTPS request over proxy tunnel:\n{}", crate::utils::redact_sensitive_headers(&String::from_utf8_lossy(&serialized)));
-                tls_stream.write(&serialized).map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("write error: {}", e))))?;
+                tls_stream.write(&serialized).map_err(|e| RetrieveError::Protocol(WgetError::ProtocolIo(format!("write error: {}", e))))?;
 
                 let (response, leftover) = {
                     let mut reader = TransportRead::new(&mut tls_stream);
@@ -2153,7 +2153,7 @@ impl Retriever {
 
                 let serialized = request.serialize().map_err(RetrieveError::Io)?;
                 debug!("HTTPS request:\n{}", crate::utils::redact_sensitive_headers(&String::from_utf8_lossy(&serialized)));
-                tls_stream.write(&serialized).map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("write error: {}", e))))?;
+                tls_stream.write(&serialized).map_err(|e| RetrieveError::Protocol(WgetError::ProtocolIo(format!("write error: {}", e))))?;
 
                 let (response, leftover) = {
                     let mut reader = TransportRead::new(&mut tls_stream);
@@ -2438,7 +2438,7 @@ fn stream_response_body<R: Read, W: Write>(
         let mut chunked = ut_http::chunked::ChunkedReader::new(reader);
         while let Some(chunk) = chunked
             .read_next_chunk()
-            .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("chunked body read error: {}", e))))?
+            .map_err(|e| RetrieveError::Protocol(WgetError::ProtocolIo(format!("chunked body read error: {}", e))))?
         {
             writer.write_all(&chunk).map_err(RetrieveError::Io)?;
             received += chunk.len() as u64;
@@ -2458,7 +2458,7 @@ fn stream_response_body<R: Read, W: Write>(
             let want = ((len - received) as usize).min(tmp.len());
             let n = reader
                 .read(&mut tmp[..want])
-                .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("body read error: {}", e))))?;
+                .map_err(|e| RetrieveError::Protocol(WgetError::ProtocolIo(format!("body read error: {}", e))))?;
             if n == 0 {
                 // Truncated body: the server closed the connection before
                 // delivering all promised bytes. Return an error so the caller
@@ -2501,7 +2501,7 @@ fn read_until_eof<R: Read, W: Write>(
     loop {
         let n = reader
             .read(&mut tmp)
-            .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("body read error: {}", e))))?;
+            .map_err(|e| RetrieveError::Protocol(WgetError::ProtocolIo(format!("body read error: {}", e))))?;
         if n == 0 {
             break;
         }
@@ -2582,7 +2582,7 @@ fn read_one_response_head_with_prefix<R: Read>(
     loop {
         if let Some(end) = ut_http::response::find_header_end(prefix) {
             let response = ut_http::response::parse_response_head(&prefix[..end + 4])
-                .ok_or_else(|| RetrieveError::Protocol(WgetError::Other("failed to parse HTTP response".into())))?;
+                .ok_or_else(|| RetrieveError::Protocol(WgetError::ProtocolIo("failed to parse HTTP response".into())))?;
             let leftover: Vec<u8> = prefix[end + 4..].to_vec();
             return Ok((response, leftover));
         }
@@ -2593,7 +2593,7 @@ fn read_one_response_head_with_prefix<R: Read>(
         }
         let n = reader
             .read(&mut tmp)
-            .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("read response head: {}", e))))?;
+            .map_err(|e| RetrieveError::Protocol(WgetError::ProtocolIo(format!("read response head: {}", e))))?;
         if n == 0 {
             return Err(RetrieveError::Protocol(WgetError::Other(
                 "connection closed before response headers received".into(),
@@ -2621,7 +2621,7 @@ fn read_one_response_head<R: Read>(
         }
         let n = reader
             .read(&mut tmp)
-            .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("read response head: {}", e))))?;
+            .map_err(|e| RetrieveError::Protocol(WgetError::ProtocolIo(format!("read response head: {}", e))))?;
         if n == 0 {
             return Err(RetrieveError::Protocol(WgetError::Other(
                 "connection closed before response headers received".into(),
@@ -2630,7 +2630,7 @@ fn read_one_response_head<R: Read>(
         buf.extend_from_slice(&tmp[..n]);
     };
     let response = ut_http::response::parse_response_head(&buf[..header_end + 4])
-        .ok_or_else(|| RetrieveError::Protocol(WgetError::Other("failed to parse HTTP response".into())))?;
+        .ok_or_else(|| RetrieveError::Protocol(WgetError::ProtocolIo("failed to parse HTTP response".into())))?;
     let leftover: Vec<u8> = buf[header_end + 4..].to_vec();
     Ok((response, leftover))
 }
