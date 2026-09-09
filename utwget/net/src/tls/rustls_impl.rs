@@ -767,7 +767,12 @@ impl Transport for TlsTransport {
         // If there is pending data (n > 0), the connection is alive.
         // EAGAIN/EWOULDBLOCK means no data but connection is still open.
         use std::os::unix::io::AsRawFd;
-        let stream = self.stream.as_ref().unwrap();
+        // Safe: we checked stream.is_none() above and returned false,
+        // so stream is guaranteed to be Some here.
+        let stream = match self.stream.as_ref() {
+            Some(s) => s,
+            None => return false,
+        };
         let fd = stream.as_raw_fd();
         unsafe {
             let mut buf = [0u8; 1];

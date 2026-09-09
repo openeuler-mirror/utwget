@@ -85,7 +85,9 @@ impl LazyActiveTransport {
             log::debug!("FTP active mode data connection accepted from {}", addr);
             self.stream = Some(stream);
         }
-        Ok(self.stream.as_mut().unwrap())
+        let stream = self.stream.as_mut()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotConnected, "data connection not established"))?;
+        Ok(stream)
     }
 }
 

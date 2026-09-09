@@ -198,7 +198,15 @@ pub fn parse_status_line(line: &str) -> Option<(String, u16, String)> {
 /// let line = format_header_line("Host", "example.com");
 /// assert_eq!(line, "Host: example.com\r\n");
 /// ```
+/// # Security
+///
+/// Both `key` and `value` are sanitized: any `\r` or `\n` characters
+/// are stripped to prevent CRLF injection (header smuggling). Without
+/// this, a malicious value like `"foo\r\nX-Injected: evil"` could
+/// inject additional header lines into the HTTP request.
 pub fn format_header_line(key: &str, value: &str) -> String {
-    format!("{}: {}\r\n", key, value)
+    let clean_key: String = key.chars().filter(|c| *c != '\r' && *c != '\n').collect();
+    let clean_value: String = value.chars().filter(|c| *c != '\r' && *c != '\n').collect();
+    format!("{}: {}\r\n", clean_key, clean_value)
 }
 
