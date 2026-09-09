@@ -293,3 +293,15 @@ get file.txt
     // Macros are stored but not returned by lookup
     assert!(!db.is_empty());
 }
+
+// ============================================================================
+// Edge Cases
+// ============================================================================
+
+#[test]
+fn test_parse_empty_content() {
+    let mut db = NetrcDb::new();
+    db.load_from_str("");
+
+    assert!(db.is_empty());
+}
