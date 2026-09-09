@@ -263,3 +263,12 @@ password testpass
     // Cleanup
     let _ = fs::remove_file(&temp_path);
 }
+
+#[test]
+fn test_load_from_file_nonexistent() {
+    let mut db = NetrcDb::new();
+    let path = PathBuf::from("/nonexistent/path/netrc");
+
+    let result = db.load_from_file(&path);
+    assert!(result.is_err());
+}
