@@ -332,3 +332,15 @@ password anon@example.com
     let creds = db.lookup("any.example.com").unwrap();
     assert_eq!(creds.username, "anonymous");
 }
+
+#[test]
+fn test_load_from_str_clears_previous() {
+    let mut db = NetrcDb::new();
+
+    db.load_from_str("machine a.com\nlogin user\npassword pass");
+    assert!(db.lookup("a.com").is_some());
+
+    db.load_from_str("machine b.com\nlogin user\npassword pass");
+    assert!(db.lookup("a.com").is_none());
+    assert!(db.lookup("b.com").is_some());
+}
