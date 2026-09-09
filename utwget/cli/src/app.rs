@@ -1390,6 +1390,10 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
 
     if args.no_check_certificate {
         config.tls.check_certificate = ut_core::CheckCertMode::Off;
+        // 代码审查 P1 #2.4：在 CLI 设置点也加 stderr warning（log::warn! 在 -q 模式下被静音，
+        // 但 --no-check-certificate 是用户应该始终意识到后果的安全开关）
+        eprintln!("utwget: WARNING: TLS certificate verification disabled (--no-check-certificate). \
+                   The connection will be vulnerable to man-in-the-middle attacks.");
     }
     if args.certificate.is_some() {
         config.tls.cert_file = args.certificate.clone();
