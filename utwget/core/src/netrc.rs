@@ -69,23 +69,43 @@ impl NetrcDb {
         // Security: warn (and skip) when .netrc is readable by group or others.
         // .netrc may contain plaintext passwords; a loose permission indicates
         // the file may have been tampered with or is inadvertently exposed.
+        // 使用 File::open + fstat 模式消除 TOCTOU 窗口（代码审查 S7）。
         #[cfg(unix)]
         {
-            if let Ok(meta) = fs::metadata(path) {
-                let mode = meta.mode();
-                if mode & 0o077 != 0 {
-                    log::warn!(
-                        "Refusing to load .netrc {}: permissions {:o} are too open \
-                         (should be 0600 or stricter). Use `chmod 600 {}` to fix.",
-                        path.display(), mode & 0o777, path.display()
-                    );
+            use std::os::unix::fs::MetadataExt;
+            let file = match std::fs::File::open(path) {
+                Ok(f) => f,
+                Err(e) => {
+                    log::debug!("cannot open .netrc {}: {}", path.display(), e);
                     return Ok(());
                 }
+            };
+            let meta = file.metadata()?;
+            let mode = meta.mode();
+            if mode & 0o077 != 0 {
+                log::warn!(
+                    "Refusing to load .netrc {}: permissions {:o} are too open \
+                     (should be 0600 or stricter). Use `chmod 600 {}` to fix.",
+                    path.display(), mode & 0o777, path.display()
+                );
+                return Ok(());
             }
+            // 从同一 fd 读取，消除 TOCTOU 窗口
+            use std::io::Read;
+            let mut content = String::new();
+            {
+                let mut reader = std::io::BufReader::new(file);
+                reader.read_to_string(&mut content)?;
+            }
+            self.parse(&content);
+            return Ok(());
         }
-        let content = fs::read_to_string(path)?;
-        self.parse(&content);
-        Ok(())
+        #[cfg(not(unix))]
+        {
+            let content = fs::read_to_string(path)?;
+            self.parse(&content);
+            Ok(())
+        }
     }
 
     /// Loads entries from a string.
