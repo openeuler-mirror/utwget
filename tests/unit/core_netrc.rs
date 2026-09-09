@@ -305,3 +305,15 @@ fn test_parse_empty_content() {
 
     assert!(db.is_empty());
 }
+
+#[test]
+fn test_parse_only_comments() {
+    let content = r#"
+# Comment 1
+# Comment 2
+"#;
+    let mut db = NetrcDb::new();
+    db.load_from_str(content);
+
+    assert!(db.is_empty());
+}
