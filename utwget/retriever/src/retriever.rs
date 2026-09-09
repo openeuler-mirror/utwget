@@ -45,25 +45,10 @@ use ut_warc::WarcWriterImpl;
 
 /// Process-wide DNS cache, keyed by hostname.
 ///
-/// Caches resolved socket addresses with a TTL to avoid repeated DNS lookups
-/// for the same host. The cache is keyed by (host, port) because the resolved
-/// SocketAddr values include the port — caching by host alone would cause a
-/// request to port 443 to reuse addresses resolved for port 80 (or vice versa).
-/// Disabled when `--no-dns-cache` is set (per-Retriever).
-static DNS_CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<(String, u16), (Vec<std::net::SocketAddr>, Instant)>>> = std::sync::OnceLock::new();
+// 2026-09-09: DNS cache + is_private_ip 已抽取到 dns.rs 模块。
+// 原进程级 DNS_CACHE / DNS_CACHE_TTL / dns_cache() / is_private_ip() 已迁移。
 
-/// DNS cache entry TTL (seconds).
-const DNS_CACHE_TTL: Duration = Duration::from_secs(60);
-
-// 2026-09-09: DETACHED_DNS_COUNT 计数器 + watchdog 线程已删除。
-// 原 DNS 超时实现用 3 线程拼装（resolver + 主线程 + watchdog），现简化为
-// 单 resolver 线程 + channel。timeout 时 resolver 线程被 detach，
-// to_socket_addrs() 返回后线程自然退出，channel send 失败被静默丢弃。
-// 不再需要全局计数器跟踪 detached 线程。
-
-fn dns_cache() -> &'static std::sync::Mutex<std::collections::HashMap<(String, u16), (Vec<std::net::SocketAddr>, Instant)>> {
-    DNS_CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
-}
+use crate::dns::{is_private_ip, dns_cache, DNS_CACHE_TTL};
 
 /// Main file retriever for downloading URLs.
 ///
@@ -2398,20 +2383,7 @@ fn filter_glob_entries(entries: &[String], pattern: &str, ignore_case: bool) -> 
     matched
 }
 
-/// Returns true if the IP address is in a private (RFC 1918) or link-local
-/// range, used for SSRF awareness on redirects.
-fn is_private_ip(addr: &IpAddr) -> bool {
-    match addr {
-        IpAddr::V4(v4) => {
-            v4.is_private()      // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
-                || v4.is_link_local() // 169.254.0.0/16 (cloud metadata)
-                || v4.is_unspecified() // 0.0.0.0
-        }
-        IpAddr::V6(v6) => {
-            v6.is_loopback() || v6.is_unspecified() || v6.is_multicast()
-        }
-    }
-}
+// 2026-09-09: is_private_ip() 已迁移到 dns.rs 模块。
 
 /// Result of streaming a response body to disk.
 struct BodyReadResult {
