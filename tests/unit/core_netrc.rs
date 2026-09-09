@@ -238,3 +238,28 @@ password mypass
     let creds = db.lookup("ftp.example.com").unwrap();
     assert_eq!(creds.username, "myuser");
 }
+
+// ============================================================================
+// File Loading Tests
+// ============================================================================
+
+#[test]
+fn test_load_from_file() {
+    // Create a temp netrc file
+    let content = r#"
+machine test.example.com
+login testuser
+password testpass
+"#;
+    let temp_path = std::env::temp_dir().join("utwget_netrc_test.txt");
+    fs::write(&temp_path, content).unwrap();
+
+    let mut db = NetrcDb::new();
+    db.load_from_file(&temp_path).unwrap();
+
+    let creds = db.lookup("test.example.com").unwrap();
+    assert_eq!(creds.username, "testuser");
+
+    // Cleanup
+    let _ = fs::remove_file(&temp_path);
+}
