@@ -272,3 +272,24 @@ fn test_load_from_file_nonexistent() {
     let result = db.load_from_file(&path);
     assert!(result.is_err());
 }
+
+// ============================================================================
+// Macro Definition Tests
+// ============================================================================
+
+#[test]
+fn test_parse_with_macdef() {
+    let content = r#"
+machine ftp.example.com
+login myuser
+password mypass
+macdef mymacro
+cd /pub
+get file.txt
+"#;
+    let mut db = NetrcDb::new();
+    db.load_from_str(content);
+
+    // Macros are stored but not returned by lookup
+    assert!(!db.is_empty());
+}
