@@ -363,3 +363,15 @@ password pass2
     let creds = db.lookup("unknown.com").unwrap();
     assert_eq!(creds.username, "user2");
 }
+
+#[test]
+fn test_machine_without_credentials() {
+    let content = r#"
+machine ftp.example.com
+"#;
+    let mut db = NetrcDb::new();
+    db.load_from_str(content);
+
+    // Machine without login/password should not match
+    assert!(db.lookup("ftp.example.com").is_none());
+}
