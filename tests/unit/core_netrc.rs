@@ -220,3 +220,21 @@ password 'my pass'
     assert_eq!(creds.username, "my user");
     assert_eq!(creds.password, "my pass");
 }
+
+#[test]
+fn test_parse_empty_lines() {
+    let content = r#"
+
+machine ftp.example.com
+
+login myuser
+
+password mypass
+
+"#;
+    let mut db = NetrcDb::new();
+    db.load_from_str(content);
+
+    let creds = db.lookup("ftp.example.com").unwrap();
+    assert_eq!(creds.username, "myuser");
+}
