@@ -317,14 +317,9 @@ impl App {
         // (main.c:2147). With -p alone, recursive stays false but
         // page_requisites triggers the tree path.
         if self.config.recursive.enabled || self.config.page_requisites {
+            // -j N in recursive mode: use parallel recursive download
             if self.config.concurrent_downloads > 1 {
-                // -j in recursive mode: currently the recursive loop is
-                // sequential. Warn the user that -j is not yet honored
-                // in recursive mode. A future enhancement can parallelize
-                // the queue processing.
-                if self.config.verbose >= 1 {
-                    eprintln!("utwget: warning: -j/--concurrency is not yet supported in recursive mode; downloads will be sequential");
-                }
+                return self.run_recursive_parallel(&all_urls, self.config.concurrent_downloads);
             }
             return self.run_recursive(&all_urls);
         }
@@ -697,8 +692,80 @@ impl App {
         Ok(overall_status)
     }
 
-    /// Convert links in downloaded files.
+    /// Run recursive download with parallel workers.
     ///
+    /// Uses `RecursiveRetriever::retrieve_tree_parallel` with N worker threads.
+    /// Each worker has its own `Retriever` instance but shares the TLS connection
+    /// pool and `UrlQueue` via `Arc<Mutex<>>`.
+    fn run_recursive_parallel(&mut self, urls: &[String], num_workers: usize) -> Result<ExitStatus, WgetError> {
+        let is_interactive = io::stdout().is_terminal();
+        let progress = if !self.config.quiet {
+            let style = self.config.progress.style;
+            let force_noscroll = !is_interactive;
+            ut_progress::create_progress_display(style, force_noscroll)
+        } else {
+            ut_progress::create_progress_display(ut_core::ProgressStyle::Silent, true)
+        };
+
+        let mut recursive_retriever = RecursiveRetriever::new(self.config.clone(), progress);
+        let mut overall_status = ExitStatus::Success;
+
+        for start_url in urls {
+            let parsed = match ParsedUrl::parse(start_url) {
+                Ok(p) => p,
+                Err(e) => {
+                    if self.config.verbose >= 1 || self.config.debug {
+                        eprintln!("utwget: {}", e);
+                    }
+                    continue;
+                }
+            };
+
+            if self.config.verbose >= 1 {
+                eprintln!("Starting parallel recursive download ({} workers) from: {}",
+                    num_workers, parsed.display());
+            }
+
+            match recursive_retriever.retrieve_tree_parallel(
+                &parsed.display_with_credentials(), num_workers,
+            ) {
+                Ok(ut_retriever::ExitStatus::Success) => {
+                    if self.config.verbose >= 1 {
+                        eprintln!("Parallel recursive download completed successfully");
+                    }
+                }
+                Ok(ut_retriever::ExitStatus::NoUrlsFound) => {
+                    if self.config.verbose >= 1 {
+                        eprintln!("No URLs found to download");
+                    }
+                    overall_status = ExitStatus::Error;
+                }
+                Ok(ut_retriever::ExitStatus::Error) => {
+                    overall_status = ExitStatus::Error;
+                }
+                Err(e) => {
+                    if self.config.verbose >= 1 || self.config.debug {
+                        eprintln!("utwget: error during parallel recursive download: {}", e);
+                    }
+                    overall_status = ExitStatus::Error;
+                }
+            }
+        }
+
+        // Perform link conversion if requested
+        if self.config.convert_links {
+            self.convert_downloaded_links(&recursive_retriever);
+        }
+
+        // Persist cookies and HSTS collected during the recursive crawl.
+        recursive_retriever.retriever_mut().save_state();
+
+        self.print_summary();
+
+        Ok(overall_status)
+    }
+
+
     /// Iterates over every URL-to-local-path mapping collected during the
     /// recursive crawl and rewrites HTML links so they point to local files
     /// instead of remote URLs. If `--backup-converted` was requested, the
