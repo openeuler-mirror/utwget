@@ -853,8 +853,7 @@ impl Retriever {
                 // 重定向链），SSRF 攻击者可能借此触达云元数据端点（169.254.169.254）、
                 // 内网服务、loopback 上的管理端口。
                 //
-                // 想完全阻断：使用 --https-only + 限定 -D domains，或后续可加
-                // --block-private-redirects 选项（P2 跟进）。
+                // --block-private-redirects 启用时阻断而非仅警告。
                 if let Some(ref ip) = std::net::IpAddr::from_str(&redirect_url.host).ok() {
                     if ip.is_loopback() || is_private_ip(ip) {
                         // 同时打 log 和 stderr，因为 warn! 在 -q 模式下被静音，
@@ -863,6 +862,14 @@ impl Retriever {
                             ip, redirect_url.display());
                         eprintln!("utwget: WARNING: redirect to private/loopback IP {} (potential SSRF): {}",
                             ip, redirect_url.display());
+
+                        // --block-private-redirects: 阻断重定向到私有 IP
+                        if self.config.block_private_redirects {
+                            return Err(RetrieveError::Protocol(WgetError::Other(
+                                format!("redirect to private/loopback IP {} blocked (--block-private-redirects): {}",
+                                    ip, redirect_url.display())
+                            )));
+                        }
                     }
                 }
 
