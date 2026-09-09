@@ -39,6 +39,22 @@ use webpki_roots::TLS_SERVER_ROOTS;
 /// spawn a fresh thread pool each time.
 static H2_RUNTIME: OnceLock<Runtime> = OnceLock::new();
 
+/// 获取共享 H2 tokio runtime，或在不存在时创建。
+///
+/// 代码审查 S5：原 3 处 .expect("failed to create H2 runtime") 在系统资源
+/// 耗尽时会 panic。现在统一返回 Result，调用方可优雅降级。
+fn h2_runtime_or_err() -> Result<&'static Runtime, Box<dyn std::error::Error>> {
+    if let Some(rt) = H2_RUNTIME.get() {
+        return Ok(rt);
+    }
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()?;
+    let _ = H2_RUNTIME.set(rt); // 竞争时 set 失败正常，后续 get() 获取已有的
+    Ok(H2_RUNTIME.get().expect("runtime was just set"))
+}
+
 /// HTTP/2 client for making requests.
 pub struct H2Client {
     /// The h2 send-request handle.
@@ -62,15 +78,7 @@ impl H2Client {
     /// A new `H2Client` instance.
     pub fn from_sender(sender: SendRequest<Bytes>) -> Result<Self, Box<dyn std::error::Error>> {
         // Use a shared global runtime to avoid creating one per connection.
-        // The caller in h2_integration.rs already has a shared runtime;
-        // for backward compatibility, if called directly, create one.
-        let runtime: &'static tokio::runtime::Runtime = H2_RUNTIME.get_or_init(|| {
-            tokio::runtime::Builder::new_multi_thread()
-                .worker_threads(2)
-                .enable_all()
-                .build()
-                .expect("failed to create H2 runtime")
-        });
+        let runtime: &'static tokio::runtime::Runtime = h2_runtime_or_err()?;
         Ok(H2Client { sender, runtime })
     }
 
@@ -95,13 +103,7 @@ impl H2Client {
         port: u16,
         tls_config: ClientConfig,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let runtime: &'static Runtime = H2_RUNTIME.get_or_init(|| {
-            tokio::runtime::Builder::new_multi_thread()
-                .worker_threads(2)
-                .enable_all()
-                .build()
-                .expect("failed to create H2 runtime")
-        });
+        let runtime: &'static Runtime = h2_runtime_or_err()?;
 
         let tls_connector = TlsConnector::from(Arc::new(tls_config));
 
@@ -246,13 +248,10 @@ impl H2Client {
 /// This function performs TLS ALPN negotiation to determine if the server
 /// supports HTTP/2.
 pub fn check_http2_support(host: &str, port: u16) -> bool {
-    let runtime: &'static Runtime = H2_RUNTIME.get_or_init(|| {
-        tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(2)
-            .enable_all()
-            .build()
-            .expect("failed to create H2 runtime")
-    });
+    let runtime: &'static Runtime = match h2_runtime_or_err() {
+        Ok(rt) => rt,
+        Err(_) => return false,
+    };
     
     let tcp = match runtime.block_on(TcpStream::connect(format!("{}:{}", host, port))) {
         Ok(t) => t,
