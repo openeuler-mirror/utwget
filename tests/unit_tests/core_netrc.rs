@@ -275,11 +275,13 @@ password testpass
 
 #[test]
 fn test_load_from_file_nonexistent() {
+    // 代码审查 S7 修复后，.netrc 不存在时返回 Ok(()) 静默跳过
+    // （与 GNU wget 行为一致：~/.netrc 不存在不是错误）。
     let mut db = NetrcDb::new();
     let path = PathBuf::from("/nonexistent/path/netrc");
 
     let result = db.load_from_file(&path);
-    assert!(result.is_err());
+    assert!(result.is_ok(), "nonexistent .netrc should be silently skipped, got: {:?}", result);
 }
 
 // ============================================================================

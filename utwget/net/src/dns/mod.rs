@@ -1,89 +1,21 @@
 //! DNS resolution module.
 //!
-//! This module provides DNS resolution capabilities with support for:
+//! This module provides DNS error types used by the TCP connection layer.
 //!
-//! - Custom DNS resolver implementations via the [`DnsResolver`] trait
-//! - Standard system DNS resolution via [`StdResolver`]
-//! - Address family filtering (IPv4, IPv6, or both)
-//! - Configurable timeouts
-//!
-//! # Example
-//!
-//! ```ignore
-//! use ut_net::dns::{DnsResolver, StdResolver};
-//! use ut_core::AddressFamily;
-//! use std::time::Duration;
-//!
-//! let resolver = StdResolver::new();
-//! let addrs = resolver.resolve("example.com", 443, AddressFamily::Unspecified, Duration::from_secs(10))?;
-//! ```
+//! The actual DNS resolution is performed inline in `retriever.rs` and
+//! `tcp.rs` using the standard library's `ToSocketAddrs` trait with
+//! channel-based timeouts. A pluggable `DnsResolver` trait was defined
+//! here historically but was never wired into the connection path; it has
+//! been removed to reduce dead code. If pluggable DNS is needed in the
+//! future (e.g., DoH/DoT), re-introduce a trait here and inject it
+//! through `RuntimeContext`.
 
 use std::io;
-use std::net::SocketAddr;
-use std::time::Duration;
-
-use ut_core::AddressFamily;
-
-pub mod std_resolver;
-
-/// Trait for DNS resolution implementations.
-///
-/// Implementations of this trait provide hostname to IP address resolution.
-/// The trait is designed to be thread-safe (`Send + Sync`) for use in
-/// async or multi-threaded contexts.
-///
-/// # Example Implementation
-///
-/// ```ignore
-/// use ut_net::dns::{DnsResolver, DnsError};
-/// use ut_core::AddressFamily;
-/// use std::net::SocketAddr;
-/// use std::time::Duration;
-///
-/// struct MyResolver;
-///
-/// impl DnsResolver for MyResolver {
-///     fn resolve(
-///         &self,
-///         host: &str,
-///         port: u16,
-///         family: AddressFamily,
-///         timeout: Duration,
-///     ) -> Result<Vec<SocketAddr>, DnsError> {
-///         // Custom resolution logic
-///         todo!()
-///     }
-/// }
-/// ```
-pub trait DnsResolver: Send + Sync {
-    /// Resolves a hostname to a list of socket addresses.
-    ///
-    /// # Arguments
-    ///
-    /// * `host` - The hostname to resolve (e.g., "example.com").
-    /// * `port` - The port number to associate with resolved addresses.
-    /// * `family` - The address family preference (IPv4, IPv6, or unspecified).
-    /// * `timeout` - Maximum time to wait for resolution.
-    ///
-    /// # Returns
-    ///
-    /// A vector of `SocketAddr` values on success.
-    ///
-    /// # Errors
-    ///
-    /// Returns a `DnsError` if resolution fails, times out, or returns no addresses.
-    fn resolve(
-        &self,
-        host: &str,
-        port: u16,
-        family: AddressFamily,
-        timeout: Duration,
-    ) -> Result<Vec<SocketAddr>, DnsError>;
-}
 
 /// Error type for DNS resolution operations.
 ///
 /// This enum covers all possible failure modes for DNS resolution.
+/// It is used by `tcp.rs`'s `ConnectError::DnsFailed` variant.
 #[derive(Debug, thiserror::Error)]
 pub enum DnsError {
     /// The hostname could not be found.
@@ -121,4 +53,4 @@ pub enum DnsError {
     Io(#[from] io::Error),
 }
 
-pub use std_resolver::StdResolver;
+use std::time::Duration;
