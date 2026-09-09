@@ -45,14 +45,29 @@ pub fn h2_pool() -> &'static H2ConnectionPool {
 static H2_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 
 /// Returns the process-wide tokio runtime for HTTP/2 operations.
-fn h2_runtime() -> &'static tokio::runtime::Runtime {
-    H2_RUNTIME.get_or_init(|| {
-        tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(2)
-            .enable_all()
-            .build()
-            .expect("failed to create H2 runtime")
-    })
+///
+/// 代码审查 P0 #1.4：原 .expect("failed to create H2 runtime") 会在系统资源
+/// 耗尽时 panic。改为优雅降级：Runtime 创建失败时返回 None，调用方收到
+/// WgetError::Http2 错误而非进程 panic。使用 get()+set() 模式避免不稳定的
+/// get_or_try_init（Rust 1.82 尚未稳定）。
+fn h2_runtime() -> Option<&'static tokio::runtime::Runtime> {
+    // Fast path: already initialized.
+    if let Some(rt) = H2_RUNTIME.get() {
+        return Some(rt);
+    }
+    // Try to build. If another thread already built it, our set() will fail
+    // and we'll get the existing one via get().
+    match tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => {
+            let _ = H2_RUNTIME.set(rt);
+            H2_RUNTIME.get()
+        }
+        Err(_) => None,
+    }
 }
 
 /// A generic connection pool keyed by (host, port) with LRU eviction.
@@ -342,7 +357,9 @@ impl H2Retriever {
                 format!("invalid server name: {}", e)
             )))?;
 
-        let rt = h2_runtime();
+        let rt = h2_runtime().ok_or_else(|| RetrieveError::Protocol(WgetError::Http2(
+            "failed to create H2 runtime (system resource limit?)".into()
+        )))?;
 
         let tls_stream = rt
             .block_on(tls_connector.connect(server_name, tokio_stream))
