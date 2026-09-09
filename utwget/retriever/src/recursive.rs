@@ -388,6 +388,10 @@ impl RecursiveRetriever {
         let start_url_parsed = Arc::new(parsed);
 
         // Use std::thread::scope for scoped threads (no 'static needed)
+        // active_count tracks workers currently processing a URL. A worker
+        // only exits when the queue is empty AND active_count == 0, preventing
+        // the race where a worker exits while another is about to push new URLs.
+        let active_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let worker_handles: Vec<_> = (0..num_workers)
             .map(|worker_id| {
                 let queue = queue.clone();
@@ -397,6 +401,7 @@ impl RecursiveRetriever {
                 let tls_pool = tls_pool.clone();
                 let start_url_parsed = start_url_parsed.clone();
                 let start_host = start_host.clone();
+                let active_count = active_count.clone();
 
                 std::thread::Builder::new()
                     .name(format!("recursive-worker-{}", worker_id))
@@ -421,15 +426,21 @@ impl RecursiveRetriever {
                             };
 
                             let Some(entry) = entry else {
-                                // Queue empty; check if any other worker is still
-                                // processing (could push more URLs). Brief sleep then retry.
-                                std::thread::sleep(std::time::Duration::from_millis(50));
-                                let q = queue.lock().unwrap();
-                                if q.is_empty() {
+                                // Queue empty. Only exit if no other worker is
+                                // currently processing (they might push more URLs).
+                                // Use a short sleep to avoid busy-waiting, but
+                                // check active_count to prevent premature exit.
+                                if active_count.load(Ordering::Relaxed) == 0 {
+                                    // No workers are processing; queue is truly done.
                                     break;
                                 }
+                                // Some worker is still processing; wait briefly.
+                                std::thread::sleep(std::time::Duration::from_millis(10));
                                 continue;
                             };
+
+                            // Mark this worker as active before processing
+                            active_count.fetch_add(1, Ordering::Relaxed);
 
                             let url_str = entry.url.clone();
 
@@ -511,6 +522,11 @@ impl RecursiveRetriever {
                                 debug!("waiting {:?}", wait);
                                 std::thread::sleep(wait);
                             }
+
+                            // Mark this worker as no longer active (done
+                            // processing this URL). Must happen AFTER all
+                            // queue pushes so other workers don't exit early.
+                            active_count.fetch_sub(1, Ordering::Relaxed);
                         }
                     })
                     .expect("failed to spawn worker thread")
