@@ -238,6 +238,7 @@ fn ftps_explicit_domain_name_download() {
                 "USER u" => tls.send("331 need password\r\n").unwrap(),
                 "PASS p" => tls.send("230 logged in\r\n").unwrap(),
                 "PBSZ 0" => tls.send("200 PBSZ=0\r\n").unwrap(),
+                "PBSZ 0" => tls.send("200 PBSZ=0\r\n").unwrap(),
                 "PROT P" => tls.send("200 PROT P\r\n").unwrap(),
                 "TYPE I" | "TYPE A" => tls.send("200 type set\r\n").unwrap(),
                 "PASV" => {
@@ -252,8 +253,15 @@ fn ftps_explicit_domain_name_download() {
                     data_listener = Some(l);
                 }
                 c if c.starts_with("RETR") => {
-                    tls.send("150 opening data connection\r\n").unwrap();
                     let listener = data_listener.take().expect("PASV before RETR");
+                    // M10 regression: deliver BOTH the 150 preliminary
+                    // response and the final 226 in a single TLS record
+                    // burst, sent BEFORE the data connection is accepted
+                    // (RFC 959 ordering: respond to RETR first). read_response
+                    // must return the 150 first and preserve the 226 for the
+                    // call after the data transfer completes.
+                    tls.send("150 opening data connection\r\n226 transfer complete\r\n")
+                        .unwrap();
                     let (mut dstream, _) = listener.accept().unwrap();
                     dstream
                         .set_read_timeout(Some(std::time::Duration::from_secs(15)))
@@ -268,10 +276,6 @@ fn ftps_explicit_domain_name_download() {
                     while dconn.wants_write() {
                         dconn.write_tls(&mut dstream).unwrap();
                     }
-                    // Give the client a moment to drain the data connection
-                    // before responding on the control channel.
-                    std::thread::sleep(std::time::Duration::from_millis(200));
-                    tls.send("226 transfer complete\r\n").unwrap();
                 }
                 c if c.starts_with("QUIT") => {
                     tls.send("221 bye\r\n").unwrap();
