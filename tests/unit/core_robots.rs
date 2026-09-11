@@ -12,3 +12,12 @@ fn test_robots_new() {
     // Parser should be created without error
     let _ = parser;
 }
+
+#[test]
+fn test_parse_empty() {
+    let mut parser = RobotParser::new("wget");
+    parser.load("example.com", "");
+
+    // Empty robots.txt should allow everything
+    assert_eq!(parser.is_allowed("example.com", "http://example.com/any/path"), Some(true));
+}
