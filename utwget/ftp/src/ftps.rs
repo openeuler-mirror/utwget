@@ -949,22 +949,15 @@ impl FtpsClient {
         let resp = self.read_response()?;
 
         if resp.is_positive_completion {
-            // Parse MDTM response: YYYYMMDDHHMMSS
+            // Parse MDTM response: YYYYMMDDHHMMSS. Uses the same strict
+            // parser as the plain-FTP client (M16: the previous lenient
+            // version silently defaulted malformed fields to
+            // 1970-01-01 00:00:00, corrupting --timestamping comparisons).
             let timestamp = resp.text.trim();
-            if timestamp.len() >= 14 {
-                let year: i32 = timestamp[0..4].parse().unwrap_or(1970);
-                let month: u32 = timestamp[4..6].parse().unwrap_or(1);
-                let day: u32 = timestamp[6..8].parse().unwrap_or(1);
-                let hour: u32 = timestamp[8..10].parse().unwrap_or(0);
-                let min: u32 = timestamp[10..12].parse().unwrap_or(0);
-                let sec: u32 = timestamp[12..14].parse().unwrap_or(0);
-
-                return chrono::NaiveDate::from_ymd_opt(year, month, day)
-                    .and_then(|d| d.and_hms_opt(hour, min, sec))
-                    .map(|dt| Some(chrono::DateTime::from_naive_utc_and_offset(dt, chrono::Utc)))
-                    .ok_or_else(|| FtpError::ParseError(format!("invalid MDTM date: {}", timestamp)));
+            match crate::client::parse_ftp_timestamp(timestamp) {
+                Some(dt) => Ok(Some(dt)),
+                None => Ok(None),
             }
-            Ok(None)
         } else {
             Ok(None)
         }
