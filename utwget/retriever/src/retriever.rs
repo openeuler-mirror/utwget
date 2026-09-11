@@ -725,6 +725,13 @@ impl Retriever {
         const MAX_AUTH_ROUNDS: u32 = 3;
         while response.status_code == 401 && creds.is_some() && auth_round < MAX_AUTH_ROUNDS {
             auth_round += 1;
+            // Drain the 401 response body so the connection can go back to
+            // the pool for the authenticated retry, instead of being
+            // discarded by the pending_body_reader overwrite below (GNU
+            // wget skip_short_body, http.c). Only bodies with a known,
+            // bounded Content-Length are drained; anything else (chunked,
+            // EOF-delimited, huge) drops the connection as before.
+            self.discard_pending_body(response.headers.content_length(), 64 * 1024);
             let www_auth = response.headers.www_authenticate();
             if www_auth.is_empty() {
                 break;
@@ -2933,6 +2940,51 @@ impl Retriever {
     /// from a previous download bleeding into a new one.
     pub fn clear_redirect_state(&mut self) {
         self.redirect_get_method_urls.clear();
+    }
+
+    /// Discard the pending response body, returning the connection to the
+    /// pool when possible.
+    ///
+    /// Used before an authenticated retry after a 401: the challenge body is
+    /// dead weight, but the underlying connection can be reused if the body
+    /// is fully consumed. Only bodies with a known Content-Length within
+    /// `max` are drained (the typical small HTML challenge page); chunked,
+    /// EOF-delimited, or oversized bodies drop the connection (previous
+    /// behavior). Mirrors GNU wget's skip_short_body (http.c).
+    fn discard_pending_body(&mut self, content_length: Option<u64>, max: u64) {
+        if let Some((leftover, mut source)) = self.pending_body_reader.take() {
+            if let Some(len) = content_length {
+                if len <= max {
+                    let mut remaining = len.saturating_sub(leftover.len() as u64);
+                    let mut tmp = [0u8; 8192];
+                    while remaining > 0 {
+                        let want = (remaining as usize).min(tmp.len());
+                        match source.read(&mut tmp[..want]) {
+                            Ok(0) => break,
+                            Ok(n) => remaining -= n as u64,
+                            Err(_) => break,
+                        }
+                    }
+                    if remaining == 0 && self.pending_keep_alive {
+                        if let Some((host, port)) = self.pending_return_info.take() {
+                            match source {
+                                BodySource::Tls(mut t) => {
+                                    if let Some(conn) = t.take_inner() {
+                                        self.connection_pool.put_tls(&host, port, conn);
+                                    }
+                                }
+                                BodySource::Tcp(tcp) => {
+                                    self.connection_pool.put_tcp(&host, port, tcp);
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        self.pending_keep_alive = false;
+        self.pending_return_info = None;
     }
 
     /// Get a reference to the application configuration.
