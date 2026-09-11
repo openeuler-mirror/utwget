@@ -21,3 +21,12 @@ fn test_parse_empty() {
     // Empty robots.txt should allow everything
     assert_eq!(parser.is_allowed("example.com", "http://example.com/any/path"), Some(true));
 }
+
+#[test]
+fn test_parse_allow_all() {
+    let content = "User-agent: *\nDisallow:";
+    let mut parser = RobotParser::new("wget");
+    parser.load("example.com", content);
+
+    assert_eq!(parser.is_allowed("example.com", "http://example.com/path"), Some(true));
+}
