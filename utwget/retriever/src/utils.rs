@@ -431,14 +431,22 @@ pub(crate) fn apply_file_timestamp(path: &Path, dt: chrono::DateTime<chrono::Utc
 /// Parse Content-Disposition header to extract filename.
 ///
 /// Supports both `filename="..."` and `filename*=...` formats (RFC 6266).
-pub(crate) fn parse_content_disposition(header: &str) -> Option<String> {
+pub fn parse_content_disposition(header: &str) -> Option<String> {
     let header_lower = header.to_lowercase();
 
     if let Some(pos) = header_lower.find("filename*") {
         let rest = &header_lower[pos + 9..];
         let rest = rest.trim_start_matches(|c: char| c.is_whitespace() || c == '=');
         if let Some(encoded) = parse_rfc5987_value(rest) {
-            return Some(encoded);
+            // Apply the same path-separator stripping as the plain branch:
+            // the RFC 5987 value is percent-decoded user input, and a
+            // filename like %2F..%2F..%2Fetc%2Fpasswd decodes to a path.
+            // (sanitize_filename() at the call site is the final backstop,
+            // but both branches must produce consistent intermediate
+            // values so no future caller bypasses one of them.)
+            let decoded = encoded.replace('\\', "/");
+            let decoded = decoded.rsplit('/').next().unwrap_or(&decoded).to_string();
+            return Some(decoded);
         }
     }
 

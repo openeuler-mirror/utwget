@@ -296,3 +296,31 @@ fn test_format_timestamp_consistency() {
     assert!(fmt2.contains("-"));
     assert_ne!(fmt1, fmt2);
 }
+
+// ============================================================================
+// Content-Disposition RFC5987 path-separator stripping (security M2)
+// ============================================================================
+
+#[test]
+fn content_disposition_rfc5987_strips_path_separators() {
+    use ut_retriever::utils::parse_content_disposition;
+
+    // Percent-encoded path traversal must not survive into the filename.
+    let cd = "attachment; filename*=UTF-8''%2E%2E%2F%2E%2E%2Fetc%2Fpasswd";
+    let name = parse_content_disposition(cd).expect("should parse");
+    assert!(
+        !name.contains('/') && !name.contains('\\'),
+        "decoded filename must not contain path separators, got: {}",
+        name
+    );
+    assert_eq!(name, "passwd");
+}
+
+#[test]
+fn content_disposition_rfc5987_normal_name_unchanged() {
+    use ut_retriever::utils::parse_content_disposition;
+
+    let cd = "attachment; filename*=UTF-8''report%202026.pdf";
+    let name = parse_content_disposition(cd).expect("should parse");
+    assert_eq!(name, "report 2026.pdf");
+}
