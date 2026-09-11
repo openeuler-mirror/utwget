@@ -321,8 +321,25 @@ impl CookieJar {
                                 expires = Some(Utc::now() - chrono::Duration::seconds(1));
                             } else {
                                 persistent = true;
-                                let dur = chrono::Duration::seconds(secs);
-                                expires = Some(Utc::now() + dur);
+                                // Clamp to a sane maximum: `chrono::Duration::seconds`
+                                // panics on values beyond ±i64::MAX milliseconds, so a
+                                // hostile `Set-Cookie: Max-Age=9223372036854775807`
+                                // header could crash the client. RFC 6265 has no
+                                // upper bound; anything past the year 9999 behaves
+                                // the same as "far future". The HSTS module
+                                // (hsts.rs) already uses this checked pattern.
+                                let far_future = Utc::now() + chrono::Duration::try_days(3650)
+                                    .unwrap_or_else(|| chrono::Duration::zero());
+                                let dur = chrono::Duration::try_seconds(secs)
+                                    .filter(|d| {
+                                        // Reject if the resulting expiry would overflow
+                                        Utc::now().checked_add_signed(*d).is_some()
+                                    });
+                                expires = match dur {
+                                    Some(d) => Some(Utc::now() + d),
+                                    // Overflow (or near-overflow) → treat as far future
+                                    None => Some(far_future),
+                                };
                             }
                         }
                     }

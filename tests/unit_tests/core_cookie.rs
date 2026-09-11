@@ -469,3 +469,55 @@ fn test_parse_set_cookie_expires_no_gmt_suffix() {
     assert!(cookies[0].persistent);
     assert!(cookies[0].expires.is_some());
 }
+
+// ============================================================================
+// Max-Age Overflow Regression Tests (H-4)
+// ============================================================================
+
+#[test]
+fn max_age_i64_max_does_not_panic() {
+    // Regression: a hostile `Set-Cookie: Max-Age=9223372036854775807` header
+    // crashed the client with `TimeDelta::seconds out of bounds` (chrono
+    // panics beyond ±i64::MAX milliseconds). Must not panic.
+    let mut jar = CookieJar::new();
+    jar.parse_set_cookie(
+        "sid=x; Max-Age=9223372036854775807",
+        "example.com",
+        "/",
+    );
+    let cookies = jar.match_request("example.com", "/", Scheme::Http);
+    assert_eq!(cookies.len(), 1, "cookie must be stored");
+    assert!(cookies[0].persistent, "Max-Age > 0 implies persistent");
+    // Overflowing expiry is clamped to "far future" — the cookie must not
+    // be considered expired.
+    assert!(cookies[0].is_expired() == false, "clamped far-future expiry must not be expired");
+}
+
+#[test]
+fn max_age_huge_but_safe_value_still_stores() {
+    // Large but non-overflowing value (e.g. 100 years) is stored with a
+    // computed expiry.
+    let mut jar = CookieJar::new();
+    jar.parse_set_cookie("sid=x; Max-Age=3153600000", "example.com", "/");
+    let cookies = jar.match_request("example.com", "/", Scheme::Http);
+    assert_eq!(cookies.len(), 1);
+    assert!(cookies[0].expires.is_some());
+}
+
+#[test]
+fn max_age_zero_expires_immediately() {
+    // Sanity: Max-Age=0 semantics unchanged (immediate expiry). Expired
+    // cookies are filtered out by match_request.
+    let mut jar = CookieJar::new();
+    jar.parse_set_cookie("sid=x; Max-Age=0", "example.com", "/");
+    assert!(jar.match_request("example.com", "/", Scheme::Http).is_empty(),
+        "Max-Age=0 cookie must be immediately expired and not matched");
+}
+
+#[test]
+fn max_age_negative_expires_immediately() {
+    let mut jar = CookieJar::new();
+    jar.parse_set_cookie("sid=x; Max-Age=-5", "example.com", "/");
+    assert!(jar.match_request("example.com", "/", Scheme::Http).is_empty(),
+        "negative Max-Age cookie must be immediately expired and not matched");
+}
