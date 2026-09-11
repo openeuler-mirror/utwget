@@ -117,3 +117,23 @@ Disallow: /
     // Since there's no matching user-agent, everything is allowed
     assert_eq!(parser.is_allowed("example.com", "http://example.com/path"), Some(true));
 }
+
+// ============================================================================
+// Allow Directive Tests
+// ============================================================================
+
+#[test]
+fn test_allow_override_disallow() {
+    let content = r#"
+User-agent: *
+Disallow: /tmp/
+Allow: /tmp/public/
+"#;
+    let mut parser = RobotParser::new("wget");
+    parser.load("example.com", content);
+
+    // Disallowed path
+    assert_eq!(parser.is_allowed("example.com", "http://example.com/tmp/secret"), Some(false));
+    // Allowed exception
+    assert_eq!(parser.is_allowed("example.com", "http://example.com/tmp/public/file"), Some(true));
+}
