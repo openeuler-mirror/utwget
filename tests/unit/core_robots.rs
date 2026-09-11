@@ -151,3 +151,22 @@ Allow: /public/
     assert_eq!(parser.is_allowed("example.com", "http://example.com/private/file"), Some(false));
     assert_eq!(parser.is_allowed("example.com", "http://example.com/public/file"), Some(true));
 }
+
+// ============================================================================
+// Path Matching Tests
+// ============================================================================
+
+#[test]
+fn test_path_exact_match() {
+    let content = r#"
+User-agent: *
+Disallow: /admin
+"#;
+    let mut parser = RobotParser::new("wget");
+    parser.load("example.com", content);
+
+    // Exact match
+    assert_eq!(parser.is_allowed("example.com", "http://example.com/admin"), Some(false));
+    // Prefix match (path starts with /admin)
+    assert_eq!(parser.is_allowed("example.com", "http://example.com/admin/page"), Some(false));
+}
