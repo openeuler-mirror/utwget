@@ -103,3 +103,17 @@ Disallow: /search/
 
     assert_eq!(parser.is_allowed("example.com", "http://example.com/search/"), Some(false));
 }
+
+#[test]
+fn test_user_agent_not_matching() {
+    let content = r#"
+User-agent: googlebot
+Disallow: /
+"#;
+    let mut parser = RobotParser::new("mybot");
+    parser.load("example.com", content);
+
+    // Rules for googlebot should not apply to mybot
+    // Since there's no matching user-agent, everything is allowed
+    assert_eq!(parser.is_allowed("example.com", "http://example.com/path"), Some(true));
+}
