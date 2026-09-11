@@ -398,3 +398,23 @@ fn encode_request_target_keeps_path_separators() {
     use ut_core::url::encode_request_target;
     assert_eq!(encode_request_target("dir/file.txt"), "dir/file.txt");
 }
+
+// ============================================================================
+// IDN punycode helper for TLS SNI (M19)
+// ============================================================================
+
+#[test]
+fn to_punycode_converts_unicode_host() {
+    use ut_core::url::to_punycode;
+    // The full URL pipeline already converts; this is the same function the
+    // TLS layers now use for SNI.
+    assert_eq!(to_punycode("münchen.de"), "xn--mnchen-3ya.de");
+}
+
+#[test]
+fn to_punycode_passes_ascii_and_ips_through() {
+    use ut_core::url::to_punycode;
+    assert_eq!(to_punycode("example.com"), "example.com");
+    assert_eq!(to_punycode("127.0.0.1"), "127.0.0.1");
+    assert_eq!(to_punycode("::1"), "::1");
+}
