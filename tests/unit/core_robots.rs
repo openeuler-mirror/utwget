@@ -137,3 +137,17 @@ Allow: /tmp/public/
     // Allowed exception
     assert_eq!(parser.is_allowed("example.com", "http://example.com/tmp/public/file"), Some(true));
 }
+
+#[test]
+fn test_allow_specific() {
+    let content = r#"
+User-agent: *
+Disallow: /
+Allow: /public/
+"#;
+    let mut parser = RobotParser::new("wget");
+    parser.load("example.com", content);
+
+    assert_eq!(parser.is_allowed("example.com", "http://example.com/private/file"), Some(false));
+    assert_eq!(parser.is_allowed("example.com", "http://example.com/public/file"), Some(true));
+}
