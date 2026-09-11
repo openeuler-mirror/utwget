@@ -169,6 +169,13 @@ impl FtpClient {
         self
     }
 
+    /// Data-connection timeout: 2× the control timeout, preserving the
+    /// historical 30s/60s ratio while honoring --timeout/--read-timeout
+    /// (M14: data connections used a hardcoded 60s regardless of config).
+    fn data_timeout(&self) -> std::time::Duration {
+        self.timeout * 2
+    }
+
     /// Configure passive mode for data connections.
     ///
     /// Passive mode is enabled by default. When disabled, the client will
@@ -1156,11 +1163,13 @@ impl FtpClient {
     /// In active mode, the client binds a local listener, tells the server
     /// the address via PORT/EPRT, and accepts the server's incoming connection.
     fn open_data_connection(&mut self) -> Result<DataConnection, FtpError> {
+        // Compute before taking the mutable ctrl borrow.
+        let data_timeout = Some(self.data_timeout());
         let ctrl = self.ctrl.as_deref_mut().ok_or_else(|| {
             FtpError::DataConnectFailed("no control connection".into())
         })?;
         if self.passive {
-            data_conn::enter_passive_mode(ctrl, self.is_ipv6)
+            data_conn::enter_passive_mode(ctrl, self.is_ipv6, data_timeout)
                 .map_err(|e| FtpError::DataConnectFailed(e.to_string()))
         } else {
             // Active mode: bind a local listener, send PORT/EPRT, and return
@@ -1214,7 +1223,7 @@ impl FtpClient {
             // Return a lazy active connection: accept() is deferred until
             // the first read() call, which happens after the transfer command
             // (LIST/RETR) is sent and the 1xx preliminary response is received.
-            Ok(DataConnection::new_active(listener))
+            Ok(DataConnection::new_active_with_timeout(listener, data_timeout))
         }
     }
 

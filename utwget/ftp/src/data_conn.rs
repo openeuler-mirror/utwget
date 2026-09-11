@@ -46,8 +46,13 @@ impl DataConnection {
     /// so the caller can send the data transfer command (LIST/RETR) on the
     /// control connection before the server initiates the data connection.
     pub fn new_active(listener: TcpListener) -> Self {
+        Self::new_active_with_timeout(listener, None)
+    }
+
+    /// Active-mode connection with a configurable data timeout (M14).
+    pub fn new_active_with_timeout(listener: TcpListener, data_timeout: Option<std::time::Duration>) -> Self {
         DataConnection {
-            stream: Box::new(LazyActiveTransport::new(listener)),
+            stream: Box::new(LazyActiveTransport::new(listener, data_timeout)),
         }
     }
 }
@@ -60,13 +65,17 @@ impl DataConnection {
 /// server will initiate the data connection.  If `accept()` is called
 /// before the transfer command, the connection deadlocks.
 struct LazyActiveTransport {
+    /// Read/write timeout applied to the accepted data socket (M14: was
+    /// hardcoded 60s; honors --timeout/--read-timeout).
+    data_timeout: Option<std::time::Duration>,
     listener: Option<TcpListener>,
     stream: Option<TcpStream>,
 }
 
 impl LazyActiveTransport {
-    fn new(listener: TcpListener) -> Self {
+    fn new(listener: TcpListener, data_timeout: Option<std::time::Duration>) -> Self {
         LazyActiveTransport {
+            data_timeout,
             listener: Some(listener),
             stream: None,
         }
@@ -80,9 +89,10 @@ impl LazyActiveTransport {
                 .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "listener already consumed"))?;
             let (stream, addr) = listener.accept()?;
             stream.set_nonblocking(false).ok();
-            stream.set_read_timeout(Some(std::time::Duration::from_secs(60))).ok();
-            stream.set_write_timeout(Some(std::time::Duration::from_secs(60))).ok();
-            log::debug!("FTP active mode data connection accepted from {}", addr);
+            let dt = self.data_timeout.unwrap_or(std::time::Duration::from_secs(60));
+            stream.set_read_timeout(Some(dt)).ok();
+            stream.set_write_timeout(Some(dt)).ok();
+            log::debug!("FTP active mode data connection accepted from {} (timeout {:?})", addr, dt);
             self.stream = Some(stream);
         }
         let stream = self.stream.as_mut()
@@ -153,15 +163,16 @@ impl IntoTcpStream for LazyActiveTransport {
 pub fn enter_passive_mode(
     ctrl: &mut dyn Transport<Error = io::Error>,
     prefer_ipv6: bool,
+    data_timeout: Option<std::time::Duration>,
 ) -> Result<DataConnection, FtpCommandError> {
     if prefer_ipv6 {
-        match enter_epsv(ctrl) {
+        match enter_epsv(ctrl, data_timeout) {
             Ok(conn) => return Ok(conn),
             Err(_) => {}
         }
     }
 
-    enter_pasv(ctrl)
+    enter_pasv(ctrl, data_timeout)
 }
 
 /// Enter passive mode using the PASV command (IPv4 only).
@@ -183,6 +194,7 @@ pub fn enter_passive_mode(
 /// cannot be parsed.
 pub fn enter_pasv(
     ctrl: &mut dyn Transport<Error = io::Error>,
+    data_timeout: Option<std::time::Duration>,
 ) -> Result<DataConnection, FtpCommandError> {
     FtpCommand::send(ctrl, "PASV")?;
     let resp = FtpResponse::read(ctrl)?;
@@ -220,10 +232,13 @@ pub fn enter_pasv(
 
         let stream = TcpStream::connect(addr).map_err(FtpCommandError::Io)?;
         stream.set_nonblocking(false).ok();
-        // Set timeout to prevent indefinite hang if server stops mid-transfer
-        stream.set_read_timeout(Some(std::time::Duration::from_secs(60))).ok();
-        stream.set_write_timeout(Some(std::time::Duration::from_secs(60))).ok();
-        log::debug!("FTP PASV data connection to {}", addr);
+        // Timeout to prevent an indefinite hang if the server stops
+        // mid-transfer. Honors --timeout/--read-timeout via data_timeout;
+        // defaults to 60s when no configuration reached us (M14).
+        let dt = data_timeout.unwrap_or(std::time::Duration::from_secs(60));
+        stream.set_read_timeout(Some(dt)).ok();
+        stream.set_write_timeout(Some(dt)).ok();
+        log::debug!("FTP PASV data connection to {} (timeout {:?})", addr, dt);
         return Ok(DataConnection::new(Box::new(stream)));
     }
 
@@ -253,6 +268,7 @@ pub fn enter_pasv(
 /// cannot be parsed.
 pub fn enter_epsv(
     ctrl: &mut dyn Transport<Error = io::Error>,
+    data_timeout: Option<std::time::Duration>,
 ) -> Result<DataConnection, FtpCommandError> {
     FtpCommand::send(ctrl, "EPSV")?;
     let resp = FtpResponse::read(ctrl)?;
