@@ -1053,7 +1053,7 @@ impl FtpClient {
         let host = parsed.host;
         let port = parsed.port;
         let user = parsed.user.unwrap_or_else(|| "anonymous".to_string());
-        let password = parsed.password.unwrap_or_else(|| "wget-rs@".to_string());
+        let password = parsed.password.unwrap_or_else(|| "-wget@".to_string());
         let path = parsed.path;
 
         self.connect(&host, port)?;
@@ -1129,7 +1129,7 @@ impl FtpClient {
         let host = parsed.host;
         let port = parsed.port;
         let user = parsed.user.unwrap_or_else(|| "anonymous".to_string());
-        let password = parsed.password.unwrap_or_else(|| "wget-rs@".to_string());
+        let password = parsed.password.unwrap_or_else(|| "-wget@".to_string());
         let path = parsed.path;
 
         self.connect(&host, port)?;
