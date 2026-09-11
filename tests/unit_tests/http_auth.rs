@@ -498,3 +498,91 @@ mod ntlm_tests {
         assert_eq!(auth.scheme(), AuthScheme::Ntlm);
     }
 }
+
+// ============================================================================
+// NTLM Type 2 Challenge Parsing (H-1 regression)
+// ============================================================================
+
+/// A well-formed NTLM Type 2 message, base64-encoded:
+/// signature "NTLMSSP\0" + msgType 2 + target-name fields (offset 48,
+/// "TESTNT") + flags + 8-byte server challenge (0102030405060708) +
+/// reserved + target-info fields (MsvAvNbDomainName "DOMAIN").
+const NTLM_TYPE2_B64: &str = "TlRMTVNTUAACAAAADAAMADAAAAABggAAAQIDBAUGBwgAAAAAAAAAABIAEgA8AAAAVABFAFMAVABOAFQAAgAMAEQATwBNAEEASQBOAAAA";
+
+#[test]
+fn ntlm_type2_base64_extracted_verbatim() {
+    // Regression: the base64 blob's '=' padding was misparsed as a
+    // key=value separator by parse_auth_params, so the Type 2 message was
+    // never captured and NTLM authentication could never proceed past the
+    // Type 1 message.
+    let header = format!("NTLM {}", NTLM_TYPE2_B64);
+    let challenges = AuthChallenge::from_www_authenticate(&header);
+    assert_eq!(challenges.len(), 1);
+    assert_eq!(challenges[0].scheme, AuthScheme::Ntlm);
+    assert_eq!(
+        challenges[0].ntlm_type2_msg.as_deref(),
+        Some(NTLM_TYPE2_B64),
+        "Type 2 base64 blob must be captured verbatim (including padding)"
+    );
+}
+
+#[test]
+fn ntlm_type2_must_not_corrupt_params_of_other_schemes() {
+    // A Basic challenge with real parameters still parses correctly.
+    let challenges = AuthChallenge::from_www_authenticate(r#"Basic realm="x""#);
+    assert_eq!(challenges[0].ntlm_type2_msg, None);
+    assert_eq!(challenges[0].realm.as_deref(), Some("x"));
+}
+
+#[cfg(feature = "auth-ntlm")]
+#[test]
+fn ntlm_authenticator_produces_type3_from_type2() {
+    use ut_http::auth::ntlm::NtlmAuthenticator;
+
+    let challenges = AuthChallenge::from_www_authenticate(&format!("NTLM {}", NTLM_TYPE2_B64));
+    let mut dispatcher = AuthDispatcher::new();
+    let creds = make_credentials("user", "password");
+
+    let header = dispatcher
+        .authenticate(&challenges[0], &creds, "GET", "/protected", None)
+        .expect("authenticate must succeed with a Type 2 challenge")
+        .expect("NTLM must produce an Authorization header");
+
+    assert!(header.starts_with("NTLM "), "got: {}", &header[..40]);
+    // The Type 3 message is substantially larger than the Type 1 message;
+    // a minimal check is that it decodes to an NTLMSSP type-3 message.
+    let b64 = header.trim_start_matches("NTLM ");
+    use base64::Engine;
+    let raw = base64::engine::general_purpose::STANDARD
+        .decode(b64)
+        .expect("Type 3 message must be valid base64");
+    assert!(raw.starts_with(b"NTLMSSP\x00"));
+    let msg_type = u32::from_le_bytes([raw[8], raw[9], raw[10], raw[11]]);
+    assert_eq!(msg_type, 3, "must be a Type 3 (Authenticate) message");
+}
+
+#[cfg(feature = "auth-ntlm")]
+#[test]
+fn ntlm_no_challenge_data_emits_type1() {
+    use ut_http::auth::ntlm::NtlmAuthenticator;
+
+    let challenge = AuthChallenge {
+        scheme: AuthScheme::Ntlm,
+        realm: None, nonce: None, opaque: None, qop: None,
+        algorithm: None, charset: None, userhash: None,
+        stale: None, domain: None, ntlm_type2_msg: None,
+    };
+    let mut dispatcher = AuthDispatcher::new();
+    let creds = make_credentials("user", "password");
+    let header = dispatcher
+        .authenticate(&challenge, &creds, "GET", "/", None)
+        .unwrap()
+        .expect("Type 1 message on first contact");
+    assert!(header.starts_with("NTLM "));
+    use base64::Engine;
+    let raw = base64::engine::general_purpose::STANDARD
+        .decode(header.trim_start_matches("NTLM "))
+        .unwrap();
+    let msg_type = u32::from_le_bytes([raw[8], raw[9], raw[10], raw[11]]);
+    assert_eq!(msg_type, 1, "first contact must emit a Type 1 message");
+}
