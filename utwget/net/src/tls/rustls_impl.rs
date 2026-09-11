@@ -311,7 +311,8 @@ impl RustlsConnector {
                     let verifier: Arc<dyn ServerCertVerifier> = wrap_verifier(Arc::new(SkipServerVerification));
                     ClientConfig::builder_with_provider(provider)
                         .with_protocol_versions(versions)
-                        .map_err(|e| TlsError::HandshakeFailed(format!("protocol version error: {}", e)))?
+                        .map_err(|e| TlsError::HandshakeFailed(format!(
+                        "TLS configuration error: {} (hint: --ciphers may have excluded all suites usable with the selected protocol versions; try adding TLS13_AES_128_GCM_SHA256 or TLS12_ECDHE_RSA_WITH_AES_128_GCM_SHA256, or drop --ciphers)", e)))?
                         .dangerous()
                         .with_custom_certificate_verifier(verifier)
                 } else if let Some(crl_list) = crls {
@@ -326,7 +327,8 @@ impl RustlsConnector {
                     let verifier = wrap_verifier(verifier as Arc<dyn ServerCertVerifier>);
                     ClientConfig::builder_with_provider(provider)
                         .with_protocol_versions(versions)
-                        .map_err(|e| TlsError::HandshakeFailed(format!("protocol version error: {}", e)))?
+                        .map_err(|e| TlsError::HandshakeFailed(format!(
+                        "TLS configuration error: {} (hint: --ciphers may have excluded all suites usable with the selected protocol versions; try adding TLS13_AES_128_GCM_SHA256 or TLS12_ECDHE_RSA_WITH_AES_128_GCM_SHA256, or drop --ciphers)", e)))?
                         .dangerous()
                         .with_custom_certificate_verifier(verifier)
                 } else {
@@ -341,13 +343,15 @@ impl RustlsConnector {
                         let verifier = wrap_verifier(verifier as Arc<dyn ServerCertVerifier>);
                         ClientConfig::builder_with_provider(provider)
                             .with_protocol_versions(versions)
-                            .map_err(|e| TlsError::HandshakeFailed(format!("protocol version error: {}", e)))?
+                            .map_err(|e| TlsError::HandshakeFailed(format!(
+                        "TLS configuration error: {} (hint: --ciphers may have excluded all suites usable with the selected protocol versions; try adding TLS13_AES_128_GCM_SHA256 or TLS12_ECDHE_RSA_WITH_AES_128_GCM_SHA256, or drop --ciphers)", e)))?
                             .dangerous()
                             .with_custom_certificate_verifier(verifier)
                     } else {
                         ClientConfig::builder_with_provider(provider)
                             .with_protocol_versions(versions)
-                            .map_err(|e| TlsError::HandshakeFailed(format!("protocol version error: {}", e)))?
+                            .map_err(|e| TlsError::HandshakeFailed(format!(
+                        "TLS configuration error: {} (hint: --ciphers may have excluded all suites usable with the selected protocol versions; try adding TLS13_AES_128_GCM_SHA256 or TLS12_ECDHE_RSA_WITH_AES_128_GCM_SHA256, or drop --ciphers)", e)))?
                             .with_root_certificates(root_store.clone())
                     }
                 };
