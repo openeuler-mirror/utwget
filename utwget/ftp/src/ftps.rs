@@ -38,10 +38,12 @@ pub struct FtpsConfig {
     /// --ftps-resume-ssl: resume TLS session for data connections.
     /// When true, the data connection should reuse the TLS session
     /// from the control connection (RFC 4217 §3.2).
-    /// Note: rustls session resumption requires a client-side session
-    /// cache; currently a new TLS handshake is performed per data
-    /// connection. This flag is accepted for compatibility but the
-    /// optimization is not yet active.
+    ///
+    /// Implemented by sharing ONE rustls `ClientConfig` (carrying an
+    /// in-memory session cache) between the control and every data
+    /// connection of this client: the data handshake then resumes the
+    /// session established by the control handshake (rustls stores the
+    /// server's session tickets in the config's `Resumption` cache).
     pub resume_ssl: bool,
     /// Use active mode (PORT/EPRT) for data connections instead of
     /// passive mode (PASV). Matches GNU wget's --no-passive-ftp behavior.
@@ -191,6 +193,11 @@ pub struct FtpsClient {
     /// ...\r\n" in a single burst), the second response must be preserved
     /// for the next read_response() call instead of being discarded (M10).
     pending_response_bytes: Vec<u8>,
+    /// Cached TLS client config, shared across control and data connections
+    /// when `--ftps-resume-ssl` is set (M11): rustls session resumption
+    /// requires the SAME ClientConfig Arc so its session cache remembers
+    /// the server's tickets from the control handshake.
+    tls_config_cache: Option<Arc<ClientConfig>>,
 }
 
 /// Wrapper for TLS connection
@@ -284,6 +291,7 @@ impl FtpsClient {
             config: FtpsConfig::default(),
             is_tls: false,
             pending_response_bytes: Vec::new(),
+            tls_config_cache: None,
         }
     }
 
@@ -300,6 +308,7 @@ impl FtpsClient {
             config,
             is_tls: false,
             pending_response_bytes: Vec::new(),
+            tls_config_cache: None,
         }
     }
 
@@ -534,7 +543,7 @@ impl FtpsClient {
     }
 
     /// Wrap a TCP stream with TLS
-    fn wrap_tls(&self, stream: TcpStream, host: &str) -> Result<TlsConnection, FtpError> {
+    fn wrap_tls(&mut self, stream: TcpStream, host: &str) -> Result<TlsConnection, FtpError> {
         let config = self.build_tls_config()?;
         let server_name = ServerName::try_from(host)
             .map_err(|e| FtpError::Connect(format!("invalid server name: {}", e)))?
@@ -551,7 +560,15 @@ impl FtpsClient {
     }
 
     /// Build TLS client configuration
-    fn build_tls_config(&self) -> Result<Arc<ClientConfig>, FtpError> {
+    ///
+    /// With `--ftps-resume-ssl` the config is built once and cached on the
+    /// client: rustls session resumption needs the same `ClientConfig` Arc
+    /// (its `Resumption` session cache stores the server's tickets from the
+    /// control handshake) so every data-connection handshake resumes (M11).
+    fn build_tls_config(&mut self) -> Result<Arc<ClientConfig>, FtpError> {
+        if let Some(ref cached) = self.tls_config_cache {
+            return Ok(cached.clone());
+        }
         let mut root_store = RootCertStore::empty();
 
         // Load client certificate and private key if both are specified.
@@ -633,7 +650,11 @@ impl FtpsClient {
             if self.config.secure_protocol == SecureProtocol::Pfs {
                 cfg.resumption = rustls::client::Resumption::disabled();
             }
-            Ok(Arc::new(cfg))
+            let arc = Arc::new(cfg);
+            if self.config.resume_ssl {
+                self.tls_config_cache = Some(arc.clone());
+            }
+            Ok(arc)
         } else {
             // Skip certificate verification
             let verifier: Arc<dyn ServerCertVerifier> = Arc::new(SkipServerVerification);
@@ -655,7 +676,11 @@ impl FtpsClient {
             if self.config.secure_protocol == SecureProtocol::Pfs {
                 cfg.resumption = rustls::client::Resumption::disabled();
             }
-            Ok(Arc::new(cfg))
+            let arc = Arc::new(cfg);
+            if self.config.resume_ssl {
+                self.tls_config_cache = Some(arc.clone());
+            }
+            Ok(arc)
         }
     }
 
@@ -1137,8 +1162,8 @@ impl FtpsClient {
 
         // Wrap with TLS if PROT P was negotiated
         if self.config.require_data_tls {
-            let host = self.host.as_deref().unwrap_or("unknown");
-            let mut data_tls = self.wrap_tls(data_tcp, host)?;
+            let host = self.host.clone().unwrap_or_else(|| "unknown".to_string());
+            let mut data_tls = self.wrap_tls(data_tcp, &host)?;
 
             // Read data over encrypted channel
             let start_pos = resume_pos.unwrap_or(0);
@@ -1241,8 +1266,8 @@ impl FtpsClient {
         let mut data = Vec::new();
         const MAX_NLST_SIZE: usize = 64 * 1024 * 1024; // 64MB limit
         if self.config.require_data_tls {
-            let host = self.host.as_deref().unwrap_or("unknown");
-            let mut data_tls = self.wrap_tls(data_tcp, host)?;
+            let host = self.host.clone().unwrap_or_else(|| "unknown".to_string());
+            let mut data_tls = self.wrap_tls(data_tcp, &host)?;
             let mut buf = [0u8; 64 * 1024];
             loop {
                 let n = data_tls.read(&mut buf).map_err(|e| FtpError::TransferFailed(e.to_string()))?;
