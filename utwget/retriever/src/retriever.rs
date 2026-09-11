@@ -1342,6 +1342,10 @@ impl Retriever {
                 clear_data_connection: self.config.ftp.ftps_clear_data,
                 resume_ssl: self.config.ftp.ftps_resume_ssl,
                 active_mode: !self.config.ftp.passive,
+                // M20: FTPS now honors the same TLS policy as HTTPS.
+                crl_file: self.config.tls.crl_file.clone(),
+                pinned_pubkey: self.config.tls.pinned_pubkey.clone(),
+                ciphers: self.config.tls.ciphers.clone(),
             };
             let mut ftps_client = ut_ftp::FtpsClient::with_config(ftps_cfg)
                 .with_timeout(self.config.read_timeout.or(self.config.timeout).unwrap_or(std::time::Duration::from_secs(60)));
@@ -1614,6 +1618,10 @@ impl Retriever {
                 clear_data_connection: self.config.ftp.ftps_clear_data,
                 resume_ssl: self.config.ftp.ftps_resume_ssl,
                 active_mode: !self.config.ftp.passive,
+                // M20: FTPS now honors the same TLS policy as HTTPS.
+                crl_file: self.config.tls.crl_file.clone(),
+                pinned_pubkey: self.config.tls.pinned_pubkey.clone(),
+                ciphers: self.config.tls.ciphers.clone(),
             };
             let mut ftps = ut_ftp::FtpsClient::with_config(ftps_cfg)
                 .with_timeout(self.config.read_timeout.or(self.config.timeout).unwrap_or(std::time::Duration::from_secs(60)));

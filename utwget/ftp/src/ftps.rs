@@ -9,9 +9,8 @@ use std::net::TcpStream;
 use std::sync::Arc;
 use std::time::Duration;
 
-use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
-use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
-use rustls::{ClientConfig, ClientConnection, DigitallySignedStruct, RootCertStore, SignatureScheme};
+use rustls::pki_types::ServerName;
+use rustls::{ClientConfig, ClientConnection};
 
 use crate::command::FtpResponse;
 use crate::client::{FtpError, validate_ftp_input};
@@ -28,6 +27,13 @@ pub struct FtpsConfig {
     pub client_cert: Option<std::path::PathBuf>,
     /// Path to client private key file
     pub client_key: Option<std::path::PathBuf>,
+    /// CRL file for certificate revocation checking (--crl-file, M20).
+    /// Empty/None disables revocation checking.
+    pub crl_file: Option<std::path::PathBuf>,
+    /// Public key pins (--pinnedpubkey, M20). SHA-256 base64 hashes.
+    pub pinned_pubkey: Option<String>,
+    /// Cipher suite selection (--ciphers, M20). OpenSSL/GnuTLS-style names.
+    pub ciphers: Option<String>,
     /// Whether to require TLS for data connection
     pub require_data_tls: bool,
     /// Minimum/maximum TLS protocol version (mirrors --secure-protocol).
@@ -60,6 +66,9 @@ impl Default for FtpsConfig {
             ca_cert: None,
             client_cert: None,
             client_key: None,
+            crl_file: None,
+            pinned_pubkey: None,
+            ciphers: None,
             require_data_tls: false,
             secure_protocol: SecureProtocol::Auto,
             clear_data_connection: false,
@@ -577,127 +586,51 @@ impl FtpsClient {
 
     /// Build TLS client configuration
     ///
-    /// With `--ftps-resume-ssl` the config is built once and cached on the
-    /// client: rustls session resumption needs the same `ClientConfig` Arc
-    /// (its `Resumption` session cache stores the server's tickets from the
+    /// Delegates to `ut_net::tls::RustlsConnector::build_config` (M20):
+    /// single source of truth for TLS policy — CRL checking
+    /// (--crl-file), public key pinning (--pinnedpubkey), cipher suite
+    /// selection (--ciphers), protocol versions and client certificates
+    /// all behave identically to the HTTPS path. The previous hand-rolled
+    /// copy here silently ignored crl/pin/ciphers and duplicated
+    /// SkipServerVerification.
+    ///
+    /// With `--ftps-resume-ssl` the built config is cached on the client:
+    /// rustls session resumption needs the same `ClientConfig` Arc (its
+    /// `Resumption` session cache stores the server's tickets from the
     /// control handshake) so every data-connection handshake resumes (M11).
     fn build_tls_config(&mut self) -> Result<Arc<ClientConfig>, FtpError> {
         if let Some(ref cached) = self.tls_config_cache {
             return Ok(cached.clone());
         }
-        let mut root_store = RootCertStore::empty();
 
-        // Load client certificate and private key if both are specified.
-        let client_auth = match (&self.config.client_cert, &self.config.client_key) {
-            (Some(cert_path), Some(key_path)) => {
-                let cert_data = std::fs::read(cert_path)
-                    .map_err(|e| FtpError::Connect(format!("cannot read client cert: {}", e)))?;
-                let certs: Vec<CertificateDer<'static>> =
-                    rustls_pemfile::certs(&mut cert_data.as_slice())
-                        .collect::<Result<Vec<_>, _>>()
-                        .map_err(|e| FtpError::Connect(format!("cannot parse client cert: {}", e)))?;
-                if certs.is_empty() {
-                    return Err(FtpError::Connect("client cert file contains no certificates".into()));
-                }
-                let key_data = std::fs::read(key_path)
-                    .map_err(|e| FtpError::Connect(format!("cannot read client key: {}", e)))?;
-                let key = rustls_pemfile::private_key(&mut key_data.as_slice())
-                    .map_err(|e| FtpError::Connect(format!("cannot parse client key: {}", e)))?
-                    .ok_or_else(|| {
-                        FtpError::Connect("client key file contains no private key".into())
-                    })?;
-                Some((certs, key))
-            }
-            _ => None,
+        let tls_config = ut_net::tls::TlsConfig {
+            check_certificate: if self.config.verify_certificate {
+                ut_core::types::CheckCertMode::On
+            } else {
+                ut_core::types::CheckCertMode::Off
+            },
+            ca_cert: self.config.ca_cert.clone(),
+            cert_file: self.config.client_cert.clone(),
+            private_key: self.config.client_key.clone(),
+            ca_directory: None,
+            secure_protocol: self.config.secure_protocol,
+            ciphers: self.config.ciphers.clone(),
+            crl_file: self.config.crl_file.clone(),
+            pinned_pubkey: self.config.pinned_pubkey.clone(),
+            cert_type: ut_core::types::KeyFileType::Pem,
+            private_key_type: ut_core::types::KeyFileType::Pem,
         };
 
-        let versions: &[&'static rustls::SupportedProtocolVersion] = match self.config.secure_protocol {
-            SecureProtocol::TlsV1_2 => &[&rustls::version::TLS12],
-            SecureProtocol::TlsV1_3 => &[&rustls::version::TLS13],
-            SecureProtocol::Auto => rustls::ALL_VERSIONS,
-            SecureProtocol::Pfs => rustls::ALL_VERSIONS,
-        };
-
-        if self.config.verify_certificate {
-            // Load custom CA if specified
-            if let Some(ref ca_path) = self.config.ca_cert {
-                let data = std::fs::read(ca_path)
-                    .map_err(|e| FtpError::Connect(format!("cannot read CA cert: {}", e)))?;
-                let certs = rustls_pemfile::certs(&mut data.as_slice())
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(|e| FtpError::Connect(format!("cannot parse CA cert: {}", e)))?;
-                for cert in certs {
-                    root_store.add(cert.to_owned())
-                        .map_err(|e| FtpError::Connect(format!("cannot add CA cert: {}", e)))?;
-                }
-            }
-
-            // Load system root certificates, falling back to Mozilla roots.
-            if root_store.is_empty() {
-                let result = rustls_native_certs::load_native_certs();
-                for cert in &result.certs {
-                    root_store.add(cert.clone()).ok();
-                }
-                if root_store.is_empty() {
-                    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-                }
-            }
-
-            // Pin the crypto provider explicitly: the dependency closure may
-            // enable both 'ring' and 'aws-lc-rs', which makes rustls'
-            // process-default provider ambiguous — ClientConfig::builder*()
-            // then panics with "Could not automatically determine the
-            // process-level CryptoProvider" and every pure-FTPS session
-            // crashes. Mirrors ut-net's rustls_impl.rs, which always uses
-            // an explicit ring provider.
-            let provider = rustls::crypto::ring::default_provider();
-            let cfg = ClientConfig::builder_with_provider(provider.into())
-                .with_protocol_versions(versions)
-                .map_err(|e| FtpError::Connect(format!("TLS configuration error: {}", e)))?
-                .with_root_certificates(root_store);
-
-            let cfg = match client_auth {
-                Some((certs, key)) => cfg
-                    .with_client_auth_cert(certs, key)
-                    .map_err(|e| FtpError::Connect(format!("cannot set client auth: {}", e)))?,
-                None => cfg.with_no_client_auth(),
-            };
-            let mut cfg = cfg;
-            if self.config.secure_protocol == SecureProtocol::Pfs {
-                cfg.resumption = rustls::client::Resumption::disabled();
-            }
-            let arc = Arc::new(cfg);
-            if self.config.resume_ssl {
-                self.tls_config_cache = Some(arc.clone());
-            }
-            Ok(arc)
-        } else {
-            // Skip certificate verification
-            let verifier: Arc<dyn ServerCertVerifier> = Arc::new(SkipServerVerification);
-            // Explicit provider: see the comment in the verify branch above.
-            let provider = rustls::crypto::ring::default_provider();
-            let cfg = ClientConfig::builder_with_provider(provider.into())
-                .with_protocol_versions(versions)
-                .map_err(|e| FtpError::Connect(format!("TLS configuration error: {}", e)))?
-                .dangerous()
-                .with_custom_certificate_verifier(verifier);
-
-            let cfg = match client_auth {
-                Some((certs, key)) => cfg
-                    .with_client_auth_cert(certs, key)
-                    .map_err(|e| FtpError::Connect(format!("cannot set client auth: {}", e)))?,
-                None => cfg.with_no_client_auth(),
-            };
-            let mut cfg = cfg;
-            if self.config.secure_protocol == SecureProtocol::Pfs {
-                cfg.resumption = rustls::client::Resumption::disabled();
-            }
-            let arc = Arc::new(cfg);
-            if self.config.resume_ssl {
-                self.tls_config_cache = Some(arc.clone());
-            }
-            Ok(arc)
+        let built = ut_net::tls::RustlsConnector::build_config(&tls_config)
+            .map_err(|e| FtpError::Connect(format!("TLS configuration error: {}", e)))?;
+        // Re-wrap: build_config disables resumption only for the Pfs mode
+        // internally; nothing further to tweak here.
+        let _ = &built;
+        let arc = Arc::new(built);
+        if self.config.resume_ssl {
+            self.tls_config_cache = Some(arc.clone());
         }
+        Ok(arc)
     }
 
     /// Send an FTP command over the TLS connection.
@@ -1321,54 +1254,3 @@ impl Drop for FtpsClient {
     }
 }
 
-/// Certificate verifier that skips all verification.
-///
-/// Used when `--no-check-certificate` is specified.
-#[derive(Debug)]
-struct SkipServerVerification;
-
-impl ServerCertVerifier for SkipServerVerification {
-    fn verify_server_cert(
-        &self,
-        _end_entity: &CertificateDer<'_>,
-        _intermediates: &[CertificateDer<'_>],
-        _server_name: &ServerName<'_>,
-        _ocsp_response: &[u8],
-        _now: UnixTime,
-    ) -> Result<ServerCertVerified, rustls::Error> {
-        Ok(ServerCertVerified::assertion())
-    }
-
-    fn verify_tls12_signature(
-        &self,
-        _message: &[u8],
-        _cert: &CertificateDer<'_>,
-        _dss: &DigitallySignedStruct,
-    ) -> Result<HandshakeSignatureValid, rustls::Error> {
-        Ok(HandshakeSignatureValid::assertion())
-    }
-
-    fn verify_tls13_signature(
-        &self,
-        _message: &[u8],
-        _cert: &CertificateDer<'_>,
-        _dss: &DigitallySignedStruct,
-    ) -> Result<HandshakeSignatureValid, rustls::Error> {
-        Ok(HandshakeSignatureValid::assertion())
-    }
-
-    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
-        vec![
-            SignatureScheme::RSA_PKCS1_SHA256,
-            SignatureScheme::RSA_PKCS1_SHA384,
-            SignatureScheme::RSA_PKCS1_SHA512,
-            SignatureScheme::ECDSA_NISTP256_SHA256,
-            SignatureScheme::ECDSA_NISTP384_SHA384,
-            SignatureScheme::ECDSA_NISTP521_SHA512,
-            SignatureScheme::RSA_PSS_SHA256,
-            SignatureScheme::RSA_PSS_SHA384,
-            SignatureScheme::RSA_PSS_SHA512,
-            SignatureScheme::ED25519,
-        ]
-    }
-}

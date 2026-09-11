@@ -367,7 +367,9 @@ impl RustlsConnector {
         // 默认路径（无 --ciphers 或匹配为空）
         let cfg = if !should_verify {
             let verifier: Arc<dyn ServerCertVerifier> = wrap_verifier(Arc::new(SkipServerVerification));
-            ClientConfig::builder_with_protocol_versions(versions)
+            ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+                .with_protocol_versions(versions)
+                .map_err(|e| TlsError::HandshakeFailed(format!("TLS configuration error: {} (hint: check --ciphers vs protocol versions)", e)))?
                 .dangerous()
                 .with_custom_certificate_verifier(verifier)
         } else if let Some(crl_list) = crls {
@@ -377,7 +379,9 @@ impl RustlsConnector {
                 .build()
                 .map_err(|e| TlsError::CertError(format!("CRL verifier build error: {}", e)))?;
             let verifier = wrap_verifier(verifier as Arc<dyn ServerCertVerifier>);
-            ClientConfig::builder_with_protocol_versions(versions)
+            ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+                .with_protocol_versions(versions)
+                .map_err(|e| TlsError::HandshakeFailed(format!("TLS configuration error: {} (hint: check --ciphers vs protocol versions)", e)))?
                 .dangerous()
                 .with_custom_certificate_verifier(verifier)
         } else if pinned_pins.is_some() {
@@ -386,11 +390,15 @@ impl RustlsConnector {
                 .build()
                 .map_err(|e| TlsError::CertError(format!("verifier build error: {}", e)))?;
             let verifier = wrap_verifier(verifier as Arc<dyn ServerCertVerifier>);
-            ClientConfig::builder_with_protocol_versions(versions)
+            ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+                .with_protocol_versions(versions)
+                .map_err(|e| TlsError::HandshakeFailed(format!("TLS configuration error: {} (hint: check --ciphers vs protocol versions)", e)))?
                 .dangerous()
                 .with_custom_certificate_verifier(verifier)
         } else {
-            ClientConfig::builder_with_protocol_versions(versions)
+            ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+                .with_protocol_versions(versions)
+                .map_err(|e| TlsError::HandshakeFailed(format!("TLS configuration error: {} (hint: check --ciphers vs protocol versions)", e)))?
                 .with_root_certificates(root_store.clone())
         };
 
