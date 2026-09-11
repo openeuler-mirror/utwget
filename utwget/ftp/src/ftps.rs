@@ -76,7 +76,7 @@ impl Default for FtpsConfig {
 /// - Single-line: `"NNN text\r\n"`
 /// - Multi-line: `"NNN-text\r\n...NNN text\r\n"` where intermediate lines use
 ///   `NNN-` and the final line uses `NNN ` (code + space).
-fn parse_complete_response(data: &[u8]) -> Option<(FtpResponse, usize)> {
+pub fn parse_complete_response(data: &[u8]) -> Option<(FtpResponse, usize)> {
     let s = std::str::from_utf8(data).ok()?;
     let first_line_end = s.find('\n')?;
     let first_line = s[..first_line_end].trim_end_matches('\r');
@@ -160,7 +160,7 @@ fn parse_complete_response(data: &[u8]) -> Option<(FtpResponse, usize)> {
 /// hostname instead of the peer IP is wrong: a hostname string almost never
 /// equals the server's IP, which broke every FTPS-over-domain-name
 /// connection (P0 fix).
-fn validate_pasv_ip(
+pub fn validate_pasv_ip(
     pasv_ip: std::net::IpAddr,
     peer: Option<std::net::IpAddr>,
 ) -> Result<(), String> {
@@ -582,7 +582,17 @@ impl FtpsClient {
                 }
             }
 
-            let cfg = ClientConfig::builder_with_protocol_versions(versions)
+            // Pin the crypto provider explicitly: the dependency closure may
+            // enable both 'ring' and 'aws-lc-rs', which makes rustls'
+            // process-default provider ambiguous — ClientConfig::builder*()
+            // then panics with "Could not automatically determine the
+            // process-level CryptoProvider" and every pure-FTPS session
+            // crashes. Mirrors ut-net's rustls_impl.rs, which always uses
+            // an explicit ring provider.
+            let provider = rustls::crypto::ring::default_provider();
+            let cfg = ClientConfig::builder_with_provider(provider.into())
+                .with_protocol_versions(versions)
+                .map_err(|e| FtpError::Connect(format!("TLS configuration error: {}", e)))?
                 .with_root_certificates(root_store);
 
             let cfg = match client_auth {
@@ -599,7 +609,11 @@ impl FtpsClient {
         } else {
             // Skip certificate verification
             let verifier: Arc<dyn ServerCertVerifier> = Arc::new(SkipServerVerification);
-            let cfg = ClientConfig::builder_with_protocol_versions(versions)
+            // Explicit provider: see the comment in the verify branch above.
+            let provider = rustls::crypto::ring::default_provider();
+            let cfg = ClientConfig::builder_with_provider(provider.into())
+                .with_protocol_versions(versions)
+                .map_err(|e| FtpError::Connect(format!("TLS configuration error: {}", e)))?
                 .dangerous()
                 .with_custom_certificate_verifier(verifier);
 
@@ -1271,126 +1285,5 @@ impl ServerCertVerifier for SkipServerVerification {
             SignatureScheme::RSA_PSS_SHA512,
             SignatureScheme::ED25519,
         ]
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{parse_complete_response, validate_pasv_ip};
-    use std::net::IpAddr;
-
-    // ------------------------------------------------------------------
-    // PASV bounce-attack validation (P0 fix: compare against the control
-    // socket's peer IP, not the DNS hostname string)
-    // ------------------------------------------------------------------
-
-    #[test]
-    fn pasv_ip_matching_peer_is_accepted() {
-        let pasv: IpAddr = "203.0.113.7".parse().unwrap();
-        let peer: IpAddr = "203.0.113.7".parse().unwrap();
-        assert!(validate_pasv_ip(pasv, Some(peer)).is_ok());
-    }
-
-    #[test]
-    fn pasv_ip_mismatching_peer_is_rejected() {
-        let pasv: IpAddr = "10.0.0.1".parse().unwrap();
-        let peer: IpAddr = "203.0.113.7".parse().unwrap();
-        assert!(validate_pasv_ip(pasv, Some(peer)).is_err());
-    }
-
-    #[test]
-    fn pasv_ip_hostname_is_not_used_for_comparison() {
-        // Regression: the control connection is to "ftp.example.com" (which
-        // resolves to 203.0.113.7) and PASV advertises 203.0.113.7 — this must
-        // be ACCEPTED. The old code compared the PASV IP string against the
-        // hostname string and rejected it, breaking FTPS over domain names.
-        let pasv: IpAddr = "203.0.113.7".parse().unwrap();
-        let peer: IpAddr = "203.0.113.7".parse().unwrap();
-        assert!(validate_pasv_ip(pasv, Some(peer)).is_ok());
-    }
-
-    #[test]
-    fn pasv_ip_unknown_peer_is_allowed() {
-        // Peer address cannot be determined → allowed (call site logs).
-        let pasv: IpAddr = "203.0.113.7".parse().unwrap();
-        assert!(validate_pasv_ip(pasv, None).is_ok());
-    }
-
-    #[test]
-    fn pasv_ip_ipv6_peer_roundtrip() {
-        let pasv: IpAddr = "::ffff:203.0.113.7".parse().unwrap();
-        let peer: IpAddr = "::ffff:203.0.113.7".parse().unwrap();
-        assert!(validate_pasv_ip(pasv, Some(peer)).is_ok());
-    }
-
-    #[test]
-    fn parses_single_line_response() {
-        let data = b"220 Service ready\r\n";
-        let (resp, consumed) = parse_complete_response(data).expect("single-line should parse");
-        assert_eq!(resp.code, 220);
-        assert_eq!(resp.text, "Service ready");
-        assert_eq!(consumed, data.len());
-        assert!(resp.is_positive_completion);
-    }
-
-    #[test]
-    fn parses_multi_line_response() {
-        // Classic multi-line FTP welcome: 220-Welcome\n220-Second line\n220 Ready
-        let data = b"220-Welcome to the FTP server\r\n220-Second line of greeting\r\n220 Ready\r\n";
-        let (resp, consumed) = parse_complete_response(data).expect("multi-line should parse");
-        assert_eq!(resp.code, 220);
-        assert_eq!(resp.lines.len(), 3);
-        // First line: prefix "NNN-" stripped, content only
-        assert_eq!(resp.lines[0], "Welcome to the FTP server");
-        // Intermediate lines: original form retained (matches command.rs behavior)
-        assert_eq!(resp.lines[1], "220-Second line of greeting");
-        // Final line: prefix "NNN " stripped, content only
-        assert_eq!(resp.lines[2], "Ready");
-        assert_eq!(consumed, data.len());
-        assert!(resp.is_positive_completion);
-    }
-
-    #[test]
-    fn returns_none_for_incomplete_multi_line() {
-        // No final "220 " line present → must return None (was the bug causing hang)
-        let data = b"220-Welcome\r\n220-Still going\r\n";
-        assert!(parse_complete_response(data).is_none(),
-            "incomplete multi-line response must not parse (regression check for hang bug)");
-    }
-
-    #[test]
-    fn returns_none_for_truncated_first_line() {
-        // No newline yet → cannot determine first line
-        let data = b"220 Ready";
-        assert!(parse_complete_response(data).is_none());
-    }
-
-    #[test]
-    fn parses_multi_line_with_blank_intermediate_line() {
-        let data = b"220-First\r\n220-\r\n220 Final\r\n";
-        let (resp, consumed) = parse_complete_response(data).expect("blank intermediate line should parse");
-        assert_eq!(resp.code, 220);
-        assert_eq!(resp.lines.len(), 3);
-        assert_eq!(resp.lines[1], "220-");  // intermediate line kept as-is (blank content after dash)
-        assert_eq!(consumed, data.len());
-    }
-
-    #[test]
-    fn parses_error_response() {
-        let data = b"530 Not logged in\r\n";
-        let (resp, _) = parse_complete_response(data).expect("error response should parse");
-        assert_eq!(resp.code, 530);
-        assert!(resp.is_permanent_negative);
-        assert!(!resp.is_positive_completion);
-    }
-
-    #[test]
-    fn handles_lf_only_line_endings() {
-        // Some servers may use bare LF; we should still find the line via '\n'
-        let data = b"331 User name okay, need password\n";
-        let (resp, consumed) = parse_complete_response(data).expect("LF-only line should parse");
-        assert_eq!(resp.code, 331);
-        assert!(resp.is_positive_intermediate);
-        assert_eq!(consumed, data.len());
     }
 }
