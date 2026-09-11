@@ -999,22 +999,18 @@ impl FtpsClient {
         let pasv_ip: std::net::IpAddr = host
             .parse()
             .map_err(|_| FtpError::ParseError(format!("invalid PASV address: {}", host)))?;
-        match self.control_peer_ip() {
-            Some(peer_ip) => {
-                if let Err(reason) = validate_pasv_ip(pasv_ip, Some(peer_ip)) {
-                    log::warn!(
-                        "FTPS PASV address {}:{} does not match control connection peer {}; \
-                         rejecting to prevent FTP bounce attack",
-                        host, port, peer_ip
-                    );
-                    return Err(FtpError::DataConnectFailed(reason));
-                }
+        // GNU wget does NOT validate the PASV IP (ftp.c connects directly);
+        // a mismatch (NAT'd data server) is a warning, not an error (M12).
+        if let Some(peer_ip) = self.control_peer_ip() {
+            if let Err(reason) = validate_pasv_ip(pasv_ip, Some(peer_ip)) {
+                log::warn!(
+                    "FTPS PASV address {}:{} does not match control connection peer {}; \
+                     connecting anyway (possible FTP bounce attack, GNU wget behavior)",
+                    host, port, peer_ip
+                );
             }
-            None => {
-                // Peer address unavailable (e.g. non-socket control transport):
-                // proceed but log, mirroring data_conn.rs behavior.
-                log::warn!("cannot determine FTPS control connection peer for PASV validation");
-            }
+        } else {
+            log::warn!("cannot determine FTPS control connection peer for PASV validation");
         }
 
         Ok((host, port))
