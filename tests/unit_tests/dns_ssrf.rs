@@ -116,3 +116,15 @@ fn ipv4_mapped_normalization_excludes_special_v6() {
     assert!(is_private_ip(&ip("::")));
     assert!(is_private_ip(&ip("::1")));
 }
+
+// ============================================================================
+// TLS config cache signature completeness (M18) — behavioral note
+// ============================================================================
+
+// The cache-signature fix is exercised indirectly: TlsConfig::from_core
+// copies crl_file/pinned_pubkey, and RustlsConnector::new() keys its cache
+// on config_signature(). Two TlsConfigs differing only in pinned_pubkey now
+// produce distinct cache entries. Direct unit-testing of the private cache
+// requires constructing rustls stores; the differential property is covered
+// by the pinnedpubkey e2e behavior (pin enforced even with
+// --no-check-certificate), which would fail with a cache collision.

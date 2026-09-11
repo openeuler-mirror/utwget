@@ -106,8 +106,13 @@ impl RustlsConnector {
     /// Builds a cache key string from the TLS config fields that affect the
     /// resulting `ClientConfig`.
     fn config_signature(config: &TlsConfig) -> String {
+        // M18: crl_file and pinned_pubkey change the built verifier (CRLs
+        // added to the WebPkiServerVerifier; PinnedPubKeyVerifier wrapping)
+        // and were previously omitted — two configs differing only in these
+        // fields shared a cache entry, silently dropping or misapplying
+        // the CRL/pin.
         format!(
-            "{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}",
+            "{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}",
             config.check_certificate,
             config.ca_cert,
             config.cert_file,
@@ -115,6 +120,8 @@ impl RustlsConnector {
             config.ca_directory,
             config.secure_protocol,
             config.ciphers,
+            config.crl_file,
+            config.pinned_pubkey,
         )
     }
 
