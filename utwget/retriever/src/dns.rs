@@ -110,15 +110,82 @@ pub fn resolve_with_timeout(
 
 /// Returns true if the IP address is in a private (RFC 1918) or link-local
 /// range, used for SSRF awareness on redirects.
+///
+/// IPv4-mapped IPv6 addresses (`::ffff:a.b.c.d`) are normalized to their
+/// embedded IPv4 form first: `::ffff:127.0.0.1` would otherwise be
+/// classified as a plain V6 address, bypassing every private-range check
+/// while still connecting to 127.0.0.1 (H-2). Also covers loopback,
+/// unspecified, broadcast, CGNAT (100.64.0.0/10), and IPv6 ULA/unique-local
+/// ranges that cloud-internal services commonly use.
 pub fn is_private_ip(addr: &IpAddr) -> bool {
+    // Normalize IPv4-mapped IPv6 (::ffff:0:0/96) to the embedded IPv4
+    // address so the V4 private ranges apply.
+    let addr = match addr {
+        IpAddr::V6(v6) => {
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                IpAddr::V4(v4)
+            } else {
+                // IPv4-compatible (::a.b.c.d, deprecated but still routable
+                // on some stacks) — also normalize.
+                if let Some(v4) = to_ipv4_compatible(v6) {
+                    IpAddr::V4(v4)
+                } else {
+                    addr.to_owned()
+                }
+            }
+        }
+        _ => addr.to_owned(),
+    };
+
     match addr {
         IpAddr::V4(v4) => {
-            v4.is_private()       // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
-                || v4.is_link_local() // 169.254.0.0/16 (cloud metadata)
+            v4.is_private()        // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+                || v4.is_loopback()    // 127.0.0.0/8
+                || v4.is_link_local()  // 169.254.0.0/16 (cloud metadata)
                 || v4.is_unspecified() // 0.0.0.0
+                || v4.is_broadcast()   // 255.255.255.255
+                || is_cgnat_v4(&v4)    // 100.64.0.0/10 (carrier/NAT44)
         }
         IpAddr::V6(v6) => {
-            v6.is_loopback() || v6.is_unspecified() || v6.is_multicast()
+            v6.is_loopback()     // ::1
+                || v6.is_unspecified() // ::
+                || v6.is_multicast()
+                // IPv6 unique-local (fc00::/7): the V6 equivalent of RFC 1918
+                || (v6.segments()[0] & 0xfe00) == 0xfc00
+                // IPv6 link-local fe80::/10
+                || (v6.segments()[0] & 0xffc0) == 0xfe80
         }
     }
+}
+
+/// Returns `Some(v4)` for deprecated IPv4-compatible addresses (`::a.b.c.d`,
+/// the first 96 bits zero and the last 32 bits nonzero). Distinct from
+/// IPv4-mapped (`::ffff:a.b.c.d`) which `to_ipv4_mapped()` already covers.
+fn to_ipv4_compatible(v6: &std::net::Ipv6Addr) -> Option<std::net::Ipv4Addr> {
+    let segs = v6.segments();
+    if segs[0] == 0
+        && segs[1] == 0
+        && segs[2] == 0
+        && segs[3] == 0
+        && segs[4] == 0
+        && segs[5] == 0
+        && !(segs[6] == 0 && segs[7] <= 1)
+    {
+        // Exclude :: (unspecified) and ::1 (loopback) which are V6-special.
+        Some(std::net::Ipv4Addr::new(
+            (segs[6] >> 8) as u8,
+            segs[6] as u8,
+            (segs[7] >> 8) as u8,
+            segs[7] as u8,
+        ))
+    } else {
+        None
+    }
+}
+
+/// Carrier-grade NAT range 100.64.0.0/10 (RFC 6598) — shared address space
+/// used inside ISP and cloud networks; not covered by `Ipv4Addr::is_private`.
+fn is_cgnat_v4(v4: &std::net::Ipv4Addr) -> bool {
+    let o = v4.octets();
+    o[0] == 100 && (o[1] & 0xc0) == 64
 }
