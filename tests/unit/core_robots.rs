@@ -57,3 +57,19 @@ Disallow: /private/
     assert_eq!(parser.is_allowed("example.com", "http://example.com/admin/secret"), Some(false));
     assert_eq!(parser.is_allowed("example.com", "http://example.com/private/data"), Some(false));
 }
+
+// ============================================================================
+// User-Agent Matching Tests
+// ============================================================================
+
+#[test]
+fn test_user_agent_wildcard() {
+    let content = r#"
+User-agent: *
+Disallow: /global/
+"#;
+    let mut parser = RobotParser::new("mybot");
+    parser.load("example.com", content);
+
+    assert_eq!(parser.is_allowed("example.com", "http://example.com/global/file"), Some(false));
+}
