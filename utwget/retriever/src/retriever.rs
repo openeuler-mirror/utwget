@@ -1375,7 +1375,10 @@ impl Retriever {
             self.progress.reset();
 
             let mut rate_writer = apply_rate_limit(file, self.config.limit_rate);
-            let total_bytes = ftps_client.retr(filename, &mut rate_writer, Some(state.resume_position))
+            // GNU wget sends REST only when resuming (restval > 0, ftp.c);
+            // "REST 0" is a wasted round trip and some servers reject it (M13).
+            let resume_arg = if state.resume_position > 0 { Some(state.resume_position) } else { None };
+            let total_bytes = ftps_client.retr(filename, &mut rate_writer, resume_arg)
                 .map_err(|e| RetrieveError::Protocol(WgetError::FtpIo(format!("FTPS transfer error: {}", e))))?;
 
             // Apply server timestamp (MDTM) before closing the connection
@@ -1470,7 +1473,8 @@ impl Retriever {
         self.progress.reset();
 
         let mut rate_writer = apply_rate_limit(file, self.config.limit_rate);
-        let total_bytes = ftp_client.retr(filename, &mut rate_writer, Some(state.resume_position))
+        let resume_arg = if state.resume_position > 0 { Some(state.resume_position) } else { None };
+        let total_bytes = ftp_client.retr(filename, &mut rate_writer, resume_arg)
             .map_err(|e| RetrieveError::Protocol(WgetError::FtpIo(format!("FTP transfer error: {}", e))))?;
 
         // Get server timestamp before closing connection
