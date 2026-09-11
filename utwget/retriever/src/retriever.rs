@@ -562,6 +562,13 @@ impl Retriever {
                     } else {
                         "****".to_string()
                     }
+                } else if key.eq_ignore_ascii_case("Cookie")
+                    || key.eq_ignore_ascii_case("Set-Cookie")
+                {
+                    // Session cookies are credentials too — mask the value
+                    // (M-security: the previous code echoed them verbatim,
+                    // leaking sessions into pasted debug logs).
+                    "****".to_string()
                 } else {
                     value.clone()
                 };
