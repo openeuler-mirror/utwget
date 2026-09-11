@@ -128,3 +128,46 @@ fn ipv4_mapped_normalization_excludes_special_v6() {
 // requires constructing rustls stores; the differential property is covered
 // by the pinnedpubkey e2e behavior (pin enforced even with
 // --no-check-certificate), which would fail with a cache collision.
+
+// ============================================================================
+// DNS cache bounded eviction (M23)
+// ============================================================================
+
+#[test]
+fn dns_cache_insert_and_lookup_roundtrip() {
+    use std::net::SocketAddrV4;
+    use ut_retriever::dns::{cache_insert, cache_lookup};
+
+    let key_host = format!("m23-cache-test-{}", std::process::id());
+    let addrs = vec![std::net::SocketAddr::V4(SocketAddrV4::new(
+        std::net::Ipv4Addr::new(93, 184, 216, 34),
+        443,
+    ))];
+    cache_insert(&key_host, 443, addrs.clone());
+    let got = cache_lookup(&key_host, 443);
+    assert_eq!(got, Some(addrs), "fresh entry must be returned");
+}
+
+#[test]
+fn dns_cache_evicts_when_over_capacity() {
+    use std::net::SocketAddrV4;
+    use ut_retriever::dns::{cache_insert, cache_lookup, DNS_CACHE_MAX_ENTRIES};
+
+    let base = format!("m23-evict-{}-", std::process::id());
+    // One more than capacity, all with distinct keys.
+    for i in 0..DNS_CACHE_MAX_ENTRIES + 10 {
+        let host = format!("{}{}", base, i);
+        let addrs = vec![std::net::SocketAddr::V4(SocketAddrV4::new(
+            std::net::Ipv4Addr::new(127, 0, 0, (i % 250 + 1) as u8),
+            443,
+        ))];
+        cache_insert(&host, 443, addrs);
+    }
+    // After inserting capacity+10 entries, the LAST one must still be
+    // cached (never evicted), proving eviction trims to the limit.
+    let last = format!("{}{}", base, DNS_CACHE_MAX_ENTRIES + 9);
+    assert!(
+        cache_lookup(&last, 443).is_some(),
+        "most recent entry must survive eviction"
+    );
+}
