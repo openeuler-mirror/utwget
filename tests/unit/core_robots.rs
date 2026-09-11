@@ -39,3 +39,21 @@ fn test_parse_disallow_all() {
 
     assert_eq!(parser.is_allowed("example.com", "http://example.com/path"), Some(false));
 }
+
+#[test]
+fn test_parse_disallow_specific_path() {
+    let content = r#"
+User-agent: *
+Disallow: /admin/
+Disallow: /private/
+"#;
+    let mut parser = RobotParser::new("wget");
+    parser.load("example.com", content);
+
+    // Public paths should be allowed
+    assert_eq!(parser.is_allowed("example.com", "http://example.com/public/file"), Some(true));
+
+    // Disallowed paths should be blocked
+    assert_eq!(parser.is_allowed("example.com", "http://example.com/admin/secret"), Some(false));
+    assert_eq!(parser.is_allowed("example.com", "http://example.com/private/data"), Some(false));
+}
