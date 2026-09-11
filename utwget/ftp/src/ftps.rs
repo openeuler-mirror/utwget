@@ -1008,28 +1008,29 @@ impl FtpsClient {
     /// This is the FTPS counterpart of plain FTP's `enter_active_mode()`
     /// in data_conn.rs. The control channel is already TLS-wrapped.
     fn enter_active(&mut self) -> Result<std::net::TcpListener, FtpError> {
-        use std::net::TcpListener;
-
-        // Bind a listener on any available port on all interfaces.
-        let listener = TcpListener::bind("0.0.0.0:0")
-            .map_err(|e| FtpError::DataConnectFailed(format!("cannot bind listener for active mode: {}", e)))?;
-        listener.set_nonblocking(false)
-            .map_err(|e| FtpError::DataConnectFailed(format!("cannot set blocking mode: {}", e)))?;
-
-        let local_addr = listener.local_addr()
-            .map_err(|e| FtpError::DataConnectFailed(format!("cannot get local addr: {}", e)))?;
+        // H-7: advertise the CONTROL connection's local IP (GNU wget uses
+        // getsockname, ftp-basic.c), not the listener's — binding to
+        // 0.0.0.0 and reading the listener's local_addr() advertises
+        // `PORT 0,0,0,0,...`, which compliant servers reject. The helper
+        // also picks the listener family to match the control connection
+        // (IPv6 control connection → IPv6 listener, so EPRT is usable).
+        let (listener, ip, port) = {
+            let ctrl_ip = self.control_peer_ip();
+            crate::data_conn::bind_active_listener(ctrl_ip)
+                .map_err(|e| FtpError::DataConnectFailed(e.to_string()))?
+        };
 
         // Send PORT or EPRT command depending on address family
-        let cmd = match local_addr {
-            std::net::SocketAddr::V4(v4) => {
-                let octets = v4.ip().octets();
-                let port_hi = v4.port() / 256;
-                let port_lo = v4.port() % 256;
+        let cmd = match ip {
+            std::net::IpAddr::V4(v4) => {
+                let octets = v4.octets();
+                let port_hi = port / 256;
+                let port_lo = port % 256;
                 format!("PORT {},{},{},{},{},{}",
                     octets[0], octets[1], octets[2], octets[3], port_hi, port_lo)
             }
-            std::net::SocketAddr::V6(v6) => {
-                format!("EPRT |2|{}|{}|", v6.ip(), v6.port())
+            std::net::IpAddr::V6(v6) => {
+                format!("EPRT |2|{}|{}|", v6, port)
             }
         };
 

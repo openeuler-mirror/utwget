@@ -5,7 +5,7 @@
 //! active mode (PORT/EPRT) for IPv4 and IPv6.
 
 use std::io;
-use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, TcpListener, TcpStream};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, TcpListener, TcpStream};
 
 use crate::command::{FtpCommand, FtpCommandError, FtpResponse, IntoTcpStream, Transport};
 
@@ -306,6 +306,19 @@ pub fn enter_epsv(
 /// # Errors
 ///
 /// Returns `FtpCommandError` if the command fails.
+/// Bind an active-mode listener and return the address to advertise.
+///
+/// Public wrapper so `client.rs`/`ftps.rs` share the same control-IP logic
+/// as `enter_port`/`enter_eprt` (H-7). `ctrl_local_ip` is the control
+/// connection's local IP when known (see `Transport::local_addr`); without
+/// it the listener defaults to IPv4 wildcard behavior.
+/// See [`TcpListenerBind::bind_for_control`].
+pub fn bind_active_listener(
+    ctrl_local_ip: Option<std::net::IpAddr>,
+) -> Result<(TcpListener, IpAddr, u16), FtpCommandError> {
+    TcpListenerBind::bind_for_control(ctrl_local_ip)
+}
+
 pub fn enter_active_mode(
     ctrl: &mut dyn Transport<Error = io::Error>,
     prefer_ipv6: bool,
@@ -339,14 +352,14 @@ pub fn enter_active_mode(
 pub fn enter_port(
     ctrl: &mut dyn Transport<Error = io::Error>,
 ) -> Result<(), FtpCommandError> {
-    let listener = TcpListenerBind::bind_any()?;
-    let local_addr = listener.socket.local_addr().map_err(FtpCommandError::Io)?;
+    let (_listener, ip, port) = TcpListenerBind::bind_for_control(ctrl.local_addr().map(|a| a.ip()))?;
 
-    match local_addr {
-        SocketAddr::V4(v4) => {
-            let octets = v4.ip().octets();
-            let port_hi = v4.port() / 256;
-            let port_lo = v4.port() % 256;
+    match ip {
+        // Advertise the control connection's local IP (H-7), not 0.0.0.0.
+        IpAddr::V4(v4) => {
+            let octets = v4.octets();
+            let port_hi = port / 256;
+            let port_lo = port % 256;
             let cmd = format!(
                 "PORT {},{},{},{},{},{}",
                 octets[0], octets[1], octets[2], octets[3], port_hi, port_lo
@@ -356,11 +369,9 @@ pub fn enter_port(
             log::debug!("FTP PORT {}", cmd);
             Ok(())
         }
-        SocketAddr::V6(_) => {
-            Err(FtpCommandError::MalformedResponse(
-                "PORT command requires IPv4 address".into(),
-            ))
-        }
+        IpAddr::V6(_) => Err(FtpCommandError::MalformedResponse(
+            "PORT command requires IPv4 address; use EPRT".into(),
+        )),
     }
 }
 
@@ -383,19 +394,18 @@ pub fn enter_port(
 pub fn enter_eprt(
     ctrl: &mut dyn Transport<Error = io::Error>,
 ) -> Result<(), FtpCommandError> {
-    let listener = TcpListenerBind::bind_any()?;
-    let local_addr = listener.socket.local_addr().map_err(FtpCommandError::Io)?;
+    let (_listener, ip, port) = TcpListenerBind::bind_for_control(ctrl.local_addr().map(|a| a.ip()))?;
 
-    match local_addr {
-        SocketAddr::V4(v4) => {
-            let cmd = format!("EPRT |1|{}|{}|", v4.ip(), v4.port());
+    match ip {
+        IpAddr::V4(v4) => {
+            let cmd = format!("EPRT |1|{}|{}|", v4, port);
             FtpCommand::send(ctrl, &cmd)?;
             FtpResponse::expect(ctrl, 200)?;
             log::debug!("FTP EPRT {}", cmd);
             Ok(())
         }
-        SocketAddr::V6(v6) => {
-            let cmd = format!("EPRT |2|{}|{}|", v6.ip(), v6.port());
+        IpAddr::V6(v6) => {
+            let cmd = format!("EPRT |2|{}|{}|", v6, port);
             FtpCommand::send(ctrl, &cmd)?;
             FtpResponse::expect(ctrl, 200)?;
             log::debug!("FTP EPRT {}", cmd);
@@ -419,6 +429,47 @@ impl TcpListenerBind {
             .or_else(|_| std::net::TcpListener::bind("[::]:0"))
             .map_err(FtpCommandError::Io)?;
         Ok(TcpListenerBind { socket })
+    }
+
+    /// Bind an active-mode listener and resolve the IP to advertise.
+    ///
+    /// GNU wget advertises the CONTROL connection's local IP (getsockname,
+    /// ftp-basic.c). Binding to 0.0.0.0 and reading the listener's
+    /// `local_addr()` would advertise `0,0,0,0` in the PORT command, which
+    /// compliant servers reject (H-7). The advertised address family also
+    /// selects the listener family: a control connection over IPv6 gets an
+    /// IPv6 listener (the previous hardcoded 0.0.0.0 bind made EPRT
+    /// unreachable on dual-stack hosts).
+    ///
+    /// Returns the bound listener and the (ip, port) pair to advertise.
+    fn bind_for_control(
+        ctrl_local_ip: Option<std::net::IpAddr>,
+    ) -> Result<(std::net::TcpListener, std::net::IpAddr, u16), FtpCommandError> {
+        // Prefer the control connection's local IP for family + address.
+        let want_ipv4 = ctrl_local_ip.map_or(true, |a| a.is_ipv4());
+        let ctrl_ip = ctrl_local_ip;
+
+        // Bind on the matching family first, then fall back.
+        let bind_addr: &str = if want_ipv4 { "0.0.0.0:0" } else { "[::]:0" };
+        let socket = std::net::TcpListener::bind(bind_addr)
+            .or_else(|_| {
+                let fallback = if want_ipv4 { "[::]:0" } else { "0.0.0.0:0" };
+                std::net::TcpListener::bind(fallback)
+            })
+            .map_err(FtpCommandError::Io)?;
+
+        let port = socket.local_addr().map_err(FtpCommandError::Io)?.port();
+        // Advertised IP: control connection's local IP if known, else the
+        // wildcard address (last resort — same as the old behavior but the
+        // port is at least correct).
+        let advertise_ip = ctrl_ip.unwrap_or_else(|| {
+            if want_ipv4 {
+                std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED)
+            } else {
+                std::net::IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED)
+            }
+        });
+        Ok((socket, advertise_ip, port))
     }
 }
 

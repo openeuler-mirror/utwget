@@ -27,6 +27,19 @@ pub trait Transport {
     /// Return the remote peer address, if available.
     fn peer_addr(&self) -> Result<std::net::SocketAddr, Self::Error>;
 
+    /// Return the local socket address, if available.
+    ///
+    /// Used by active-mode FTP to advertise the control connection's local
+    /// IP in the PORT command (GNU wget uses getsockname, ftp-basic.c);
+    /// binding to 0.0.0.0 and reading `local_addr()` from the listener
+    /// would advertise 0.0.0.0, which compliant servers reject.
+    ///
+    /// Default: `None` (unknown) — callers fall back to the listener's own
+    /// address (legacy behavior).
+    fn local_addr(&self) -> Option<std::net::SocketAddr> {
+        None
+    }
+
     /// Provide a mutable reference as `Option<&mut dyn Any>` for downcasting.
     /// This allows `read_line_from` to detect and use `BufferedTransport`
     /// for line-aware reads that preserve leftover bytes.
@@ -120,6 +133,10 @@ impl Transport for BufferedTransport {
         self.inner.peer_addr()
     }
 
+    fn local_addr(&self) -> Option<std::net::SocketAddr> {
+        self.inner.local_addr()
+    }
+
     fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
         Some(self)
     }
@@ -149,6 +166,7 @@ impl Transport for std::net::TcpStream {
     fn write_all(&mut self, buf: &[u8]) -> Result<(), Self::Error> { std::io::Write::write_all(self, buf) }
     fn flush(&mut self) -> Result<(), Self::Error> { std::io::Write::flush(self) }
     fn peer_addr(&self) -> Result<std::net::SocketAddr, Self::Error> { std::net::TcpStream::peer_addr(self) }
+    fn local_addr(&self) -> Option<std::net::SocketAddr> { std::net::TcpStream::local_addr(self).ok() }
 }
 
 /// FTP command sender.

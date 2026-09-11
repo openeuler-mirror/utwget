@@ -1168,19 +1168,23 @@ impl FtpClient {
             // read() — i.e., after the data transfer command (LIST/RETR) is
             // sent on the control connection.  This matches RFC 959 and
             // GNU wget's ftp.c:1383-1389 ordering.
-            let listener = std::net::TcpListener::bind("0.0.0.0:0")
-                .or_else(|_| std::net::TcpListener::bind("[::]:0"))
-                .map_err(|e| FtpError::DataConnectFailed(format!("failed to bind listener: {}", e)))?;
-            listener.set_nonblocking(false).ok();
-            let local_addr = listener.local_addr()
-                .map_err(|e| FtpError::DataConnectFailed(format!("failed to get local addr: {}", e)))?;
+            //
+            // H-7: the advertised IP is the CONTROL connection's local IP
+            // (getsockname, ftp-basic.c), not the listener's — binding to
+            // 0.0.0.0 and reading the listener's local_addr() advertises
+            // `PORT 0,0,0,0,...`, which compliant servers reject.
+            let (listener, ip, port) = {
+                let ctrl_ip = self.ctrl.as_deref().and_then(|t| t.local_addr()).map(|a| a.ip());
+                data_conn::bind_active_listener(ctrl_ip)
+                    .map_err(|e| FtpError::DataConnectFailed(e.to_string()))?
+            };
 
             // Send PORT or EPRT command
-            match local_addr {
-                std::net::SocketAddr::V4(v4) => {
-                    let octets = v4.ip().octets();
-                    let port_hi = v4.port() / 256;
-                    let port_lo = v4.port() % 256;
+            match ip {
+                std::net::IpAddr::V4(v4) => {
+                    let octets = v4.octets();
+                    let port_hi = port / 256;
+                    let port_lo = port % 256;
                     let cmd = format!(
                         "PORT {},{},{},{},{},{}",
                         octets[0], octets[1], octets[2], octets[3], port_hi, port_lo
@@ -1194,8 +1198,8 @@ impl FtpClient {
                     }
                     log::debug!("FTP active mode PORT {}", cmd);
                 }
-                std::net::SocketAddr::V6(v6) => {
-                    let cmd = format!("EPRT |2|{}|{}|", v6.ip(), v6.port());
+                std::net::IpAddr::V6(v6) => {
+                    let cmd = format!("EPRT |2|{}|{}|", v6, port);
                     self.send_cmd(&cmd)?;
                     let resp = self.read_response()?;
                     if !resp.is_positive_completion {
