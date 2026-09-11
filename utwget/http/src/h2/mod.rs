@@ -149,8 +149,22 @@ impl H2Client {
         &mut self,
         request: Request<()>,
     ) -> Result<(Response<RecvStream>, SendStream<Bytes>), Box<dyn std::error::Error>> {
+        self.send_request_with_end(request, true)
+    }
+
+    /// Send a request, with explicit control over END_STREAM.
+    ///
+    /// `end_of_stream = false` must be used when the request carries a body
+    /// that will be sent afterwards via [`Self::send_body`] — sending a
+    /// POST/PUT with END_STREAM set and no data makes the server wait for a
+    /// body that never arrives (M3).
+    pub fn send_request_with_end(
+        &mut self,
+        request: Request<()>,
+        end_of_stream: bool,
+    ) -> Result<(Response<RecvStream>, SendStream<Bytes>), Box<dyn std::error::Error>> {
         self.runtime.block_on(async {
-            let (response_future, send_stream) = self.sender.send_request(request, true)?;
+            let (response_future, send_stream) = self.sender.send_request(request, end_of_stream)?;
             let response = response_future.await?;
             Ok((response, send_stream))
         })
