@@ -329,6 +329,8 @@ fn get_translation(locale: &str, key: &str) -> Option<&'static str> {
         ("en", "utwget.help_warc_temp_dir", "temporary directory for WARC files"),
         ("en", "utwget.help_warc_header", "add custom WARC header"),
         ("en", "utwget.help_email", "Email bug reports, questions and discussions to <bug-wget@gnu.org>."),
+        ("en", "utwget.spider_exists", "Remote file exists."),
+        ("en", "utwget.spider_broken", "Remote file does not exist -- broken link!!!"),
 
         // ===================
         // Chinese (Simplified)
@@ -563,6 +565,8 @@ fn get_translation(locale: &str, key: &str) -> Option<&'static str> {
         ("zh-CN", "utwget.help_warc_temp_dir", "WARC 文件的临时目录"),
         ("zh-CN", "utwget.help_warc_header", "添加自定义 WARC 头"),
         ("zh-CN", "utwget.help_email", "将 bug 报告、问题和讨论发送到 <bug-wget@gnu.org>。"),
+        ("zh-CN", "utwget.spider_exists", "存在远程文件。"),
+        ("zh-CN", "utwget.spider_broken", "远程文件不存在——链接已损坏！"),
     ];
 
     for &(loc, k, trans) in TRANSLATIONS {
