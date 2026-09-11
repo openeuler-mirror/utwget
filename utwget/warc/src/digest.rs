@@ -36,7 +36,7 @@ fn base32_encode(data: &[u8]) -> String {
 /// WARC records require a `WARC-Block-Digest` header containing a SHA-1
 /// hash of the block content. This struct wraps the `sha1::Sha1` hasher
 /// and provides a convenient interface for incremental updates and
-/// finalization into the standard `sha1:<hex>` format.
+/// finalization into the standard `sha1:<base32>` format (wget warc_base32_sha1_digest).
 pub struct WarcDigest {
     /// The underlying SHA-1 hasher instance.
     sha1: sha1::Sha1,
@@ -116,7 +116,7 @@ pub fn compute_sha1(data: &[u8]) -> String {
 }
 
 /// Reads a file from disk and computes its SHA-1 digest in
-/// `sha1:<hex>` format.
+/// `sha1:<base32>` format.
 ///
 /// # Arguments
 ///
@@ -124,7 +124,7 @@ pub fn compute_sha1(data: &[u8]) -> String {
 ///
 /// # Returns
 ///
-/// A `Result` containing the digest string in `sha1:<hex>` format on
+/// A `Result` containing the digest string in `sha1:<base32>` format on
 /// success, or a `WarcError::Io` error if the file cannot be read.
 ///
 /// # Errors

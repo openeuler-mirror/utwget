@@ -284,20 +284,20 @@ fn test_encode_decode_roundtrip() {
 #[test]
 fn test_url_display_simple() {
     let url = ParsedUrl::parse("http://example.com/path").unwrap();
-    assert_eq!(url.to_string(), "http://example.com/path#");
+    assert_eq!(url.to_string(), "http://example.com/path");
 }
 
 #[test]
 fn test_url_display_with_port() {
     let url = ParsedUrl::parse("http://example.com:8080/path").unwrap();
-    assert_eq!(url.to_string(), "http://example.com:8080/path#");
+    assert_eq!(url.to_string(), "http://example.com:8080/path");
 }
 
 #[test]
 fn test_url_display_default_port_omitted() {
     let url = ParsedUrl::parse("http://example.com:80/path").unwrap();
     // Default port should be omitted
-    assert_eq!(url.to_string(), "http://example.com/path#");
+    assert_eq!(url.to_string(), "http://example.com/path");
 }
 
 #[test]
@@ -316,9 +316,9 @@ fn test_url_display_with_fragment() {
 fn test_url_display_with_user_info() {
     // Display masks credentials to prevent leaking in logs/stderr.
     let url = ParsedUrl::parse("http://user:pass@example.com/path").unwrap();
-    assert_eq!(url.to_string(), "http://***:***@example.com/path#");
+    assert_eq!(url.to_string(), "http://***:***@example.com/path");
     // display_with_credentials returns the full URL with credentials.
-    assert_eq!(url.display_with_credentials(), "http://user:pass@example.com/path#");
+    assert_eq!(url.display_with_credentials(), "http://user:pass@example.com/path");
 }
 
 // ============================================================================

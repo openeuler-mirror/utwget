@@ -8,7 +8,7 @@ use ut_warc::*;
 #[test]
 fn test_warc_version() {
     // 验证 WARC 版本字符串
-    assert_eq!(format::WARC_VERSION, "WARC/1.1");
+    assert_eq!(format::WARC_VERSION, "WARC/1.0");
 }
 
 #[test]
@@ -33,7 +33,7 @@ fn test_warc_header_serialize_basic() {
     let text = String::from_utf8(bytes).unwrap();
 
     // 验证基本字段
-    assert!(text.starts_with("WARC/1.1\r\n"));
+    assert!(text.starts_with("WARC/1.0\r\n"));
     assert!(text.contains("WARC-Type: resource\r\n"));
     assert!(text.contains("WARC-Date: 2025-06-17T00:00:00Z\r\n"));
     assert!(text.contains("WARC-Record-ID: <urn:uuid:test-id>\r\n"));
@@ -253,17 +253,17 @@ fn test_warc_header_serialize_crlf_line_endings() {
 // ========== 默认内容类型测试 ==========
 
 #[test]
-fn test_default_content_type_no_gzip() {
-    // 非 gzip 模式的默认内容类型
-    let ct = format::default_content_type(false);
-    assert_eq!(ct, "application/http;msgtype=response");
+fn test_warcinfo_content_type() {
+    // warcinfo 记录使用 application/warc-fields（对齐 wget warc.c:796）
+    let ct = format::warcinfo_content_type();
+    assert_eq!(ct, "application/warc-fields");
 }
 
 #[test]
-fn test_default_content_type_with_gzip() {
-    // gzip 模式的默认内容类型
-    let ct = format::default_content_type(true);
-    assert_eq!(ct, "application/gzip");
+fn test_response_request_content_types() {
+    // response/request 记录使用 application/http;msgtype=...
+    assert_eq!(format::response_content_type(), "application/http;msgtype=response");
+    assert_eq!(format::request_content_type(), "application/http;msgtype=request");
 }
 
 // ========== 记录分隔符测试 ==========
@@ -455,7 +455,7 @@ fn test_warc_header_serialize_complete() {
     let text = String::from_utf8(bytes).unwrap();
 
     // 验证所有字段
-    assert!(text.contains("WARC/1.1\r\n"));
+    assert!(text.contains("WARC/1.0\r\n"));
     assert!(text.contains("WARC-Type: response\r\n"));
     assert!(text.contains("WARC-Date: 2025-06-17T10:30:00Z\r\n"));
     assert!(text.contains("WARC-Record-ID: <urn:uuid:complete-test>\r\n"));

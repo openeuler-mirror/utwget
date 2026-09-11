@@ -661,8 +661,12 @@ fn parse_path_query_fragment(input: &str) -> (String, Option<String>, Option<Str
         } else {
             (Some(after_q.to_string()), None)
         }
-    } else if split_idx == hash_idx {
-        // RFC 3986: everything after # is fragment, ? inside fragment is literal
+    } else if hash_idx != usize::MAX && split_idx == hash_idx {
+        // RFC 3986: everything after # is fragment, ? inside fragment is literal.
+        // Note: the `hash_idx != usize::MAX` guard matters — without it, a URL
+        // with neither '?' nor '#' takes this branch and yields
+        // `fragment: Some("")`, which serializes back with a spurious
+        // trailing '#' (seen in WARC-Target-URI / CDX output).
         (None, Some(rest.to_string()))
     } else {
         (None, None)

@@ -5,7 +5,7 @@
 #[test]
 fn test_warc_version_string() {
     use ut_warc::format::WARC_VERSION;
-    assert_eq!(WARC_VERSION, "WARC/1.1");
+    assert_eq!(WARC_VERSION, "WARC/1.0");
 }
 
 #[test]
@@ -136,9 +136,10 @@ fn test_warc_header_terminates_with_double_crlf() {
 
 #[test]
 fn test_default_content_type() {
-    use ut_warc::format::default_content_type;
-    assert_eq!(default_content_type(false), "application/http;msgtype=response");
-    assert_eq!(default_content_type(true), "application/gzip");
+    use ut_warc::format::{request_content_type, response_content_type, warcinfo_content_type};
+    assert_eq!(response_content_type(), "application/http;msgtype=response");
+    assert_eq!(request_content_type(), "application/http;msgtype=request");
+    assert_eq!(warcinfo_content_type(), "application/warc-fields");
 }
 
 #[test]
@@ -153,14 +154,14 @@ fn test_record_separator() {
 fn test_warc_sha1_empty_input() {
     use ut_warc::digest::compute_sha1;
     let hash = compute_sha1(b"");
-    assert_eq!(hash, "sha1:da39a3ee5e6b4b0d3255bfef95601890afd80709");
+    assert_eq!(hash, "sha1:3i42h3s6nnfq2msvx7xzkyayscx5qbyj"); // base32(sha1("")) per GNU wget
 }
 
 #[test]
 fn test_warc_sha1_sha1_known_vector() {
     use ut_warc::digest::compute_sha1;
     let hash = compute_sha1(b"abc");
-    assert_eq!(hash, "sha1:a9993e364706816aba3e25717850c26c9cd0d89d");
+    assert_eq!(hash, "sha1:vgmt4nsha2awvor6evyxqugcnsonbwe5"); // base32(sha1("abc")) per GNU wget // base32(sha1("abc")) per GNU wget
 }
 
 #[test]
@@ -168,8 +169,9 @@ fn test_warc_sha1_format_prefix() {
     use ut_warc::digest::compute_sha1;
     let hash = compute_sha1(b"test");
     assert!(hash.starts_with("sha1:"));
-    let hex = &hash[5..];
-    assert_eq!(hex.len(), 40);
+    // base32 of a 20-byte SHA1 = 32 chars (wget warc_base32_sha1_digest)
+    let b32 = &hash[5..];
+    assert_eq!(b32.len(), 32);
 }
 
 #[test]
@@ -178,7 +180,8 @@ fn test_warc_sha1_large_input() {
     let data = vec![0u8; 10000];
     let hash = compute_sha1(&data);
     assert!(hash.starts_with("sha1:"));
-    assert_eq!(hash.len(), 45);
+    // base32 of a 20-byte SHA1 = 32 chars + "sha1:" prefix
+    assert_eq!(hash.len(), 37);
 }
 
 #[test]
@@ -232,17 +235,21 @@ fn test_warc_cdx_line_field_count() {
     {
         let mut writer = WarcWriterImpl::new(path.clone(), false, false, None, true).unwrap();
         let now = chrono::Utc::now();
-        writer.write_resource("http://a.com/index.html", "text/html", b"<html></html>", now).unwrap();
-        writer.write_resource("http://b.com/style.css", "text/css", b"body {}", now).unwrap();
+        // GNU wget only indexes response records in the CDX (warc.c:1563).
+        writer.write_response("http://a.com/index.html", 200, b"", b"<html></html>", "text/html", now).unwrap();
+        writer.write_response("http://b.com/style.css", 200, b"", b"body {}", "text/css", now).unwrap();
     }
     let cdx_path = dir.join("test_fields.warc.cdx");
     let cdx_content = std::fs::read_to_string(&cdx_path).unwrap();
     let lines: Vec<&str> = cdx_content.lines().filter(|l| !l.is_empty()).collect();
+    // First line is the CDX header (" CDX a b a m s k r M V g u"), then one
+    // line per response record.
     assert_eq!(lines.len(), 3);
+    assert_eq!(lines[0], " CDX a b a m s k r M V g u");
     for line in &lines[1..] {
         let fields: Vec<&str> = line.split(' ').collect();
-        // CDX line has 12 fields based on the format in add_cdx_entry
-        assert_eq!(fields.len(), 12);
+        // wget CDX line: url ts url mime response_code checksum redirect - offset filename uuid
+        assert_eq!(fields.len(), 11);
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -257,7 +264,7 @@ fn test_warc_cdx_url_field() {
     {
         let mut writer = WarcWriterImpl::new(path.clone(), false, false, None, true).unwrap();
         let now = chrono::Utc::now();
-        writer.write_resource("http://example.com/page.html", "text/html", b"data", now).unwrap();
+        writer.write_response("http://example.com/page.html", 200, b"", b"data", "text/html", now).unwrap();
     }
     let cdx_path = dir.join("url.warc.cdx");
     let cdx_content = std::fs::read_to_string(&cdx_path).unwrap();
