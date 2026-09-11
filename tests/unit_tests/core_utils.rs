@@ -324,3 +324,16 @@ fn content_disposition_rfc5987_normal_name_unchanged() {
     let name = parse_content_disposition(cd).expect("should parse");
     assert_eq!(name, "report 2026.pdf");
 }
+
+// ============================================================================
+// Stale keep-alive connection retryability (M1)
+// ============================================================================
+
+#[test]
+fn stale_connection_error_is_retryable() {
+    // A pooled keep-alive connection closed by the peer before any response
+    // bytes must be retried on a fresh connection (GNU wget retr.c behavior),
+    // not fail the whole download.
+    let e = ut_core::WgetError::StaleConnection;
+    assert!(e.is_retryable(), "StaleConnection must be retryable");
+}
