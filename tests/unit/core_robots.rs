@@ -91,3 +91,15 @@ Disallow: /admin/
     // Admin is not in googlebot's rules, so allowed
     assert_eq!(parser.is_allowed("example.com", "http://example.com/admin/"), Some(true));
 }
+
+#[test]
+fn test_user_agent_case_insensitive() {
+    let content = r#"
+User-agent: GoogleBot
+Disallow: /search/
+"#;
+    let mut parser = RobotParser::new("googlebot");
+    parser.load("example.com", content);
+
+    assert_eq!(parser.is_allowed("example.com", "http://example.com/search/"), Some(false));
+}
