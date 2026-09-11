@@ -170,3 +170,19 @@ Disallow: /admin
     // Prefix match (path starts with /admin)
     assert_eq!(parser.is_allowed("example.com", "http://example.com/admin/page"), Some(false));
 }
+
+#[test]
+fn test_path_with_trailing_slash() {
+    let content = r#"
+User-agent: *
+Disallow: /admin/
+"#;
+    let mut parser = RobotParser::new("wget");
+    parser.load("example.com", content);
+
+    // /admin without trailing slash is allowed
+    assert_eq!(parser.is_allowed("example.com", "http://example.com/admin"), Some(true));
+    // /admin/ and subpaths are disallowed
+    assert_eq!(parser.is_allowed("example.com", "http://example.com/admin/"), Some(false));
+    assert_eq!(parser.is_allowed("example.com", "http://example.com/admin/page"), Some(false));
+}
