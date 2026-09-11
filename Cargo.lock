@@ -2209,6 +2209,7 @@ dependencies = [
  "log",
  "num_cpus",
  "rustc_version_runtime",
+ "rustls",
  "tokio",
  "ut-core",
  "ut-ftp",

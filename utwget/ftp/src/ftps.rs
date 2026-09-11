@@ -197,12 +197,32 @@ struct TlsConnection {
 impl TlsConnection {
     fn complete_handshake(&mut self) -> io::Result<()> {
         loop {
+            // Flush queued handshake output FIRST. In TLS 1.3 the client
+            // flight (CKE/CV/Finished) is queued as a side effect of
+            // processing the server's Finished — the same moment
+            // is_handshaking() flips to false. Checking is_handshaking()
+            // first would exit with the flight still buffered in
+            // sendable_tls: the server then waits forever for our Finished
+            // while we wait for the next response (mutual deadlock).
+            if self.conn.wants_write() {
+                self.conn.write_tls(&mut self.stream)?;
+                continue;
+            }
+
             if !self.conn.is_handshaking() {
                 break;
             }
 
+            // Process records already buffered from a previous read_tls
+            // before blocking on the socket for more (a handshake flight and
+            // trailing data may arrive in the same TCP segment; read_tls()
+            // itself only pulls new bytes from the socket).
+            self.conn.process_new_packets()
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+
+            // Processing may have queued output (e.g. the TLS 1.3 client
+            // flight) — go flush it before blocking on read.
             if self.conn.wants_write() {
-                self.conn.write_tls(&mut self.stream)?;
                 continue;
             }
 
@@ -211,8 +231,6 @@ impl TlsConnection {
                     0 => return Err(io::Error::new(io::ErrorKind::ConnectionReset, "connection closed")),
                     _ => {}
                 }
-                self.conn.process_new_packets()
-                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
                 continue;
             }
 
@@ -224,6 +242,11 @@ impl TlsConnection {
     /// Read decrypted application data from the TLS connection.
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         loop {
+            // Process any records already buffered from a previous read_tls
+            // before blocking on the socket for more (records may have been
+            // pulled in the same TCP segment as the handshake flight).
+            self.conn.process_new_packets()
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
             // Try to read from the TLS reader first
             match self.conn.reader().read(buf) {
                 Ok(0) => {}
@@ -238,8 +261,6 @@ impl TlsConnection {
                 Ok(_) => {}
                 Err(e) => return Err(e),
             }
-            self.conn.process_new_packets()
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
         }
     }
 }
@@ -670,22 +691,39 @@ impl FtpsClient {
             .ok_or_else(|| FtpError::Connect("not connected (TLS required)".into()))?;
 
         loop {
-            // Read more ciphertext from the TCP stream into the TLS state machine.
-            // `read_tls` blocks (blocking socket) until data or EOF.
-            let n = tls.conn.read_tls(&mut tls.stream).map_err(FtpError::Io)?;
+            // Process any TLS records already buffered from a previous
+            // read_tls() FIRST. Records that arrived in the same TCP segment
+            // as the final handshake flight (or as a previous response) sit
+            // in rustls' internal deframer buffer; read_tls() blocks for NEW
+            // socket data regardless, so skipping this step deadlocks until
+            // the peer sends more (or times out).
             tls.conn.process_new_packets()
                 .map_err(|e| FtpError::Connect(format!("TLS error: {}", e)))?;
 
-            // Drain newly produced plaintext into our buffer.
+            // Drain any plaintext rustls has already produced BEFORE pulling
+            // more ciphertext.
+            //
+            // Note: rustls' reader() signals "plaintext buffer drained,
+            // connection alive, needs more ciphertext" as Err(WouldBlock)
+            // (see check_no_bytes_state), and Err(UnexpectedEof) for a
+            // peer EOF without close_notify. Both must end the drain loop
+            // (read_tls below handles them), not propagate as errors.
             let mut reader = tls.conn.reader();
             let mut buf = [0u8; 1024];
             loop {
-                let rn = reader.read(&mut buf).map_err(FtpError::Io)?;
-                if rn == 0 {
-                    break;
+                match reader.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => data.extend_from_slice(&buf[..n]),
+                    Err(e)
+                        if e.kind() == io::ErrorKind::WouldBlock
+                            || e.kind() == io::ErrorKind::UnexpectedEof =>
+                    {
+                        break;
+                    }
+                    Err(e) => return Err(FtpError::Io(e)),
                 }
-                data.extend_from_slice(&buf[..rn]);
             }
+            drop(reader);
 
             // Try to parse a complete FTP response from the accumulated bytes.
             if let Some((response, _consumed)) = parse_complete_response(&data) {
@@ -697,15 +735,19 @@ impl FtpsClient {
                 return Ok(response);
             }
 
-            // No complete response yet.
+            // No complete response yet: read more ciphertext from the TCP
+            // stream into the TLS state machine. `read_tls` blocks (blocking
+            // socket) until data or EOF; loop back to process it.
+            let n = tls.conn.read_tls(&mut tls.stream).map_err(FtpError::Io)?;
+
             if n == 0 {
-                // TLS stream hit EOF without a complete response.
+                // TLS stream hit close_notify/EOF without a complete response.
                 return Err(FtpError::ParseError(format!(
                     "connection closed; partial response: {} bytes",
                     data.len()
                 )));
             }
-            // Otherwise loop to read more TLS records.
+            // Otherwise loop to process the new records.
         }
     }
 
