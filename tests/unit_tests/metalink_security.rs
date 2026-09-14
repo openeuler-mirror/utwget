@@ -108,3 +108,70 @@ fn weak_only_mismatch_still_fails() {
     std::fs::remove_file(&path).ok();
     assert!(!ok);
 }
+
+// ============================================================================
+// verify_file no-checksum acceptance + size verification (report 8.2-5)
+// ============================================================================
+
+#[test]
+fn no_checksums_means_accepted() {
+    // A metalink without hashes/pieces: wget accepts the download with a
+    // warning; the old Ok(false) rejected valid downloads.
+    let file = MetalinkFile {
+        name: "f".into(),
+        size: None,
+        hashes: vec![],
+        pieces: vec![],
+        resources: vec![],
+        identity: None,
+        version: None,
+        description: None,
+    };
+    let path = temp_file(b"content", "no_checksums");
+    let dl = MetalinkDownloader::new(|_url: &str, _out: &std::path::Path| Ok(()));
+    let ok = dl.verify_file(&file, &path).expect("verify");
+    std::fs::remove_file(&path).ok();
+    assert!(ok, "no checksums must mean accepted");
+}
+
+#[test]
+fn size_mismatch_is_detected() {
+    let file = MetalinkFile {
+        name: "f".into(),
+        size: Some(100),
+        hashes: vec![],
+        pieces: vec![],
+        resources: vec![],
+        identity: None,
+        version: None,
+        description: None,
+    };
+    let path = temp_file(b"short", "size_mismatch");
+    let dl = MetalinkDownloader::new(|_url: &str, _out: &std::path::Path| Ok(()));
+    let ok = dl.verify_size(&file, &path).expect("verify size");
+    std::fs::remove_file(&path).ok();
+    assert!(!ok, "declared size 100 vs actual 5 must fail");
+}
+
+#[test]
+fn size_match_passes_and_missing_size_is_ok() {
+    let file = MetalinkFile {
+        name: "f".into(),
+        size: Some(5),
+        hashes: vec![],
+        pieces: vec![],
+        resources: vec![],
+        identity: None,
+        version: None,
+        description: None,
+    };
+    let path = temp_file(b"short", "size_match");
+    let dl = MetalinkDownloader::new(|_url: &str, _out: &std::path::Path| Ok(()));
+    assert!(dl.verify_size(&file, &path).expect("verify size"));
+    std::fs::remove_file(&path).ok();
+
+    let no_size = MetalinkFile { size: None, ..file };
+    let path2 = temp_file(b"anything", "size_absent");
+    assert!(dl.verify_size(&no_size, &path2).expect("verify size"));
+    std::fs::remove_file(&path2).ok();
+}
