@@ -75,6 +75,7 @@ rustc_version_runtime = "0.3"
 
 [dev-dependencies]
 ut-core.workspace = true
+ut-net = { path = "utwget/net" }
 ut-progress = { path = "utwget/progress" }
 ut-http.workspace = true
 ut-ftp.workspace = true

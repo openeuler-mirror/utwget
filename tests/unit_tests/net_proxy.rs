@@ -96,9 +96,13 @@ fn build_connect_request_sanitizes_and_brackets_ipv6() {
 fn build_connect_request_strips_control_chars() {
     use ut_net::proxy::build_connect_request;
 
-    // CRLF in the target host must not smuggle extra request lines.
+    // CRLF/control chars in the target host are stripped, so no extra
+    // request LINE can be smuggled into the CONNECT request (the injected
+    // text at most corrupts the target, which the proxy will refuse to
+    // resolve; connect_via_proxy additionally hard-rejects CRLF upfront).
     let req = build_connect_request("evil\r\nX-Injected: 1", 443, None, None);
-    assert!(!req.contains("X-Injected"), "got: {}", req);
+    assert!(!req.contains("\r\nX-Injected"), "line injection, got: {}", req);
+    assert_eq!(req.lines().count(), 3, "request line + Host + empty line");
 }
 
 #[test]

@@ -1459,7 +1459,7 @@ impl Retriever {
         ftp_client.connect(&url.host, url.port)
             .map_err(|e| RetrieveError::Protocol(WgetError::FtpIo(format!("FTP connect error: {}", e))))?;
         ftp_client.login(&user, &password)
-            .map_err(|_| RetrieveError::Protocol(WgetError::FtpLoginRefused))?;
+            .map_err(RetrieveError::Ftp)?;
         ftp_client.type_binary()
             .map_err(|e| RetrieveError::Protocol(WgetError::FtpIo(format!("FTP type error: {}", e))))?;
 
@@ -1510,8 +1510,10 @@ impl Retriever {
 
         let mut rate_writer = apply_rate_limit(file, self.config.limit_rate);
         let resume_arg = if state.resume_position > 0 { Some(state.resume_position) } else { None };
+        // From<FtpError> preserves FileNotFound/CommandFailed/ServerError
+        // variants (arch 6.3-10) instead of collapsing into FtpIo("...").
         let total_bytes = ftp_client.retr(filename, &mut rate_writer, resume_arg)
-            .map_err(|e| RetrieveError::Protocol(WgetError::FtpIo(format!("FTP transfer error: {}", e))))?;
+            .map_err(RetrieveError::Ftp)?;
 
         // Get server timestamp before closing connection
         let mdtm = ftp_client.mdtm(filename).ok().flatten();

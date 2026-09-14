@@ -199,6 +199,11 @@ pub enum RetrieveError {
     /// I/O error (file operations, network read/write).
     #[error("I/O error: {0}")]
     Io(#[from] io::Error),
+    /// FTP error, mapped losslessly into WgetError via From<FtpError>
+    /// (arch 6.3-10: dedicated variants survive the boundary instead of
+    /// being formatted into stringly-typed carriers).
+    #[error(transparent)]
+    Ftp(#[from] ut_ftp::FtpError),
     /// Download quota exceeded.
     #[error("quota exceeded")]
     Quota,
@@ -213,6 +218,7 @@ impl From<RetrieveError> for WgetError {
             RetrieveError::Protocol(w) => w,
             RetrieveError::Response(w) => w,
             RetrieveError::Io(io_err) => WgetError::SocketError(io_err),
+            RetrieveError::Ftp(e) => WgetError::from(e),
             RetrieveError::Quota => WgetError::Other("quota exceeded".to_string()),
             RetrieveError::NoUrls => WgetError::Other("no URLs to download".to_string()),
         }
