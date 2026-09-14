@@ -21,6 +21,7 @@ pub mod xattr;
 pub mod utils;
 pub mod tls_pool;
 pub mod dns;
+pub mod ftp;
 pub mod response;
 
 #[cfg(feature = "async")]
