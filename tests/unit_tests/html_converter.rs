@@ -57,3 +57,45 @@ fn test_deep_nesting() {
     );
     assert_eq!(result, "../../x/y.html");
 }
+
+// ============================================================================
+// Fragment preservation in link conversion (report 8.4-4)
+// ============================================================================
+
+#[test]
+fn convert_preserves_fragment_on_local_links() {
+    // page1.html links to page2.html#section; page2 downloaded. After -k,
+    // the link must become page2.html#section (fragment re-attached).
+    let dir = std::env::temp_dir().join(format!("conv_frag_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let html = br#"<html><body><a href="http://x.com/page2.html#section">go</a></body></html>"#;
+    std::fs::write(dir.join("page2.html"), b"<html>p2</html>").unwrap();
+    let in_path = dir.join("page1.html");
+    std::fs::write(&in_path, html).unwrap();
+
+    let mut url_to_local = std::collections::HashMap::new();
+    url_to_local.insert("http://x.com/page2.html".to_string(), "page2.html".to_string());
+
+    let converter = ut_html::LinkConverter::new();
+    let opts = ut_html::ConvertOptions {
+        convert_to_relative: true,
+        convert_file_only: false,
+        nullify_base: false,
+        backup_converted: false,
+    };
+    converter.convert_links_with_base(
+        in_path.to_str().unwrap(),
+        &url_to_local,
+        &opts,
+        Some("http://x.com/page1.html"),
+    ).unwrap();
+
+    let converted = std::fs::read_to_string(&in_path).unwrap();
+    assert!(
+        converted.contains("#section"),
+        "fragment must survive conversion, got: {}",
+        converted
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}

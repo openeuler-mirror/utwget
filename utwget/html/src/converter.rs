@@ -301,6 +301,14 @@ impl LinkConverter {
                                 return Ok(());
                             }
 
+                            // Remember a fragment on the original URL so it
+                            // can be re-attached to the rewritten link
+                            // (report 8.4-4: fragments were lost, breaking
+                            // same-page anchors after -k).
+                            let fragment: Option<String> = original_url
+                                .split_once('#')
+                                .map(|(_, f)| f.to_string());
+
                             // Resolve the attribute value to an absolute URL
                             // for lookup in url_to_local. If the value is
                             // already absolute, parse it directly; otherwise
@@ -328,7 +336,13 @@ impl LinkConverter {
                                     // the target file, so offline browsing works
                                     // regardless of the mirror directory depth.
                                     let target = std::path::Path::new(local_path);
-                                    let rel = relative_path(&current_dir_owned, target);
+                                    let mut rel = relative_path(&current_dir_owned, target);
+                                    if let Some(ref frag) = fragment {
+                                        // GNU wget convert.c re-attaches the
+                                        // fragment to the local link.
+                                        rel.push('#');
+                                        rel.push_str(frag);
+                                    }
                                     let _ = el.set_attribute(attr_name, &rel);
                                     *count_a.lock().unwrap_or_else(|e| e.into_inner()) += 1;
                                     return Ok(());
