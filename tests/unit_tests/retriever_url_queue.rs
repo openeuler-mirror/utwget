@@ -32,6 +32,7 @@ fn test_url_queue_push_pop_single() {
         depth: 0,
         expect_html: true,
         expect_css: false,
+        redirect_count: 0,
     });
 
     assert!(!queue.is_empty());
@@ -59,6 +60,7 @@ fn test_url_queue_push_pop_multiple() {
     // Push multiple entries
     for i in 0..5 {
         queue.push(QueueEntry {
+            redirect_count: 0,
             url: format!("http://example.com/page{}.html", i),
             referer: Some("http://example.com/".to_string()),
             depth: 1,
@@ -96,6 +98,7 @@ fn test_url_queue_dedup_exact_match() {
         depth: 0,
         expect_html: true,
         expect_css: false,
+        redirect_count: 0,
     });
 
     // Push same URL again - should be ignored
@@ -105,6 +108,7 @@ fn test_url_queue_dedup_exact_match() {
         depth: 1,
         expect_html: false,
         expect_css: true,
+        redirect_count: 0,
     });
 
     // Only one entry should be in queue
@@ -122,6 +126,7 @@ fn test_url_queue_dedup_fragment() {
         depth: 0,
         expect_html: true,
         expect_css: false,
+        redirect_count: 0,
     });
 
     // URL with fragment should be considered the same
@@ -131,6 +136,7 @@ fn test_url_queue_dedup_fragment() {
         depth: 1,
         expect_html: true,
         expect_css: false,
+        redirect_count: 0,
     });
 
     // Only one entry should be in queue
@@ -147,6 +153,7 @@ fn test_url_queue_dedup_different_fragments() {
         depth: 0,
         expect_html: true,
         expect_css: false,
+        redirect_count: 0,
     });
 
     // Different fragment but same base URL
@@ -156,6 +163,7 @@ fn test_url_queue_dedup_different_fragments() {
         depth: 1,
         expect_html: true,
         expect_css: false,
+        redirect_count: 0,
     });
 
     // Only one entry should be in queue
@@ -172,6 +180,7 @@ fn test_url_queue_dedup_whitespace() {
         depth: 0,
         expect_html: true,
         expect_css: false,
+        redirect_count: 0,
     });
 
     // URL with leading/trailing whitespace should be considered the same
@@ -181,6 +190,7 @@ fn test_url_queue_dedup_whitespace() {
         depth: 1,
         expect_html: true,
         expect_css: false,
+        redirect_count: 0,
     });
 
     // Only one entry should be in queue
@@ -197,6 +207,7 @@ fn test_url_queue_different_urls_not_deduped() {
         depth: 0,
         expect_html: true,
         expect_css: false,
+        redirect_count: 0,
     });
 
     queue.push(QueueEntry {
@@ -205,6 +216,7 @@ fn test_url_queue_different_urls_not_deduped() {
         depth: 1,
         expect_html: true,
         expect_css: false,
+        redirect_count: 0,
     });
 
     // Both entries should be in queue
@@ -224,6 +236,7 @@ fn test_url_queue_max_depth_exceeded() {
         depth: 0,
         expect_html: true,
         expect_css: false,
+        redirect_count: 0,
     });
 
     // Depth 1 - should be added
@@ -233,6 +246,7 @@ fn test_url_queue_max_depth_exceeded() {
         depth: 1,
         expect_html: true,
         expect_css: false,
+        redirect_count: 0,
     });
 
     // Depth 2 - should be added (equal to max_depth)
@@ -242,6 +256,7 @@ fn test_url_queue_max_depth_exceeded() {
         depth: 2,
         expect_html: true,
         expect_css: false,
+        redirect_count: 0,
     });
 
     // Depth 3 - should NOT be added (exceeds max_depth)
@@ -251,6 +266,7 @@ fn test_url_queue_max_depth_exceeded() {
         depth: 3,
         expect_html: true,
         expect_css: false,
+        redirect_count: 0,
     });
 
     assert_eq!(queue.len(), 3);
@@ -263,6 +279,7 @@ fn test_url_queue_no_max_depth() {
     // Any depth should be allowed
     for depth in 0..=100 {
         queue.push(QueueEntry {
+            redirect_count: 0,
             url: format!("http://example.com/page{}.html", depth),
             referer: None,
             depth,
@@ -286,6 +303,7 @@ fn test_url_queue_is_visited_after_push() {
         depth: 0,
         expect_html: true,
         expect_css: false,
+        redirect_count: 0,
     });
 
     assert!(queue.is_visited("http://example.com/page.html"));
@@ -302,6 +320,7 @@ fn test_url_queue_is_visited_with_fragment() {
         depth: 0,
         expect_html: true,
         expect_css: false,
+        redirect_count: 0,
     });
 
     // URL with fragment should also be considered visited
@@ -318,6 +337,7 @@ fn test_url_queue_is_visited_after_pop() {
         depth: 0,
         expect_html: true,
         expect_css: false,
+        redirect_count: 0,
     });
 
     queue.pop();
@@ -353,6 +373,7 @@ fn test_url_queue_mark_visited_prevents_push() {
         depth: 0,
         expect_html: true,
         expect_css: false,
+        redirect_count: 0,
     });
 
     assert_eq!(queue.len(), 0);
@@ -370,6 +391,7 @@ fn test_url_queue_clear() {
         depth: 0,
         expect_html: true,
         expect_css: false,
+        redirect_count: 0,
     });
 
     queue.push(QueueEntry {
@@ -378,6 +400,7 @@ fn test_url_queue_clear() {
         depth: 1,
         expect_html: true,
         expect_css: false,
+        redirect_count: 0,
     });
 
     assert_eq!(queue.len(), 2);
@@ -404,6 +427,7 @@ fn test_url_queue_visited_count() {
         depth: 0,
         expect_html: true,
         expect_css: false,
+        redirect_count: 0,
     });
     assert_eq!(queue.visited_count(), 1);
 
@@ -413,6 +437,7 @@ fn test_url_queue_visited_count() {
         depth: 1,
         expect_html: true,
         expect_css: false,
+        redirect_count: 0,
     });
     assert_eq!(queue.visited_count(), 2);
 
@@ -423,6 +448,7 @@ fn test_url_queue_visited_count() {
         depth: 2,
         expect_html: true,
         expect_css: false,
+        redirect_count: 0,
     });
     assert_eq!(queue.visited_count(), 2);
 
@@ -436,6 +462,7 @@ fn test_url_queue_visited_count() {
 #[test]
 fn test_queue_entry_clone() {
     let entry = QueueEntry {
+        redirect_count: 0,
         url: "http://example.com/".to_string(),
         referer: Some("http://referer.com/".to_string()),
         depth: 2,
@@ -471,7 +498,8 @@ fn test_url_queue_fifo_order() {
             depth: 0,
             expect_html: true,
             expect_css: false,
-        });
+            redirect_count: 0,
+    });
     }
 
     // Pop should return in same order (FIFO)
@@ -493,6 +521,7 @@ fn test_url_queue_empty_url() {
         depth: 0,
         expect_html: true,
         expect_css: false,
+        redirect_count: 0,
     });
 
     // Empty URL should still be added
@@ -510,9 +539,41 @@ fn test_url_queue_fragment_only() {
         depth: 0,
         expect_html: true,
         expect_css: false,
+        redirect_count: 0,
     });
 
     // URL ending with # should be normalized
     assert!(queue.is_visited("http://example.com/page.html"));
     assert!(queue.is_visited("http://example.com/page.html#"));
+}
+
+// ============================================================================
+// Redirect hop counting in recursive queue (arch 6.3-4)
+// ============================================================================
+
+#[test]
+fn queue_entry_tracks_redirect_count() {
+    use ut_retriever::{QueueEntry, UrlQueue};
+
+    // Seed entry: zero hops.
+    let seed = QueueEntry::new("http://a.com/start".into(), None, 0);
+    assert_eq!(seed.redirect_count, 0);
+
+    // Redirect re-queue carries an incremented count — the value the crawl
+    // loop checks against --max-redirect (previously the field did not
+    // exist and redirect chains were unbounded).
+    let redirected = QueueEntry {
+        url: "http://a.com/final".into(),
+        referer: Some("http://a.com/start".into()),
+        depth: 0,
+        expect_html: true,
+        expect_css: false,
+        redirect_count: seed.redirect_count + 1,
+    };
+    assert_eq!(redirected.redirect_count, 1);
+
+    let mut q = UrlQueue::new(Some(5));
+    q.push(redirected);
+    let popped = q.pop().unwrap();
+    assert_eq!(popped.redirect_count, 1);
 }

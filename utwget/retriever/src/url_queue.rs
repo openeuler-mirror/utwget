@@ -22,6 +22,25 @@ pub struct QueueEntry {
     pub expect_html: bool,
     /// Whether the URL is expected to be CSS content.
     pub expect_css: bool,
+    /// Number of redirects followed to reach this URL. Bounded by
+    /// `--max-redirect`: without it a server returning an unbounded chain
+    /// of distinct (non-repeating) redirect URLs makes the recursive crawl
+    /// never terminate (arch 6.3-4). Defaults to 0 for seed entries.
+    pub redirect_count: u32,
+}
+
+impl QueueEntry {
+    /// Create a seed/child entry with zero redirects followed.
+    pub fn new(url: String, referer: Option<String>, depth: u32) -> Self {
+        QueueEntry {
+            url,
+            referer,
+            depth,
+            expect_html: false,
+            expect_css: false,
+            redirect_count: 0,
+        }
+    }
 }
 
 /// Queue of URLs to be downloaded with deduplication and depth limiting.
