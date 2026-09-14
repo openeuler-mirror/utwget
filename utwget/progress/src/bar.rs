@@ -396,6 +396,15 @@ impl ProgressDisplay for BarProgress {
         }
         self.last_update = now;
 
+        // force_noscroll (non-tty output, e.g. piping to a file): GNU wget
+        // does not draw the animated bar at all — printing `\r`-painted
+        // lines into a pipe produced garbage (report 8.3-2). Skip the bar
+        // rendering entirely; begin/finish still print their one-line
+        // summaries.
+        if self.force_noscroll {
+            return;
+        }
+
         let line = if self.total_size.is_some() && self.total_size != Some(0) {
             self.render_known_size()
         } else {
