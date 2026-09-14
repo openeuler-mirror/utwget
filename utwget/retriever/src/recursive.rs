@@ -691,6 +691,7 @@ impl RecursiveRetriever {
         let mut opts = ExtractOptions::default();
         opts.follow_tags = self.retriever.config().recursive.follow_tags.clone();
         opts.ignore_tags = self.retriever.config().recursive.ignore_tags.clone();
+        opts.strict_comments = self.retriever.config().recursive.strict_comments;
 
         let content_type = detect_content_type(local_path);
         let results = if content_type_is_html(Some(&content_type)) || entry.expect_html {
@@ -1107,6 +1108,7 @@ fn extract_links_static(
     let mut opts = ExtractOptions::default();
     opts.follow_tags = config.recursive.follow_tags.clone();
     opts.ignore_tags = config.recursive.ignore_tags.clone();
+    opts.strict_comments = config.recursive.strict_comments;
 
     let content_type = detect_content_type(local_path);
     let results = if content_type_is_html(Some(&content_type)) || entry.expect_html {

@@ -489,6 +489,9 @@ pub struct RecursiveConfig {
     pub follow_tags: Vec<String>,
     /// HTML tags whose links to ignore (--ignore-tags)
     pub ignore_tags: Vec<String>,
+    /// Strict HTML comment parsing (--strict-comments). GNU wget default:
+    /// false (browser-lenient comment termination).
+    pub strict_comments: bool,
     /// Filename patterns to accept (--accept)
     pub accept_patterns: Vec<String>,
     /// Filename patterns to reject (--reject)
@@ -526,6 +529,7 @@ impl Default for RecursiveConfig {
                 "script".into(), "source".into(), "track".into(), "video".into(),
             ],
             ignore_tags: Vec::new(),
+            strict_comments: false,
             accept_patterns: Vec::new(),
             reject_patterns: Vec::new(),
             accept_regex: None,

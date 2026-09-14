@@ -213,3 +213,25 @@ fn progress_bar_force_overrides_noscroll() {
     assert!(matches!(style, ut_core::ProgressStyle::Bar));
     assert_eq!(force, Some(false));
 }
+
+// ============================================================================
+// --strict-comments config wiring (report 8.4-3)
+// ============================================================================
+
+#[test]
+fn strict_comments_flag_wired_into_config() {
+    // Previously accepted but explicitly skipped (app.rs: "CLI-only field,
+    // not in Config — skip"). Now it must flow into config.recursive.
+    let mut config = Config::default();
+    let args = Args::try_parse_from(["utwget", "--strict-comments", "http://x/"]).unwrap();
+    utwget_cli::app::apply_args(&mut config, &args);
+    assert!(config.recursive.strict_comments, "--strict-comments must set the flag");
+}
+
+#[test]
+fn strict_comments_default_is_off() {
+    let mut config = Config::default();
+    let args = Args::try_parse_from(["utwget", "http://x/"]).unwrap();
+    utwget_cli::app::apply_args(&mut config, &args);
+    assert!(!config.recursive.strict_comments, "default must be lenient (wget default)");
+}

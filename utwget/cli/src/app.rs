@@ -1885,8 +1885,12 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
     if args._no_retry_connrefused { config.retry_connrefused = false; }
     if args._no_retry_on_host_error { config.retry_on_host_error = false; }
     if args._no_spider { config.recursive.spider = false; }
-    // strict_comments is a CLI-only field, not in Config — skip.
-    let _ = args._no_strict_comments;
+    if args.strict_comments {
+        config.recursive.strict_comments = true;
+    }
+    if args._no_strict_comments {
+        config.recursive.strict_comments = false;
+    }
     if args._no_trust_server_names { config.trust_server_names = false; }
     if args._no_unlink { config.unlink = false; }
     if args._no_xattr { config.xattr = false; }
