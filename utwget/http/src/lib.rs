@@ -12,7 +12,6 @@ pub mod auth;
 pub mod chunked;
 #[cfg(feature = "compression")]
 pub mod compression;
-pub mod h1;
 pub mod headers;
 pub mod request;
 pub mod response;
