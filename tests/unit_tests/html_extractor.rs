@@ -184,3 +184,38 @@ fn link_stylesheet_is_extracted_with_expect_css() {
     assert_eq!(links.len(), 1, "link stylesheet must be extracted");
     assert!(links[0].expect_css, "expect_css must be true for stylesheet");
 }
+
+// ============================================================================
+// CSS @import string form (report 8.4-2)
+// ============================================================================
+
+#[test]
+fn css_import_quoted_string_form_extracted() {
+    let css = b"@import \"theme.css\";\nbody { color: red; }";
+    let ex = ut_html::CssExtractor;
+    let opts = ut_html::url_position::ExtractOptions::default();
+    let links = ex.extract_urls(&mut std::io::Cursor::new(css.to_vec()), "http://x/", &opts).unwrap();
+    assert!(
+        links.iter().any(|l| l.url == "theme.css" && l.expect_css),
+        "quoted @import must be extracted, got {:?}",
+        links
+    );
+}
+
+#[test]
+fn css_import_url_form_still_extracted() {
+    let css = b"@import url(base.css);";
+    let ex = ut_html::CssExtractor;
+    let opts = ut_html::url_position::ExtractOptions::default();
+    let links = ex.extract_urls(&mut std::io::Cursor::new(css.to_vec()), "http://x/", &opts).unwrap();
+    assert!(links.iter().any(|l| l.url == "base.css"));
+}
+
+#[test]
+fn css_quoted_string_without_import_not_extracted() {
+    let css = b"div::after { content: \"not-a-url\"; }";
+    let ex = ut_html::CssExtractor;
+    let opts = ut_html::url_position::ExtractOptions::default();
+    let links = ex.extract_urls(&mut std::io::Cursor::new(css.to_vec()), "http://x/", &opts).unwrap();
+    assert!(!links.iter().any(|l| l.url == "not-a-url"));
+}
