@@ -266,8 +266,29 @@ impl MetalinkDownloader {
     pub fn verify_file(&self, file: &MetalinkFile, path: &Path) -> Result<bool, MetalinkError> {
         // Verify all available full-file hashes.
         // GNU wget verifies every hash and reports mismatches for each.
+        //
+        // Security hardening (report §7.2 M3): MD5 and SHA-1 are
+        // collision-broken. A malicious mirror can craft a payload matching
+        // the weak hashes in a poisoned metalink while SHA-256 (if present)
+        // would expose it. Strategy: weak-hash mismatches are logged but do
+        // NOT fail verification on their own — a mismatch is only fatal when
+        // at least one STRONG hash (SHA-224+) is present and fails, or when
+        // ONLY weak hashes exist and any of them fails (no better option).
+        // This keeps compatibility with metalinks that ship md5 alongside
+        // sha256 while never letting a weak-hash PASS override a strong-hash
+        // FAIL.
         if !file.hashes.is_empty() {
+            use crate::checksum::ChecksumType;
+            let mut saw_weak_only = true;
+            let mut strong_failed: Option<String> = None;
             for checksum in &file.hashes {
+                let strong = !matches!(
+                    checksum.hash_type,
+                    ChecksumType::Md5 | ChecksumType::Sha1
+                );
+                if strong {
+                    saw_weak_only = false;
+                }
                 match checksum.verify(path) {
                     Ok(true) => {
                         debug!("checksum verified ({:?})", checksum.hash_type);
@@ -277,7 +298,12 @@ impl MetalinkDownloader {
                             "checksum mismatch ({:?}): expected {}",
                             checksum.hash_type, checksum.expected
                         );
-                        return Ok(false);
+                        if strong && strong_failed.is_none() {
+                            strong_failed = Some(format!(
+                                "{:?}: expected {}",
+                                checksum.hash_type, checksum.expected
+                            ));
+                        }
                     }
                     Err(e) => {
                         warn!("checksum verification error: {}", e);
@@ -285,7 +311,23 @@ impl MetalinkDownloader {
                     }
                 }
             }
-            // All hashes passed
+            // Any STRONG-hash failure is fatal regardless of weak-hash passes.
+            if let Some(detail) = strong_failed {
+                warn!("verification failed: strong hash mismatch ({})", detail);
+                return Ok(false);
+            }
+            // Only weak hashes present: their verdict is the best we have.
+            if saw_weak_only {
+                let any_failed = file.hashes.iter().any(|c| {
+                    !matches!(c.verify(path), Ok(true))
+                });
+                if any_failed {
+                    warn!("verification failed: only weak hashes (md5/sha1) present and one mismatched");
+                    return Ok(false);
+                }
+                return Ok(true);
+            }
+            // Strong hashes passed; weak-hash mismatches already logged.
             return Ok(true);
         }
 

@@ -27,6 +27,7 @@
 #[path = "unit_tests/http_response.rs"] mod http_response;
 #[path = "unit_tests/i18n.rs"] mod i18n;
 #[path = "unit_tests/metalink_parser.rs"] mod metalink_parser;
+#[path = "unit_tests/metalink_security.rs"] mod metalink_security;
 #[path = "unit_tests/metalink_downloader.rs"] mod metalink_downloader;
 #[path = "unit_tests/net_proxy.rs"] mod net_proxy;
 #[path = "unit_tests/progress_bar.rs"] mod progress_bar;
