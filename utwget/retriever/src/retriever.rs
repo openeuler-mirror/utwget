@@ -1967,7 +1967,7 @@ impl Retriever {
                         let result = (host_owned.as_str(), port).to_socket_addrs();
                         let _ = tx.send(result); // receiver 可能已超时 drop，send 失败被静默忽略
                     })
-                    .map_err(|e| RetrieveError::Protocol(WgetError::Other(
+                    .map_err(|e| RetrieveError::Protocol(WgetError::DnsResolution(
                         format!("failed to spawn DNS thread: {}", e)
                     )))?;
 
@@ -1976,21 +1976,19 @@ impl Retriever {
                 match rx.recv_timeout(dns_timeout) {
                     Ok(Ok(addrs)) => addrs,
                     Ok(Err(e)) => {
-                        return Err(RetrieveError::Protocol(WgetError::Other(
-                            format!("DNS resolution error: {}", e)
+                        return Err(RetrieveError::Protocol(WgetError::DnsResolution(
+                            format!("{}", e)
                         )));
                     }
                     Err(_) => {
                         log::debug!("DNS resolution timeout for {}, detaching resolver thread", host);
-                        return Err(RetrieveError::Protocol(WgetError::Other(
-                            "DNS resolution timeout".to_string()
-                        )));
+                        return Err(RetrieveError::Protocol(WgetError::DnsTimeout));
                     }
                 }
             } else {
                 (host, port).to_socket_addrs()
-                    .map_err(|e| RetrieveError::Protocol(WgetError::Other(
-                        format!("DNS resolution error: {}", e)
+                    .map_err(|e| RetrieveError::Protocol(WgetError::DnsResolution(
+                        format!("{}", e)
                     )))?
             };
             let collected: Vec<std::net::SocketAddr> = addrs.collect();
