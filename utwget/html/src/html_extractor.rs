@@ -141,11 +141,17 @@ fn url_attr_for_tag(tag: &str) -> Option<&'static str> {
 ///
 /// # Returns
 ///
-/// - `LinkType::Absolute` if the URL contains a scheme, starts with `//`,
-///   or starts with `/`.
-/// - `LinkType::Relative` otherwise.
+/// - `LinkType::Absolute` if the URL contains a scheme or starts with `//`
+///   (scheme-relative).
+/// - `LinkType::Relative` otherwise — including path-absolute URLs starting
+///   with `/` (e.g. `/style.css`). RFC 3986 §5: a path-absolute reference
+///   has no scheme and must be resolved against the base URL. Classifying
+///   it as Absolute made the recursive engine push `/style.css` straight
+///   into `ParsedUrl::parse`, which fails without a scheme — silently
+///   dropping every site-root-relative stylesheet/link (report 8.4-1's
+///   root cause).
 fn classify_link(url: &str) -> LinkType {
-    if url.contains("://") || url.starts_with("//") || url.starts_with('/') {
+    if url.contains("://") || url.starts_with("//") {
         LinkType::Absolute
     } else {
         LinkType::Relative
