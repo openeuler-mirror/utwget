@@ -954,3 +954,96 @@ fn parse_level(input: &str) -> Result<u32, String> {
         .parse::<u32>()
         .map_err(|_| format!("invalid level '{}' (expected a number or 'inf')", input))
 }
+
+
+// ============================================================================
+// Option metadata introspection (arch 6.3-11)
+// ============================================================================
+
+/// Long option names that take a separate value, derived from clap's own
+/// definition of [`Args`].
+///
+/// Single source of truth for `rearrange_args` (main.rs): the hardcoded
+/// ~60-entry list there drifted from this struct (e.g. `-j` missing),
+/// silently misclassifying an option's value as a URL. By reading clap's
+/// generated `Command` metadata the two can never diverge again.
+pub fn long_options_with_value() -> Vec<String> {
+    use clap::CommandFactory as _;
+    let cmd = Args::command();
+    let mut out = Vec::new();
+    for arg in cmd.get_arguments() {
+        let takes_value = matches!(
+            arg.get_action(),
+            clap::builder::ArgAction::Set | clap::builder::ArgAction::Append
+        );
+        if !takes_value {
+            continue;
+        }
+        // Positional args (URLs) have no long name.
+        if let Some(long) = arg.get_long() {
+            out.push(long.to_string());
+        }
+    }
+    out
+}
+
+/// Short option characters that take a separate value, derived from clap.
+pub fn short_options_with_value() -> Vec<char> {
+    use clap::CommandFactory as _;
+    let cmd = Args::command();
+    let mut out = Vec::new();
+    for arg in cmd.get_arguments() {
+        let takes_value = matches!(
+            arg.get_action(),
+            clap::builder::ArgAction::Set | clap::builder::ArgAction::Append
+        );
+        if !takes_value {
+            continue;
+        }
+        if let Some(short) = arg.get_short() {
+            out.push(short);
+        }
+    }
+    out
+}
+
+/// Boolean option names (no value) that support the GNU `--no-FOO`
+/// negative form, derived from clap.
+///
+/// `rearrange_args` converts an unknown `--no-FOO` into the hidden
+/// `--_no-foo` flag; the hardcoded boolean list there is replaced by this
+/// introspection so newly declared bool flags are handled automatically.
+pub fn boolean_option_names() -> Vec<String> {
+    use clap::CommandFactory as _;
+    let cmd = Args::command();
+    let mut out = Vec::new();
+    for arg in cmd.get_arguments() {
+        let takes_value = matches!(
+            arg.get_action(),
+            clap::builder::ArgAction::Set | clap::builder::ArgAction::Append
+        );
+        if takes_value {
+            continue;
+        }
+        if let Some(long) = arg.get_long() {
+            // Skip the --no-* forms themselves and hidden internal flags.
+            if long.starts_with("no-") || long.starts_with('_') {
+                continue;
+            }
+            out.push(long.to_string());
+        }
+    }
+    out
+}
+
+/// All declared long option names (including `--no-*` forms), derived
+/// from clap. Used by `rearrange_args` to distinguish a declared
+/// `--no-FOO` (accepted by clap) from one that needs the hidden-flag
+/// rewrite (arch 6.3-11).
+pub fn declared_long_options() -> Vec<String> {
+    use clap::CommandFactory as _;
+    let cmd = Args::command();
+    cmd.get_arguments()
+        .filter_map(|arg| arg.get_long().map(|s| s.to_string()))
+        .collect()
+}
