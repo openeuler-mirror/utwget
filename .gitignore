@@ -10,3 +10,9 @@
 .idea/
 .vscode/
 *.swp
+
+# 手工调试的下载产物（含外部 IP 等信息），不入库
+/get
+/uuid
+/httpbin.org/
+/127.0.0.1/
