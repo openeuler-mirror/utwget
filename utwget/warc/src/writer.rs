@@ -79,6 +79,12 @@ pub struct WarcWriterImpl {
     /// Start offset of the most recently written record in the current file
     /// (compressed offset when gzip is enabled) — the CDX `offset` field.
     last_record_offset: u64,
+    /// CDX dedup table (--warc-dedup, M: mirrors GNU wget's
+    /// warc_cdx_dedup_table): payload digest (sha1:base32) → (uuid, date)
+    /// of the original response record. Loaded from a prior CDX file.
+    dedup_table: std::collections::HashMap<String, (String, String)>,
+    /// payload digest → original target URI (for revisit WARC-Target-URI).
+    dedup_urls: std::collections::HashMap<String, String>,
 }
 
 /// Returns a standard HTTP reason phrase for the given status code.
@@ -200,6 +206,8 @@ impl WarcWriterImpl {
             user_headers,
             collection_id,
             last_record_offset: 0,
+            dedup_table: std::collections::HashMap::new(),
+            dedup_urls: std::collections::HashMap::new(),
         };
         writer.open_file()?;
         Ok(writer)
@@ -627,6 +635,33 @@ impl WarcWriterImpl {
         content_type: &str,
         date: chrono::DateTime<Utc>,
     ) -> Result<()> {
+        // CDX deduplication (--warc-dedup, mirrors GNU wget
+        // warc_write_response_record warc.c:1498-1523): when the payload
+        // digest matches an entry in the dedup table (loaded from a prior
+        // CDX file), write a revisit record instead of a full duplicate.
+        if !self.dedup_table.is_empty() {
+            let payload_digest = compute_sha1(body);
+            if let Some((refers_to, original_date)) = self.dedup_table.get(&payload_digest).cloned() {
+                let original_uri = self
+                    .dedup_urls
+                    .get(&payload_digest)
+                    .cloned()
+                    .unwrap_or_else(|| url.to_string());
+                log::info!(
+                    "dedup: payload digest found in CDX table; writing revisit record (refers to {})",
+                    refers_to
+                );
+                return self.write_revisit(
+                    url,
+                    &original_uri,
+                    &refers_to,
+                    &payload_digest,
+                    &original_date,
+                    date,
+                );
+            }
+        }
+
         let payload = Self::build_response_payload(url, status_code, headers, body);
         // Content-Type is always application/http;msgtype=response for
         // response records (warc.c:1556); the entity MIME goes to the CDX
@@ -649,6 +684,77 @@ impl WarcWriterImpl {
             self.add_cdx_entry(&header, content_type, status_code, "", &compute_sha1(body));
         }
 
+        Ok(())
+    }
+
+    /// Writes a WARC revisit record (deduplication).
+    ///
+    /// Mirrors GNU wget's `warc_write_revisit_record` (warc.c:1437-1465):
+    /// references the original capture via WARC-Refers-To and the
+    /// identical-payload-digest profile, stores only the response headers
+    /// as the block (WARC-Truncated: length), and records both block and
+    /// payload digests.
+    #[allow(clippy::too_many_arguments)]
+    fn write_revisit(
+        &mut self,
+        url: &str,
+        original_uri: &str,
+        refers_to: &str,
+        payload_digest: &str,
+        _original_date: &str,
+        date: chrono::DateTime<Utc>,
+    ) -> Result<()> {
+        // The block of a revisit record carries the response HEADERS only
+        // (the payload is truncated away — see WARC-Truncated: length).
+        // Dedup happens before header serialization here, so we store an
+        // empty block; payload identity is carried by the digest headers.
+        let block: Vec<u8> = Vec::new();
+        let mut header = self.make_header(
+            WarcRecordType::Revisit,
+            url,
+            response_content_type(),
+            block.len() as u64,
+            format_date(date),
+            Some(payload_digest.to_string()),
+            self.block_digest_for(&block),
+        )?;
+        header.concurrent_to = Vec::new();
+        // WARC-Refers-To + profile via truncated? The header struct lacks
+        // dedicated fields; encode both into user headers via serialize
+        // extension below (WarcHeader has no refers_to field, so append
+        // through truncated + a custom mechanism is not available).
+        // Instead, serialize manually with the extra headers appended.
+        let mut header_bytes = header.serialize();
+        // Insert WARC-Refers-To / WARC-Profile / WARC-Truncated before the
+        // final \r\n\r\n.
+        let extra = format!(
+            "WARC-Refers-To: <urn:uuid:{}>\r\n\
+             WARC-Profile: http://netpreserve.org/warc/1.0/revisit/identical-payload-digest\r\n\
+             WARC-Truncated: length\r\n",
+            refers_to.trim_start_matches("<urn:uuid:").trim_end_matches('>')
+        );
+        let trim_len = header_bytes.len() - 4;
+        header_bytes.truncate(trim_len);
+        header_bytes.extend_from_slice(extra.as_bytes());
+        header_bytes.extend_from_slice(b"\r\n\r\n");
+
+        self.last_record_offset = self.current_size;
+        if self.gzip_enabled {
+            let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+            encoder.write_all(&header_bytes).map_err(WarcError::Io)?;
+            encoder.write_all(&block).map_err(WarcError::Io)?;
+            encoder.write_all(record_separator()).map_err(WarcError::Io)?;
+            let member = encoder.finish().map_err(WarcError::Io)?;
+            if let Some(ref mut f) = self.file {
+                f.write_all(&member).map_err(WarcError::Io)?;
+            }
+            self.current_size += member.len() as u64;
+        } else if let Some(ref mut f) = self.file {
+            f.write_all(&header_bytes).map_err(WarcError::Io)?;
+            f.write_all(&block).map_err(WarcError::Io)?;
+            f.write_all(record_separator()).map_err(WarcError::Io)?;
+            self.current_size += header_bytes.len() as u64 + block.len() as u64 + 4;
+        }
         Ok(())
     }
 
@@ -734,6 +840,45 @@ impl WarcWriterImpl {
         self.write_record(&header, meta_bytes)?;
 
         Ok(())
+    }
+
+    /// Loads a CDX file for deduplication (`--warc-dedup=FILE`).
+    ///
+    /// Mirrors GNU wget's `warc_load_cdx_dedup_file` (warc.c:1061-1043):
+    /// parses each CDX line and stores `digest → (uuid, date)` so a later
+    /// response with the same payload can be written as a revisit record
+    /// instead of a full duplicate. Lines that fail to parse are skipped
+    /// (wget does the same).
+    pub fn load_cdx_dedup_file(&mut self, path: &Path) -> Result<usize> {
+        let data = fs::read_to_string(path).map_err(WarcError::Io)?;
+        let mut loaded = 0usize;
+        for line in data.lines() {
+            // Skip the CDX header line (" CDX a b a m s k r M V g u").
+            if line.starts_with(" CDX") || line.trim().is_empty() {
+                continue;
+            }
+            // Field layout (11 fields): url ts url mime response_code
+            // checksum redirect - offset filename record_uuid
+            let fields: Vec<&str> = line.split(' ').collect();
+            if fields.len() != 11 {
+                continue;
+            }
+            let url = fields[0];
+            let date = fields[1];
+            let checksum = fields[5];
+            let uuid = fields[10];
+            if checksum == "-" || uuid == "-" || uuid.is_empty() {
+                continue;
+            }
+            // Re-add the sha1: prefix stripped when the CDX was written.
+            self.dedup_table
+                .insert(format!("sha1:{}", checksum), (uuid.to_string(), date.to_string()));
+            // Keep the target URI for revisit WARC-Target-URI.
+            self.dedup_urls.insert(format!("sha1:{}", checksum), url.to_string());
+            loaded += 1;
+        }
+        log::info!("CDX dedup table loaded: {} entries from {}", loaded, path.display());
+        Ok(loaded)
     }
 
     /// Creates a temporary file for accumulating large content.

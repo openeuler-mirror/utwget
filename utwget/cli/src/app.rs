@@ -1753,7 +1753,7 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
     }
 
     // WARC configuration
-    if args.warc_file.is_some() || args.warc_cdx || args.warc_dedup || args.warc_compression || args.warc_digests {
+    if args.warc_file.is_some() || args.warc_cdx || args.warc_dedup.is_some() || args.warc_compression || args.warc_digests {
         config.warc.enabled = true;
         if args.warc_file.is_some() {
             config.warc.filename = args.warc_file.clone();
@@ -1771,9 +1771,9 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
         if !args.warc_header.is_empty() {
             config.warc.user_headers = args.warc_header.clone();
         }
-        // warc_dedup enables CDX dedup
-        if args.warc_dedup {
-            config.warc.cdx = true;
+        // --warc-dedup=FILE: load the CDX file for revisit deduplication.
+        if let Some(ref dedup_file) = args.warc_dedup {
+            config.warc.cdx_dedup_filename = Some(dedup_file.clone());
         }
     }
     // WARC negation options
