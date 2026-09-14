@@ -2,6 +2,7 @@
 //!
 //! Tests for progress display, size formatting, and speed calculation.
 
+use std::time::Duration;
 use ut_progress::{format_size, format_speed, format_eta};
 
 #[test]
@@ -118,4 +119,28 @@ fn test_eta_calculation() {
     assert_eq!(calc_eta(500, 1000, 100), 5);
     assert_eq!(calc_eta(1000, 1000, 100), 0);
     assert_eq!(calc_eta(0, 1000, 0), 0);
+}
+
+// ============================================================================
+// Dot mode remainder retention (report 8.3-1)
+// ============================================================================
+
+#[test]
+fn dot_progress_counts_partial_dots_across_updates() {
+    use ut_progress::dot::DotProgress;
+    use ut_progress::ProgressDisplay;
+
+    // bytes_per_dot default is 1KB (1024). Feed 1.5 dots worth of bytes in
+    // two updates: 1500 then 600. Total 2100 → 2 dots should be emitted.
+    let mut dot = DotProgress::with_defaults();
+    dot.begin("http://x/", None, None);
+    dot.update(1500, Duration::from_secs(1));
+    assert_eq!(dot.dots_emitted(), 1, "1500 bytes → 1 dot");
+    dot.update(2100, Duration::from_secs(2));
+    // 600 bytes carry-over + 600 new = 1200 → but only 1024 counts: 1 more dot.
+    assert_eq!(
+        dot.dots_emitted(),
+        2,
+        "remainder must be retained across updates (M 8.3-1)"
+    );
 }
