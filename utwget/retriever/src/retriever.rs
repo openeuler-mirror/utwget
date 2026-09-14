@@ -2440,6 +2440,7 @@ impl Retriever {
 
         ResponseMeta {
             status_code: response.status_code,
+            http_version: Some(response.version.clone()),
             content_length,
             content_type: ct.map(|s| s.to_string()),
             last_modified,
@@ -2507,7 +2508,8 @@ impl Retriever {
             };
             let ct = meta.content_type.as_deref().unwrap_or("application/octet-stream");
             let server_ip = self.last_server_ip.replace(None);
-            if let Err(e) = warc.write_response(url, response.status_code, &header_bytes, &body_bytes, ct, date, server_ip.as_deref()) {
+            let http_version = meta.http_version.as_deref().unwrap_or("HTTP/1.1");
+            if let Err(e) = warc.write_response(url, http_version, response.status_code, &header_bytes, &body_bytes, ct, date, server_ip.as_deref()) {
                 warn!("WARC write failed: {}", e);
             }
         }

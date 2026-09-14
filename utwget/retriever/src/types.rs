@@ -99,6 +99,10 @@ impl Default for RequestOptions {
 pub struct ResponseMeta {
     /// HTTP status code (e.g., 200, 404).
     pub status_code: u16,
+    /// HTTP version of the actual response ("HTTP/1.0" / "HTTP/1.1") —
+    /// used verbatim in WARC response record status lines (report 8.1-3:
+    /// the previous hardcoded HTTP/1.1 falsified HTTP/1.0 captures).
+    pub http_version: Option<String>,
     /// Content-Length header value, if present.
     pub content_length: Option<u64>,
     /// Content-Type header value, if present.

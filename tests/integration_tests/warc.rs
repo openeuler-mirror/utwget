@@ -251,8 +251,8 @@ fn test_warc_cdx_line_field_count() {
         let mut writer = WarcWriterImpl::new(path.clone(), false, false, None, true).unwrap();
         let now = chrono::Utc::now();
         // GNU wget only indexes response records in the CDX (warc.c:1563).
-        writer.write_response("http://a.com/index.html", 200, b"", b"<html></html>", "text/html", now).unwrap();
-        writer.write_response("http://b.com/style.css", 200, b"", b"body {}", "text/css", now).unwrap();
+        writer.write_response("http://a.com/index.html", "HTTP/1.1", 200, b"", b"<html></html>", "text/html", now, None).unwrap();
+        writer.write_response("http://b.com/style.css", "HTTP/1.1", 200, b"", b"body {}", "text/css", now, None).unwrap();
     }
     let cdx_path = dir.join("test_fields.warc.cdx");
     let cdx_content = std::fs::read_to_string(&cdx_path).unwrap();
@@ -279,7 +279,7 @@ fn test_warc_cdx_url_field() {
     {
         let mut writer = WarcWriterImpl::new(path.clone(), false, false, None, true).unwrap();
         let now = chrono::Utc::now();
-        writer.write_response("http://example.com/page.html", 200, b"", b"data", "text/html", now).unwrap();
+        writer.write_response("http://example.com/page.html", "HTTP/1.1", 200, b"", b"data", "text/html", now, None).unwrap();
     }
     let cdx_path = dir.join("url.warc.cdx");
     let cdx_content = std::fs::read_to_string(&cdx_path).unwrap();

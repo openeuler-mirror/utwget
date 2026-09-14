@@ -26,6 +26,7 @@ fn test_redirect_count_from_response() {
     use ut_retriever::types::ResponseMeta;
     let resp = ResponseMeta {
         status_code: 301,
+        http_version: Some("HTTP/1.1".into()),
         content_length: None,
         content_type: None,
         last_modified: None,
@@ -45,6 +46,7 @@ fn test_redirect_response_classification() {
     use ut_retriever::types::ResponseMeta;
     let resp_301 = ResponseMeta {
         status_code: 301,
+        http_version: Some("HTTP/1.1".into()),
         content_length: None,
         content_type: None,
         last_modified: None,
@@ -59,6 +61,7 @@ fn test_redirect_response_classification() {
 
     let resp_302 = ResponseMeta {
         status_code: 302,
+        http_version: Some("HTTP/1.1".into()),
         content_length: None,
         content_type: None,
         last_modified: None,
@@ -73,6 +76,7 @@ fn test_redirect_response_classification() {
 
     let resp_200 = ResponseMeta {
         status_code: 200,
+        http_version: Some("HTTP/1.1".into()),
         content_length: None,
         content_type: None,
         last_modified: None,
