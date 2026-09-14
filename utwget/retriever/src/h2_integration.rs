@@ -36,38 +36,15 @@ pub fn h2_pool() -> &'static H2ConnectionPool {
     H2_POOL.get_or_init(|| H2ConnectionPool::new(H2_POOL_MAX_ENTRIES))
 }
 
-/// Process-wide tokio runtime for HTTP/2 operations.
-///
-/// Sharing a single runtime avoids creating (and leaking) a new runtime per
-/// HTTP/2 connection, which would spawn a fresh thread pool each time and
-/// could exhaust system threads under heavy use. The runtime drives the H2
-/// connection driver task and runs async handshakes via `block_on`.
-static H2_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
-
 /// Returns the process-wide tokio runtime for HTTP/2 operations.
 ///
-/// 代码审查 P0 #1.4：原 .expect("failed to create H2 runtime") 会在系统资源
-/// 耗尽时 panic。改为优雅降级：Runtime 创建失败时返回 None，调用方收到
-/// WgetError::Http2 错误而非进程 panic。使用 get()+set() 模式避免不稳定的
-/// get_or_try_init（Rust 1.82 尚未稳定）。
+/// Delegates to `ut_http::h2::shared_h2_runtime()` — the single tokio
+/// runtime in the process (arch 6.4: this module previously kept a SECOND
+/// lazily-built 2-worker runtime, doubling idle threads and split-braining
+/// H2 work across two schedulers). `None` on construction failure so
+/// callers degrade gracefully to HTTP/1.1 instead of panicking.
 fn h2_runtime() -> Option<&'static tokio::runtime::Runtime> {
-    // Fast path: already initialized.
-    if let Some(rt) = H2_RUNTIME.get() {
-        return Some(rt);
-    }
-    // Try to build. If another thread already built it, our set() will fail
-    // and we'll get the existing one via get().
-    match tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(2)
-        .enable_all()
-        .build()
-    {
-        Ok(rt) => {
-            let _ = H2_RUNTIME.set(rt);
-            H2_RUNTIME.get()
-        }
-        Err(_) => None,
-    }
+    ut_http::h2::shared_h2_runtime().ok()
 }
 
 /// A generic connection pool keyed by (host, port) with LRU eviction.

@@ -24,9 +24,6 @@ pub mod dns;
 pub mod ftp;
 pub mod response;
 
-#[cfg(feature = "async")]
-pub mod async_retriever;
-
 #[cfg(feature = "http2")]
 pub mod h2_integration;
 
@@ -41,9 +38,6 @@ pub use recursive::{RecursiveRetriever, RecursiveExitStatus};
 pub use spider::Spider;
 pub use xattr::{FileMetadata, set_xattr, get_xattr, RemotePermissions, apply_permissions};
 pub use tls_pool::TlsConnectionPool;
-
-#[cfg(feature = "async")]
-pub use async_retriever::{AsyncRetriever, download, download_many};
 
 #[cfg(feature = "http2")]
 pub use h2_integration::{H2Retriever, should_use_http2};

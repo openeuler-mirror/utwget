@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use ut_core::error::WgetError;
 use ut_core::url::ParsedUrl;
-use ut_retriever::{AsyncRetriever, Retriever, RetrieveOutcome, RecursiveRetriever};
+use ut_retriever::{Retriever, RetrieveOutcome, RecursiveRetriever};
 use ut_html::converter::{LinkConverter, ConvertOptions};
 use std::collections::HashMap;
 
@@ -469,10 +469,20 @@ impl App {
         }
     }
 
-    /// Run concurrent downloads using tokio async runtime.
+    /// Run concurrent downloads on plain OS threads.
     ///
-    /// Downloads multiple URLs in parallel using tokio tasks with configurable
-    /// concurrency. Each task runs the synchronous Retriever in a blocking thread.
+    /// Downloads multiple URLs in parallel, bounded by a counting semaphore
+    /// (`concurrency` permits). Each worker runs the fully synchronous
+    /// `Retriever` on its own thread and shares one TLS connection pool, so
+    /// keep-alive connections are reused across downloads.
+    ///
+    /// Concurrency model (arch 6.4): this is the same std::thread model the
+    /// parallel recursive path uses. The previous implementation built a
+    /// fresh multi-thread tokio runtime per call just to run
+    /// `spawn_blocking` — runtime spin-up/teardown per `-j` invocation
+    /// wrapping what is pure blocking I/O anyway. With this change the
+    /// process has exactly TWO concurrency domains: plain worker threads
+    /// (this path + recursive) and the single shared H2 runtime.
     ///
     /// # Arguments
     ///
@@ -484,42 +494,76 @@ impl App {
     /// * `ExitStatus::Success` if all downloads succeeded.
     /// * `ExitStatus::Error` if any download failed.
     fn run_concurrent(&mut self, urls: &[String], concurrency: usize) -> Result<ExitStatus, WgetError> {
+        use ut_retriever::RetrieveOutcome;
+
         if urls.is_empty() {
             return Ok(ExitStatus::Error);
         }
 
         let urls = urls.to_vec();
         let config = self.config.clone();
-        // Use atomic counters instead of Mutex to avoid lock contention.
-        // Atomic operations are lock-free and significantly faster under
-        // concurrent access than Mutex-protected counters.
         let worst_status = Arc::new(AtomicU8::new(ExitStatus::Success as u8));
         let urls_downloaded = Arc::new(AtomicU32::new(0));
         let urls_attempted = Arc::new(AtomicU32::new(0));
 
-        // Create tokio runtime
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(concurrency.min(num_cpus::get()))
-            .enable_all()
-            .build()
-            .map_err(|e| WgetError::TaskJoin(format!("failed to create tokio runtime: {}", e)))?;
+        // Shared connection pool: all workers reuse keep-alive connections
+        // (was: one pool per AsyncRetriever, same as before, but now no
+        // runtime teardown per invocation).
+        let pool = ut_retriever::TlsConnectionPool::new(concurrency.max(2));
 
-        runtime.block_on(async {
-            // Create async retriever with concurrency limit
-            let async_retriever = AsyncRetriever::new(config.clone(), concurrency);
-            let mut handles = Vec::new();
+        /// Minimal counting semaphore: std has no built-in, and pulling in
+        /// tokio just for a semaphore is what this refactor removes.
+        struct Semaphore {
+            count: std::sync::Mutex<usize>,
+            cv: std::sync::Condvar,
+        }
+        impl Semaphore {
+            fn new(permits: usize) -> Self {
+                Semaphore {
+                    count: std::sync::Mutex::new(permits),
+                    cv: std::sync::Condvar::new(),
+                }
+            }
+            fn acquire(&self) {
+                let mut n = self.count.lock().unwrap_or_else(|e| e.into_inner());
+                while *n == 0 {
+                    n = self.cv.wait(n).unwrap_or_else(|e| e.into_inner());
+                }
+                *n -= 1;
+            }
+            fn release(&self) {
+                let mut n = self.count.lock().unwrap_or_else(|e| e.into_inner());
+                *n += 1;
+                self.cv.notify_one();
+            }
+        }
+        let semaphore = Arc::new(Semaphore::new(concurrency.max(1)));
 
-            for url in urls {
-                let async_retriever = async_retriever.clone();
-                let worst_status = worst_status.clone();
-                let urls_downloaded = urls_downloaded.clone();
-                let urls_attempted = urls_attempted.clone();
+        let mut handles = Vec::new();
+        for url in urls {
+            let config = config.clone();
+            let pool = pool.clone();
+            let worst_status = worst_status.clone();
+            let urls_downloaded = urls_downloaded.clone();
+            let urls_attempted = urls_attempted.clone();
+            let semaphore = semaphore.clone();
 
-                let handle = tokio::task::spawn(async move {
+            let handle = std::thread::Builder::new()
+                .name(format!("dl-{}", urls_attempted.load(Ordering::Relaxed)))
+                .spawn(move || {
+                    // Bound concurrency before doing any work.
+                    semaphore.acquire();
                     urls_attempted.fetch_add(1, Ordering::Relaxed);
 
-                    // Use async retriever
-                    let result = async_retriever.retrieve(&url).await;
+                    let style = if std::env::var("UTWGET_CONCURRENT_SILENT").is_ok() {
+                        ut_core::ProgressStyle::Silent
+                    } else {
+                        ut_core::ProgressStyle::Verbose
+                    };
+                    let progress = ut_progress::create_progress_display(style, true);
+                    let mut retriever =
+                        ut_retriever::Retriever::with_connection_pool(config, progress, pool);
+                    let result = retriever.retrieve_with_retry(&url);
 
                     match result {
                         Ok(RetrieveOutcome::Success(_)) | Ok(_) => {
@@ -528,16 +572,14 @@ impl App {
                         Err(e) => {
                             let wg_err: WgetError = e.into();
                             let status = ExitStatus::from_error(&wg_err);
-                            // Atomically update worst_status using GNU
-                            // wget's aggregation logic (exits.c:74-84):
-                            // first non-zero wins, lower non-zero replaces
-                            // higher.
                             let status_u8 = status as u8;
                             loop {
                                 let current = worst_status.load(Ordering::Relaxed);
-                                // new != 0 && (current == 0 || new < current)
-                                let should_update = status_u8 != 0
-                                    && (current == 0 || status_u8 < current);
+                                // GNU wget aggregation (exits.c:74-84):
+                                // first non-zero wins, lower non-zero
+                                // replaces higher.
+                                let should_update =
+                                    status_u8 != 0 && (current == 0 || status_u8 < current);
                                 if !should_update {
                                     break;
                                 }
@@ -553,36 +595,43 @@ impl App {
                             }
                         }
                     }
-                });
-                handles.push(handle);
-            }
 
-            // Wait for all tasks to complete
-            for handle in handles {
-                if let Err(e) = handle.await {
-                    // Task panicked or was cancelled
-                    log::error!("Download task failed: {}", e);
-                    let status_u8 = ExitStatus::NetworkFail as u8;
-                    loop {
-                        let current = worst_status.load(Ordering::Relaxed);
-                        let should_update = status_u8 != 0
-                            && (current == 0 || status_u8 < current);
-                        if !should_update {
-                            break;
-                        }
-                        match worst_status.compare_exchange_weak(
-                            current,
-                            status_u8,
-                            Ordering::Relaxed,
-                            Ordering::Relaxed,
-                        ) {
-                            Ok(_) => break,
-                            Err(_) => continue,
-                        }
+                    semaphore.release();
+                });
+            match handle {
+                Ok(h) => handles.push(h),
+                Err(e) => {
+                    return Err(WgetError::TaskJoin(format!(
+                        "failed to spawn download thread: {}",
+                        e
+                    )))
+                }
+            }
+        }
+
+        for handle in handles {
+            if handle.join().is_err() {
+                // Worker panicked — count as a network failure, mirroring
+                // what the tokio path did for JoinError.
+                let status_u8 = ExitStatus::NetworkFail as u8;
+                loop {
+                    let current = worst_status.load(Ordering::Relaxed);
+                    let should_update = status_u8 != 0 && (current == 0 || status_u8 < current);
+                    if !should_update {
+                        break;
+                    }
+                    match worst_status.compare_exchange_weak(
+                        current,
+                        status_u8,
+                        Ordering::Relaxed,
+                        Ordering::Relaxed,
+                    ) {
+                        Ok(_) => break,
+                        Err(_) => continue,
                     }
                 }
             }
-        });
+        }
 
         self.urls_attempted = urls_attempted.load(Ordering::Relaxed);
         self.urls_downloaded = urls_downloaded.load(Ordering::Relaxed);

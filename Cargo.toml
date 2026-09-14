@@ -45,13 +45,12 @@ license.workspace = true
 publish = false
 
 [features]
-default = ["metalink", "hsts", "compression", "http2", "auth-ntlm", "async"]
+default = ["metalink", "hsts", "compression", "http2", "auth-ntlm"]
 metalink = ["ut-metalink"]
 hsts = ["ut-core/hsts", "ut-retriever/hsts"]
 compression = ["ut-core/compression"]
 http2 = ["ut-http/http2", "ut-retriever/http2"]
 auth-ntlm = ["ut-http/auth-ntlm"]
-async = ["ut-retriever/async"]
 
 [dependencies]
 ut-core = { path = "utwget/core" }

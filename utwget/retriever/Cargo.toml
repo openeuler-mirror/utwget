@@ -6,12 +6,11 @@ description = "Download retrieval engine for utwget: HTTP/FTP protocols, recursi
 license = "GPL-3.0-or-later"
 
 [features]
-default = ["warc", "metalink", "compression", "async", "http2", "hsts"]
+default = ["warc", "metalink", "compression", "http2", "hsts"]
 warc = ["dep:ut-warc"]
 metalink = ["dep:ut-metalink"]
 compression = ["dep:flate2"]
-async = ["dep:tokio", "dep:futures"]
-http2 = ["ut-http/http2", "dep:tokio-rustls", "dep:rustls", "dep:webpki-roots"]
+http2 = ["ut-http/http2", "dep:tokio", "dep:tokio-rustls", "dep:rustls", "dep:webpki-roots"]
 hsts = ["ut-core/hsts"]
 
 [dependencies]
@@ -36,6 +35,5 @@ tokio = { version = "1", features = ["rt", "net", "io-util", "time", "sync", "ma
 tokio-rustls = { version = "0.26", optional = true }
 rustls = { version = "0.23", optional = true }
 webpki-roots = { version = "0.26", optional = true }
-futures = { version = "0.3", optional = true }
 bytes = "1"
 http = "1"
