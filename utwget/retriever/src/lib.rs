@@ -36,7 +36,7 @@ pub use types::{
 pub use download_registry::DownloadRegistry;
 pub use url_queue::{QueueEntry, UrlQueue};
 pub use retriever::Retriever;
-pub use recursive::{RecursiveRetriever, ExitStatus};
+pub use recursive::{RecursiveRetriever, RecursiveExitStatus};
 pub use spider::Spider;
 pub use xattr::{FileMetadata, set_xattr, get_xattr, RemotePermissions, apply_permissions};
 pub use tls_pool::TlsConnectionPool;

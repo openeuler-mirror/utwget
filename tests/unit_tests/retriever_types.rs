@@ -4,7 +4,8 @@
 //! content_type_is_html/css/xml, and determine_document_flags.
 
 use ut_retriever::*;
-use ut_retriever::types::{parse_http_date, parse_content_disposition, content_type_is_html, content_type_is_css, content_type_is_xml, determine_document_flags};
+use ut_retriever::types::{parse_http_date, content_type_is_html, content_type_is_css, content_type_is_xml, determine_document_flags};
+use ut_retriever::utils::parse_content_disposition;
 use chrono::{Datelike, Timelike};
 
 // ========== parse_http_date tests ==========

@@ -27,11 +27,15 @@ use crate::types::{content_type_is_css, content_type_is_html, RetrieveError, Ret
 use crate::download_registry::DownloadRegistry;
 use crate::url_queue::{QueueEntry, UrlQueue};
 
-/// Exit status for recursive retrieval operations.
+/// Exit status for a recursive retrieval operation.
+///
+/// Distinct from `utwget_cli::app::RecursiveExitStatus` (the process-wide exit
+/// code enum) to avoid the name collision flagged in the architecture
+/// review (arch 6.3-6).
 ///
 /// Indicates the overall result of a recursive download session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ExitStatus {
+pub enum RecursiveExitStatus {
     /// All downloads completed successfully.
     Success,
     /// One or more downloads encountered errors.
@@ -173,16 +177,16 @@ impl RecursiveRetriever {
     ///
     /// # Returns
     ///
-    /// - `Ok(ExitStatus::Success)` if downloads completed successfully.
-    /// - `Ok(ExitStatus::Error)` if some downloads failed.
-    /// - `Ok(ExitStatus::NoUrlsFound)` if no URLs were downloaded.
+    /// - `Ok(RecursiveExitStatus::Success)` if downloads completed successfully.
+    /// - `Ok(RecursiveExitStatus::Error)` if some downloads failed.
+    /// - `Ok(RecursiveExitStatus::NoUrlsFound)` if no URLs were downloaded.
     /// - `Err(RetrieveError)` if a critical error occurred.
     ///
     /// # Errors
     ///
     /// Returns `RetrieveError` if the starting URL cannot be parsed or
     /// a critical error prevents the download from proceeding.
-    pub fn retrieve_tree(&mut self, start_url: &str) -> Result<ExitStatus, RetrieveError> {
+    pub fn retrieve_tree(&mut self, start_url: &str) -> Result<RecursiveExitStatus, RetrieveError> {
         let parsed = ParsedUrl::parse(start_url)
             .map_err(RetrieveError::Protocol)?;
 
@@ -215,7 +219,7 @@ impl RecursiveRetriever {
         let mut robot_parser = RobotParser::new(
             self.retriever.config().http.user_agent.as_deref().unwrap_or("wget-rs")
         );
-        let mut exit_status = ExitStatus::Success;
+        let mut exit_status = RecursiveExitStatus::Success;
         let mut any_downloaded = false;
 
         while let Some(entry) = queue.pop() {
@@ -273,13 +277,13 @@ impl RecursiveRetriever {
                                 "max redirects ({}) exceeded following {} -- not re-queuing {}",
                                 max_redirect, url_str, target
                             );
-                            exit_status = ExitStatus::Error;
+                            exit_status = RecursiveExitStatus::Error;
                         }
                     }
                     Ok(RetrieveOutcome::SpiderOnly) => {}
                     Err(e) => {
                         warn!("error retrieving {}: {}", url_str, e);
-                        exit_status = ExitStatus::Error;
+                        exit_status = RecursiveExitStatus::Error;
                     }
                 }
             } else {
@@ -364,13 +368,13 @@ impl RecursiveRetriever {
                                 "max redirects ({}) exceeded following {} -- not re-queuing {}",
                                 max_redirect, url_str, target
                             );
-                            exit_status = ExitStatus::Error;
+                            exit_status = RecursiveExitStatus::Error;
                         }
                     }
                     Ok(RetrieveOutcome::SpiderOnly) => {}
                     Err(e) => {
                         warn!("error retrieving {}: {}", url_str, e);
-                        exit_status = ExitStatus::Error;
+                        exit_status = RecursiveExitStatus::Error;
                     }
                 }
             }
@@ -382,7 +386,7 @@ impl RecursiveRetriever {
         }
 
         if !any_downloaded {
-            Ok(ExitStatus::NoUrlsFound)
+            Ok(RecursiveExitStatus::NoUrlsFound)
         } else {
             Ok(exit_status)
         }
@@ -406,14 +410,14 @@ impl RecursiveRetriever {
     ///
     /// # Returns
     ///
-    /// - `Ok(ExitStatus::Success)` if downloads completed successfully.
-    /// - `Ok(ExitStatus::Error)` if some downloads failed.
-    /// - `Ok(ExitStatus::NoUrlsFound)` if no URLs were downloaded.
+    /// - `Ok(RecursiveExitStatus::Success)` if downloads completed successfully.
+    /// - `Ok(RecursiveExitStatus::Error)` if some downloads failed.
+    /// - `Ok(RecursiveExitStatus::NoUrlsFound)` if no URLs were downloaded.
     pub fn retrieve_tree_parallel(
         &mut self,
         start_url: &str,
         num_workers: usize,
-    ) -> Result<ExitStatus, RetrieveError> {
+    ) -> Result<RecursiveExitStatus, RetrieveError> {
         let parsed = ParsedUrl::parse(start_url)
             .map_err(RetrieveError::Protocol)?;
 
@@ -640,11 +644,11 @@ impl RecursiveRetriever {
         let downloaded = any_downloaded.load(Ordering::Relaxed);
 
         if !downloaded {
-            Ok(ExitStatus::NoUrlsFound)
+            Ok(RecursiveExitStatus::NoUrlsFound)
         } else if had_errors {
-            Ok(ExitStatus::Error)
+            Ok(RecursiveExitStatus::Error)
         } else {
-            Ok(ExitStatus::Success)
+            Ok(RecursiveExitStatus::Success)
         }
     }
 

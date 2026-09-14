@@ -8,6 +8,7 @@ fn test_url_queue_push_and_pop_bfs() {
     use ut_retriever::QueueEntry;
     let mut queue = UrlQueue::new(Some(5));
     queue.push(QueueEntry {
+        redirect_count: 0,
         url: "http://example.com/a".into(),
         referer: None,
         depth: 0,
@@ -15,6 +16,7 @@ fn test_url_queue_push_and_pop_bfs() {
         expect_css: false,
     });
     queue.push(QueueEntry {
+        redirect_count: 0,
         url: "http://example.com/b".into(),
         referer: None,
         depth: 0,
@@ -35,6 +37,7 @@ fn test_url_queue_dedup() {
     use ut_retriever::QueueEntry;
     let mut queue = UrlQueue::new(Some(5));
     queue.push(QueueEntry {
+        redirect_count: 0,
         url: "http://example.com/page".into(),
         referer: None,
         depth: 0,
@@ -42,6 +45,7 @@ fn test_url_queue_dedup() {
         expect_css: false,
     });
     queue.push(QueueEntry {
+        redirect_count: 0,
         url: "http://example.com/page".into(),
         referer: None,
         depth: 1,
@@ -57,6 +61,7 @@ fn test_url_queue_dedup_ignores_fragment() {
     use ut_retriever::QueueEntry;
     let mut queue = UrlQueue::new(Some(5));
     queue.push(QueueEntry {
+        redirect_count: 0,
         url: "http://example.com/page#section1".into(),
         referer: None,
         depth: 0,
@@ -64,6 +69,7 @@ fn test_url_queue_dedup_ignores_fragment() {
         expect_css: false,
     });
     queue.push(QueueEntry {
+        redirect_count: 0,
         url: "http://example.com/page#section2".into(),
         referer: None,
         depth: 1,
@@ -79,6 +85,7 @@ fn test_url_queue_max_depth_filter() {
     use ut_retriever::QueueEntry;
     let mut queue = UrlQueue::new(Some(1));
     queue.push(QueueEntry {
+        redirect_count: 0,
         url: "http://example.com/a".into(),
         referer: None,
         depth: 0,
@@ -86,6 +93,7 @@ fn test_url_queue_max_depth_filter() {
         expect_css: false,
     });
     queue.push(QueueEntry {
+        redirect_count: 0,
         url: "http://example.com/b".into(),
         referer: None,
         depth: 1,
@@ -93,6 +101,7 @@ fn test_url_queue_max_depth_filter() {
         expect_css: false,
     });
     queue.push(QueueEntry {
+        redirect_count: 0,
         url: "http://example.com/c".into(),
         referer: None,
         depth: 2,
@@ -108,6 +117,7 @@ fn test_url_queue_visited_tracking() {
     use ut_retriever::QueueEntry;
     let mut queue = UrlQueue::new(None);
     queue.push(QueueEntry {
+        redirect_count: 0,
         url: "http://example.com/a".into(),
         referer: None,
         depth: 0,
@@ -134,6 +144,7 @@ fn test_url_queue_clear() {
     use ut_retriever::QueueEntry;
     let mut queue = UrlQueue::new(None);
     queue.push(QueueEntry {
+        redirect_count: 0,
         url: "http://example.com/a".into(),
         referer: None,
         depth: 0,

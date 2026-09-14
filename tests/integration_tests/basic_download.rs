@@ -1262,7 +1262,7 @@ fn test_parse_http_date_various_formats() {
 
 #[test]
 fn test_parse_content_disposition_filename() {
-    use ut_retriever::types::parse_content_disposition;
+    use ut_retriever::utils::parse_content_disposition;
     assert_eq!(
         parse_content_disposition("attachment; filename=\"report.pdf\""),
         Some("report.pdf".to_string())

@@ -12,7 +12,7 @@ use log::{debug, info, warn};
 use ut_core::Config;
 use ut_progress::ProgressDisplay;
 
-use crate::recursive::{ExitStatus, RecursiveRetriever};
+use crate::recursive::{RecursiveExitStatus, RecursiveRetriever};
 
 /// Result of a spider operation.
 ///
@@ -109,7 +109,7 @@ impl Spider {
         info!("spidering: {}", url);
 
         match self.inner.retrieve_tree(url) {
-            Ok(ExitStatus::Success) | Ok(ExitStatus::NoUrlsFound) | Ok(ExitStatus::Error) => {}
+            Ok(RecursiveExitStatus::Success) | Ok(RecursiveExitStatus::NoUrlsFound) | Ok(RecursiveExitStatus::Error) => {}
             Err(e) => return Err(e),
         }
 
