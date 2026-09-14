@@ -1048,6 +1048,7 @@ impl Retriever {
                 bytes_read: 0,
                 elapsed: start.elapsed(),
                 local_file: (!self.config.delete_after).then(|| output_path.to_path_buf()),
+                content_type: response.headers.content_type().map(|s| s.to_string()),
             };
             return Ok(RetrieveOutcome::Success(result));
         }
@@ -1071,6 +1072,7 @@ impl Retriever {
                     bytes_read: 0,
                     elapsed: start.elapsed(),
                     local_file: if self.config.delete_after { None } else { Some(output_path.to_path_buf()) },
+                    content_type: resp_meta.content_type.clone(),
                 };
                 return Ok(RetrieveOutcome::Success(result));
             }
@@ -1305,6 +1307,7 @@ impl Retriever {
             bytes_read: body_bytes_read,
             elapsed,
             local_file: if self.config.delete_after { None } else { Some(final_output_path) },
+            content_type: resp_meta.content_type.clone(),
         };
 
         Ok(RetrieveOutcome::Success(result))

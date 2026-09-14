@@ -134,6 +134,9 @@ pub struct BodyResult {
     pub elapsed: Duration,
     /// Local file path where the content was saved, if not deleted.
     pub local_file: Option<PathBuf>,
+    /// Content-Type of the response (needed by metalink-over-http
+    /// detection and link extraction; report 8.2-2).
+    pub content_type: Option<String>,
 }
 
 /// State tracking for protocol operations.

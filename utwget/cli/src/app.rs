@@ -992,13 +992,30 @@ impl App {
                 match self.retriever.retrieve(&parsed.display_with_credentials()) {
                     Ok(RetrieveOutcome::Success(body_result)) => {
                         if let Some(ref local_file) = body_result.local_file {
-                            // Check if response indicates Metalink
-                            // For now, check file extension or content-type
+                            // Metalink detection mirrors GNU wget (http.c:2702):
+                            // the authoritative signal is the response
+                            // Content-Type `application/metalink4+xml`
+                            // (also accept the v3 type and .meta4/.metalink
+                            // extensions as fallback).
+                            let ct = body_result
+                                .content_type
+                                .as_deref()
+                                .unwrap_or("")
+                                .split(';')
+                                .next()
+                                .unwrap_or("")
+                                .trim()
+                                .to_ascii_lowercase();
                             let ext = local_file.extension()
                                 .and_then(|e| e.to_str())
                                 .map(|e| e.to_lowercase());
 
-                            if ext.as_deref() == Some("metalink") || ext.as_deref() == Some("meta4") {
+                            let ct_is_metalink = ct == "application/metalink4+xml"
+                                || ct == "application/metalink+xml";
+                            let ext_is_metalink = ext.as_deref() == Some("metalink")
+                                || ext.as_deref() == Some("meta4");
+
+                            if ct_is_metalink || ext_is_metalink {
                                 return self.process_metalink_file(local_file, &output_dir);
                             }
                         }
