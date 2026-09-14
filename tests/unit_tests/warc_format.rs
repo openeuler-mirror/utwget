@@ -15,6 +15,9 @@ fn test_warc_version() {
 fn test_warc_header_serialize_basic() {
     // 基本头部序列化
     let header = format::WarcHeader {
+        ip_address: None,
+        warcinfo_id: None,
+        warc_filename: None,
         record_type: format::WarcRecordType::Resource,
         record_id: "<urn:uuid:test-id>".to_string(),
         date: "2025-06-17T00:00:00Z".to_string(),
@@ -57,6 +60,9 @@ fn test_warc_header_serialize_all_record_types() {
 
     for (record_type, expected_str) in types {
         let header = format::WarcHeader {
+        ip_address: None,
+        warcinfo_id: None,
+        warc_filename: None,
             record_type,
             record_id: "<urn:uuid:test>".to_string(),
             date: "2025-06-17T00:00:00Z".to_string(),
@@ -81,6 +87,9 @@ fn test_warc_header_serialize_all_record_types() {
 fn test_warc_header_serialize_with_concurrent_to() {
     // 带关联记录的头部
     let header = format::WarcHeader {
+        ip_address: None,
+        warcinfo_id: None,
+        warc_filename: None,
         record_type: format::WarcRecordType::Metadata,
         record_id: "<urn:uuid:meta>".to_string(),
         date: "2025-06-17T00:00:00Z".to_string(),
@@ -109,6 +118,9 @@ fn test_warc_header_serialize_with_concurrent_to() {
 fn test_warc_header_serialize_gzip_compressed() {
     // gzip 压缩标记
     let header = format::WarcHeader {
+        ip_address: None,
+        warcinfo_id: None,
+        warc_filename: None,
         record_type: format::WarcRecordType::Response,
         record_id: "<urn:uuid:gz>".to_string(),
         date: "2025-06-17T00:00:00Z".to_string(),
@@ -135,6 +147,9 @@ fn test_warc_header_serialize_gzip_compressed() {
 fn test_warc_header_serialize_truncated() {
     // 截断标记
     let header = format::WarcHeader {
+        ip_address: None,
+        warcinfo_id: None,
+        warc_filename: None,
         record_type: format::WarcRecordType::Response,
         record_id: "<urn:uuid:trunc>".to_string(),
         date: "2025-06-17T00:00:00Z".to_string(),
@@ -159,6 +174,9 @@ fn test_warc_header_serialize_truncated() {
 fn test_warc_header_serialize_wagon() {
     // wagon 元数据
     let header = format::WarcHeader {
+        ip_address: None,
+        warcinfo_id: None,
+        warc_filename: None,
         record_type: format::WarcRecordType::Resource,
         record_id: "<urn:uuid:wagon>".to_string(),
         date: "2025-06-17T00:00:00Z".to_string(),
@@ -183,6 +201,9 @@ fn test_warc_header_serialize_wagon() {
 fn test_warc_header_serialize_terminates_with_double_crlf() {
     // 头部应以双 CRLF 结尾
     let header = format::WarcHeader {
+        ip_address: None,
+        warcinfo_id: None,
+        warc_filename: None,
         record_type: format::WarcRecordType::Resource,
         record_id: "<urn:uuid:end>".to_string(),
         date: "2025-06-17T00:00:00Z".to_string(),
@@ -205,6 +226,9 @@ fn test_warc_header_serialize_terminates_with_double_crlf() {
 fn test_warc_header_serialize_no_target_uri_when_empty() {
     // 空 target_uri 不应出现在输出中
     let header = format::WarcHeader {
+        ip_address: None,
+        warcinfo_id: None,
+        warc_filename: None,
         record_type: format::WarcRecordType::Warcinfo,
         record_id: "<urn:uuid:info>".to_string(),
         date: "2025-06-17T00:00:00Z".to_string(),
@@ -229,6 +253,9 @@ fn test_warc_header_serialize_no_target_uri_when_empty() {
 fn test_warc_header_serialize_crlf_line_endings() {
     // 验证使用 CRLF 行尾
     let header = format::WarcHeader {
+        ip_address: None,
+        warcinfo_id: None,
+        warc_filename: None,
         record_type: format::WarcRecordType::Response,
         record_id: "<urn:uuid:crlf>".to_string(),
         date: "2025-06-17T00:00:00Z".to_string(),
@@ -437,6 +464,9 @@ fn test_warc_record_type_display() {
 fn test_warc_header_serialize_complete() {
     // 完整头部序列化测试
     let header = format::WarcHeader {
+        ip_address: None,
+        warcinfo_id: None,
+        warc_filename: None,
         record_type: format::WarcRecordType::Response,
         record_id: "<urn:uuid:complete-test>".to_string(),
         date: "2025-06-17T10:30:00Z".to_string(),
@@ -474,6 +504,9 @@ fn test_warc_header_strips_crlf_injection() {
     // A target URI carrying a raw CR/LF (e.g. from a crafted command line
     // or wgetrc) must not inject extra WARC header lines.
     let header = format::WarcHeader {
+        ip_address: None,
+        warcinfo_id: None,
+        warc_filename: None,
         record_type: format::WarcRecordType::Response,
         record_id: "<urn:uuid:test>".to_string(),
         date: "2025-06-17T00:00:00Z".to_string(),

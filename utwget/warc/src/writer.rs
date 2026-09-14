@@ -85,6 +85,9 @@ pub struct WarcWriterImpl {
     dedup_table: std::collections::HashMap<String, (String, String)>,
     /// payload digest → original target URI (for revisit WARC-Target-URI).
     dedup_urls: std::collections::HashMap<String, String>,
+    /// UUID of the warcinfo record for the current file; written as
+    /// WARC-Warcinfo-ID on subsequent records (wget warc.c:262-264).
+    warcinfo_id: Option<String>,
 }
 
 /// Returns a standard HTTP reason phrase for the given status code.
@@ -208,6 +211,7 @@ impl WarcWriterImpl {
             last_record_offset: 0,
             dedup_table: std::collections::HashMap::new(),
             dedup_urls: std::collections::HashMap::new(),
+            warcinfo_id: None,
         };
         writer.open_file()?;
         Ok(writer)
@@ -283,9 +287,10 @@ impl WarcWriterImpl {
             body_bytes.extend_from_slice(b"\r\n");
         }
 
+        let warcinfo_id = format_record_id()?;
         let header = WarcHeader {
             record_type: WarcRecordType::Warcinfo,
-            record_id: format_record_id()?,
+            record_id: warcinfo_id.clone(),
             date: format_date(now),
             content_length: body_bytes.len() as u64,
             concurrent_to: Vec::new(),
@@ -296,9 +301,15 @@ impl WarcWriterImpl {
             wagon: None,
             payload_digest: None,
             block_digest: self.block_digest_for(body_bytes.as_slice()),
+            ip_address: None,
+            warcinfo_id: None,
+            warc_filename: Some(self.filename.clone()),
         };
 
         self.write_record(&header, &body_bytes)?;
+
+        // Subsequent records reference this warcinfo (WARC-Warcinfo-ID).
+        self.warcinfo_id = Some(warcinfo_id);
 
         Ok(())
     }
@@ -496,6 +507,32 @@ impl WarcWriterImpl {
         payload_digest: Option<String>,
         block_digest: Option<String>,
     ) -> Result<WarcHeader> {
+        self.make_header_with_ip(
+            record_type,
+            target_uri,
+            content_type,
+            content_length,
+            date,
+            payload_digest,
+            block_digest,
+            None,
+        )
+    }
+
+    /// Like [`make_header`] but with the server IP for WARC-IP-Address
+    /// (warc.c:448-455) and the warcinfo/file names for WARC-Warcinfo-ID.
+    #[allow(clippy::too_many_arguments)]
+    fn make_header_with_ip(
+        &self,
+        record_type: WarcRecordType,
+        target_uri: &str,
+        content_type: &str,
+        content_length: u64,
+        date: String,
+        payload_digest: Option<String>,
+        block_digest: Option<String>,
+        ip_address: Option<String>,
+    ) -> Result<WarcHeader> {
         Ok(WarcHeader {
             record_type,
             record_id: format_record_id()?,
@@ -512,6 +549,9 @@ impl WarcWriterImpl {
             // as stored, possibly compressed). Required by ISO 28500 §5.10.
             // GNU wget always writes this when digests are enabled (warc.c:622-624).
             block_digest,
+            ip_address,
+            warcinfo_id: self.warcinfo_id.clone(),
+            warc_filename: Some(self.filename.clone()),
         })
     }
     /// Compute the `WARC-Payload-Digest` header value for a payload.
@@ -626,6 +666,7 @@ impl WarcWriterImpl {
     /// # Errors
     ///
     /// Returns `WarcError::Io` if writing fails.
+    #[allow(clippy::too_many_arguments)]
     pub fn write_response(
         &mut self,
         url: &str,
@@ -634,6 +675,7 @@ impl WarcWriterImpl {
         body: &[u8],
         content_type: &str,
         date: chrono::DateTime<Utc>,
+        server_ip: Option<&str>,
     ) -> Result<()> {
         // CDX deduplication (--warc-dedup, mirrors GNU wget
         // warc_write_response_record warc.c:1498-1523): when the payload
@@ -666,7 +708,7 @@ impl WarcWriterImpl {
         // Content-Type is always application/http;msgtype=response for
         // response records (warc.c:1556); the entity MIME goes to the CDX
         // index instead (warc.c:1563-1566).
-        let header = self.make_header(
+        let mut header = self.make_header(
             WarcRecordType::Response,
             url,
             response_content_type(),
@@ -677,6 +719,7 @@ impl WarcWriterImpl {
             self.payload_digest_for(body),
             self.block_digest_for(&payload),
         )?;
+        header.ip_address = server_ip.map(|s| s.to_string());
 
         self.write_record(&header, &payload)?;
 

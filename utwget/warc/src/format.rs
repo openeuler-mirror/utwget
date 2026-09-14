@@ -90,6 +90,15 @@ pub struct WarcHeader {
     /// Block digest (WARC-Block-Digest) over the block content (the
     /// possibly-compressed record content). Required by ISO 28500 §5.10.
     pub block_digest: Option<String>,
+    /// IP address of the contacted server (WARC-IP-Address, ISO 28500
+    /// §5.4 / GNU wget warc.c:448-455).
+    pub ip_address: Option<String>,
+    /// ID of the warcinfo record of this file (WARC-Warcinfo-ID, wget
+    /// writes it on every record).
+    pub warcinfo_id: Option<String>,
+    /// Filename this record is stored in (warcinfo WARC-Filename field,
+    /// wget warc.c:793).
+    pub warc_filename: Option<String>,
 }
 
 impl WarcHeader {
@@ -153,6 +162,18 @@ impl WarcHeader {
 
         if let Some(ref digest) = self.block_digest {
             lines.push(format!("WARC-Block-Digest: {}", sanitize(digest)));
+        }
+
+        if let Some(ref ip) = self.ip_address {
+            lines.push(format!("WARC-IP-Address: {}", sanitize(ip)));
+        }
+
+        if let Some(ref wid) = self.warcinfo_id {
+            lines.push(format!("WARC-Warcinfo-ID: {}", sanitize(wid)));
+        }
+
+        if let Some(ref wf) = self.warc_filename {
+            lines.push(format!("WARC-Filename: {}", sanitize(wf)));
         }
 
         if let Some(ref t) = self.truncated {

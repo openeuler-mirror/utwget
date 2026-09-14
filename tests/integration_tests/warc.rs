@@ -22,6 +22,9 @@ fn test_warc_header_serialize_all_types() {
     ];
     for (record_type, expected_str) in types {
         let header = WarcHeader {
+            ip_address: None,
+            warcinfo_id: None,
+            warc_filename: None,
             record_type,
             record_id: "<urn:uuid:test>".into(),
             date: "2025-06-09T00:00:00Z".into(),
@@ -45,6 +48,9 @@ fn test_warc_header_serialize_all_types() {
 fn test_warc_header_with_target_uri() {
     use ut_warc::format::{WarcHeader, WarcRecordType};
     let header = WarcHeader {
+            ip_address: None,
+            warcinfo_id: None,
+            warc_filename: None,
         record_type: WarcRecordType::Resource,
         record_id: "<urn:uuid:abc>".into(),
         date: "2025-01-01T00:00:00Z".into(),
@@ -71,6 +77,9 @@ fn test_warc_header_with_target_uri() {
 fn test_warc_header_with_concurrent_to() {
     use ut_warc::format::{WarcHeader, WarcRecordType};
     let header = WarcHeader {
+            ip_address: None,
+            warcinfo_id: None,
+            warc_filename: None,
         record_type: WarcRecordType::Metadata,
         record_id: "<urn:uuid:meta>".into(),
         date: "2025-06-09T12:00:00Z".into(),
@@ -95,6 +104,9 @@ fn test_warc_header_with_concurrent_to() {
 fn test_warc_header_gzip_compressed() {
     use ut_warc::format::{WarcHeader, WarcRecordType};
     let header = WarcHeader {
+            ip_address: None,
+            warcinfo_id: None,
+            warc_filename: None,
         record_type: WarcRecordType::Response,
         record_id: "<urn:uuid:g>".into(),
         date: "2025-01-01T00:00:00Z".into(),
@@ -117,6 +129,9 @@ fn test_warc_header_gzip_compressed() {
 fn test_warc_header_terminates_with_double_crlf() {
     use ut_warc::format::{WarcHeader, WarcRecordType};
     let header = WarcHeader {
+            ip_address: None,
+            warcinfo_id: None,
+            warc_filename: None,
         record_type: WarcRecordType::Resource,
         record_id: "<urn:uuid:x>".into(),
         date: "2025-01-01T00:00:00Z".into(),

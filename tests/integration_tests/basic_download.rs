@@ -1139,6 +1139,9 @@ fn test_warc_sha1_nonempty() {
 fn test_warc_header_serialize() {
     use ut_warc::format::{WarcHeader, WarcRecordType};
     let header = WarcHeader {
+            ip_address: None,
+            warcinfo_id: None,
+            warc_filename: None,
         record_type: WarcRecordType::Response,
         record_id: "<urn:uuid:test-id>".into(),
         date: "2025-01-01T00:00:00Z".into(),
