@@ -14,23 +14,15 @@ use crate::format::{
 };
 use crate::{format_date, format_record_id, generate_uuid_v4, Result, WarcError};
 
-/// Open a file for writing with 0600 permissions (owner-only) to protect
-/// sensitive data (cookies, URLs with credentials) stored in WARC files.
+/// Open a file for writing with default umask-derived permissions.
+///
+/// GNU wget creates WARC files with plain fopen (umask applies,
+/// typically 0644); forcing 0600 made utwget's WARC files differ from
+/// wget's on the same system (report 8.1-6). The WARC file does not
+/// embed credentials (cookies/passwords are never written), so the
+/// tighter mode is unnecessary.
 fn create_restricted_file(path: &Path) -> std::io::Result<File> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        std::fs::OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(path)
-    }
-    #[cfg(not(unix))]
-    {
-        File::create(path)
-    }
+    File::create(path)
 }
 
 /// WARC file writer implementation.
