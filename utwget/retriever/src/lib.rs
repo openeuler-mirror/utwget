@@ -31,7 +31,7 @@ pub mod h2_integration;
 
 pub use types::{
     RequestOptions, ResponseMeta, BodyResult, ProtocolState, DocumentFlags,
-    RetrieveOutcome, RetrieveError, Protocol,
+    RetrieveOutcome, RetrieveError,
 };
 pub use download_registry::DownloadRegistry;
 pub use url_queue::{QueueEntry, UrlQueue};
