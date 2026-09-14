@@ -76,3 +76,46 @@ fn test_no_proxy_match() {
     assert!(should_bypass("example.com", &no_proxy));
     assert!(!should_bypass("other.com", &no_proxy));
 }
+
+// ============================================================================
+// Shared CONNECT tunnel helpers (arch 6.3-9)
+// ============================================================================
+
+#[test]
+fn build_connect_request_sanitizes_and_brackets_ipv6() {
+    use ut_net::proxy::build_connect_request;
+
+    // IPv6 target gets bracketed; HTTP/1.1 request line; Host mirrors target.
+    let req = build_connect_request("::1", 443, None, None);
+    assert!(req.starts_with("CONNECT [::1]:443 HTTP/1.1\r\n"));
+    assert!(req.contains("Host: [::1]:443\r\n"));
+    assert!(req.ends_with("\r\n\r\n"));
+}
+
+#[test]
+fn build_connect_request_strips_control_chars() {
+    use ut_net::proxy::build_connect_request;
+
+    // CRLF in the target host must not smuggle extra request lines.
+    let req = build_connect_request("evil\r\nX-Injected: 1", 443, None, None);
+    assert!(!req.contains("X-Injected"), "got: {}", req);
+}
+
+#[test]
+fn build_connect_request_includes_basic_auth() {
+    use ut_net::proxy::build_connect_request;
+
+    let req = build_connect_request("example.com", 443, Some("u"), Some("p"));
+    assert!(req.contains("Proxy-Authorization: Basic "), "got: {}", req);
+}
+
+#[test]
+fn parse_connect_status_extracts_code_precisely() {
+    use ut_net::proxy::parse_connect_status;
+
+    assert_eq!(parse_connect_status("HTTP/1.1 200 Connection Established"), Some(200));
+    assert_eq!(parse_connect_status("HTTP/1.0 403 Forbidden"), Some(403));
+    // Substring match would falsely accept "1200"; token parsing must not.
+    assert_eq!(parse_connect_status("HTTP/1.1 1200 Weird"), Some(1200));
+    assert_eq!(parse_connect_status("garbage"), None);
+}

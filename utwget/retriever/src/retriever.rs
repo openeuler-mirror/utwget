@@ -2292,32 +2292,14 @@ impl Retriever {
         host: &str,
         port: u16,
     ) -> Result<(std::net::TcpStream, Vec<u8>), RetrieveError> {
-        // Send CONNECT request. Sanitize the host (strip CR/LF/control chars)
-        // and bracket IPv6 literals so the request line cannot be split and
-        // IPv6 targets are well-formed.
-        let clean_host: String = host.chars()
-            .filter(|&c| c != '\r' && c != '\n' && !c.is_ascii_control())
-            .collect();
-        let target = if clean_host.contains(':') {
-            format!("[{}]:{}", clean_host, port)
-        } else {
-            format!("{}:{}", clean_host, port)
-        };
-        let connect_req = format!(
-            "CONNECT {} HTTP/1.1\r\nHost: {}\r\n",
-            target, target
+        // Shared CONNECT request builder (arch 6.3-9: one implementation of
+        // request construction + status parsing for the H1/H2/proxy paths).
+        let connect_req = ut_net::proxy::build_connect_request(
+            host,
+            port,
+            self.config.proxy.proxy_user.as_deref(),
+            self.config.proxy.proxy_password.as_deref(),
         );
-        let mut connect_req = connect_req;
-        // Send proxy credentials when configured (--proxy-user/--proxy-password);
-        // some proxies require Basic auth before they accept the CONNECT tunnel.
-        if let (Some(user), Some(pass)) =
-            (&self.config.proxy.proxy_user, &self.config.proxy.proxy_password)
-        {
-            let credentials = format!("{}:{}", user, pass);
-            let encoded = crate::utils::base64_encode(&credentials);
-            connect_req.push_str(&format!("Proxy-Authorization: Basic {}\r\n", encoded));
-        }
-        connect_req.push_str("\r\n");
         debug!("CONNECT request: {}", crate::utils::redact_sensitive_headers(&connect_req));
         stream.write_all(connect_req.as_bytes()).map_err(RetrieveError::Io)?;
         stream.flush().map_err(RetrieveError::Io)?;
@@ -2328,7 +2310,8 @@ impl Retriever {
         let status_line = format!("{} {} {}", response.version, response.status_code, response.reason);
         debug!("CONNECT response: {}", status_line);
 
-        let status_ok = response.status_code == 200;
+        let status_ok = ut_net::proxy::parse_connect_status(&status_line) == Some(200)
+            || response.status_code == 200;
 
         if !status_ok {
             return Err(RetrieveError::Protocol(WgetError::Other(format!(
