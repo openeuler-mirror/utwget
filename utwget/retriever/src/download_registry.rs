@@ -38,6 +38,14 @@ pub struct DownloadRegistry {
     redirections: HashMap<String, String>,
     /// Combined mapping: normalized URL → local file path (including redirected URLs).
     url_to_local: HashMap<String, PathBuf>,
+    /// Local paths of files whose Content-Type was text/html — the
+    /// authoritative "convertible document" set for --convert-links,
+    /// mirroring wget's downloaded_html_set (convert.c:197-198). Extension
+    /// guesses miss pages saved as `index.php` or extensionless.
+    html_files: std::collections::HashSet<PathBuf>,
+    /// Local paths of files whose Content-Type was text/css
+    /// (wget's downloaded_css_set).
+    css_files: std::collections::HashSet<PathBuf>,
 }
 
 impl DownloadRegistry {
@@ -51,6 +59,8 @@ impl DownloadRegistry {
             downloads: HashMap::new(),
             redirections: HashMap::new(),
             url_to_local: HashMap::new(),
+            html_files: std::collections::HashSet::new(),
+            css_files: std::collections::HashSet::new(),
         }
     }
 
@@ -67,6 +77,26 @@ impl DownloadRegistry {
         let normalized = normalize_url(url);
         self.downloads.insert(normalized.clone(), local_file.to_path_buf());
         self.url_to_local.insert(normalized, local_file.to_path_buf());
+    }
+
+    /// Mark a local path as HTML (Content-Type text/html).
+    pub fn mark_html(&mut self, local_file: &Path) {
+        self.html_files.insert(local_file.to_path_buf());
+    }
+
+    /// Mark a local path as CSS (Content-Type text/css).
+    pub fn mark_css(&mut self, local_file: &Path) {
+        self.css_files.insert(local_file.to_path_buf());
+    }
+
+    /// Whether this local path was downloaded with an HTML Content-Type.
+    pub fn is_html(&self, local_file: &Path) -> bool {
+        self.html_files.contains(local_file)
+    }
+
+    /// Whether this local path was downloaded with a CSS Content-Type.
+    pub fn is_css(&self, local_file: &Path) -> bool {
+        self.css_files.contains(local_file)
     }
 
     /// Register a URL redirection from one URL to another.

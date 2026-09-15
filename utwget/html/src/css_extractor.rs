@@ -108,7 +108,7 @@ fn extract_urls_recursive(
                         } else {
                             LinkType::Relative
                         },
-                        inline: false,
+                        inline: true,
                         attr_name: None,
                         expect_html: false,
                         expect_css: true,
@@ -129,7 +129,7 @@ fn extract_urls_recursive(
                             } else {
                                 LinkType::Relative
                             },
-                            inline: false,
+                            inline: true,
                             attr_name: None,
                             expect_html: false,
                             expect_css: true,
@@ -153,7 +153,7 @@ fn extract_urls_recursive(
                     results.push(UrlPosition {
                         url,
                         link_type: LinkType::CssImport,
-                        inline: false,
+                        inline: true,
                         attr_name: None,
                         expect_html: false,
                         expect_css: true,

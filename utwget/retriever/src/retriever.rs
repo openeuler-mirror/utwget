@@ -1553,6 +1553,19 @@ impl Retriever {
 
         // Register the *final* local path so link conversion resolves to it.
         self.registry().register_download(&url.display(), &final_output_path);
+        // Track Content-Type-classified documents for --convert-links
+        // (wget's downloaded_html_set / downloaded_css_set, convert.c:197-198):
+        // a page served as `index.php` or extensionless must still be
+        // converted. The conversion loop falls back to extension checks for
+        // non-HTTP sources (e.g. FTP).
+        if let Some(ct) = resp_meta.content_type.as_deref() {
+            let ct_lc = ct.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
+            if ct_lc == "text/html" || ct_lc == "application/xhtml+xml" {
+                self.registry().mark_html(&final_output_path);
+            } else if ct_lc == "text/css" {
+                self.registry().mark_css(&final_output_path);
+            }
+        }
 
         // Preserve permissions if enabled
         if self.config.preserve_permissions {
