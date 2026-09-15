@@ -11,7 +11,7 @@ use std::io;
 use std::path::Path;
 use std::time::Instant;
 
-use log::{debug, info, warn};
+use log::{info, warn};
 use ut_core::types::Scheme;
 use ut_core::url::ParsedUrl;
 use ut_core::WgetError;
@@ -124,7 +124,12 @@ impl Retriever {
             if path_segments.len() > 1 {
                 for dir in &path_segments[..path_segments.len() - 1] {
                     if let Err(e) = ftps_client.cwd(dir) {
-                        debug!("FTP CWD {} failed (continuing anyway): {}", dir, e);
+                        // Directory navigation failure is fatal (GNU wget
+                        // ftp.c:880-940 tries CWD then per-component CWD and
+                        // bails on error): continuing would run RETR in the
+                        // login directory and silently download a WRONG file
+                        // that happens to share the name.
+                        return Err(RetrieveError::Ftp(e));
                     }
                 }
             }
@@ -227,7 +232,11 @@ impl Retriever {
         if path_segments.len() > 1 {
             for dir in &path_segments[..path_segments.len() - 1] {
                 if let Err(e) = ftp_client.cwd(dir) {
-                    debug!("FTP CWD {} failed (continuing anyway): {}", dir, e);
+                    // Directory navigation failure is fatal (GNU wget
+                    // ftp.c:880-940): continuing would run RETR in the login
+                    // directory and silently download a WRONG file that
+                    // happens to share the name.
+                    return Err(RetrieveError::Ftp(e));
                 }
             }
         }
@@ -403,7 +412,7 @@ impl Retriever {
             ftps.type_binary()
                 .map_err(|e| RetrieveError::Protocol(WgetError::FtpIo(format!("FTP type error: {}", e))))?;
             for dir in &path_segments[..path_segments.len().saturating_sub(1)] {
-                let _ = ftps.cwd(dir);
+                ftps.cwd(dir).map_err(RetrieveError::Ftp)?;
             }
             let entries = ftps.nlst(None)
                 .map_err(|e| RetrieveError::Protocol(WgetError::FtpIo(format!("FTP NLST error: {}", e))))?;
@@ -418,7 +427,7 @@ impl Retriever {
             ftp.type_binary()
                 .map_err(|e| RetrieveError::Protocol(WgetError::FtpIo(format!("FTP type error: {}", e))))?;
             for dir in &path_segments[..path_segments.len().saturating_sub(1)] {
-                let _ = ftp.cwd(dir);
+                ftp.cwd(dir).map_err(RetrieveError::Ftp)?;
             }
             let entries = ftp.nlst(None)
                 .map_err(|e| RetrieveError::Protocol(WgetError::FtpIo(format!("FTP NLST error: {}", e))))?;
