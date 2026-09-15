@@ -53,6 +53,20 @@ pub(crate) fn stream_response_body<R: Read, W: Write>(
     ignore_length: bool,
 ) -> Result<BodyReadResult, RetrieveError> {
     let start = std::time::Instant::now();
+
+    // 204 No Content and 205 Reset Content have no body by definition
+    // (RFC 7230 §3.3.3 / RFC 2616 §4.3; wget skips the body for 204 at
+    // http.c:3831-3835). Without this special case the code below falls
+    // through to read_until_eof on a keep-alive connection — the server
+    // sends nothing, so the download stalls until --read-timeout
+    // (default 900s) fires (P0-4).
+    if response.status_code == 204 || response.status_code == 205 {
+        return Ok(BodyReadResult {
+            bytes: 0,
+            connection_reusable: true,
+        });
+    }
+
     if response.is_chunked() {
         let mut received = 0u64;
         let mut chunked = ut_http::chunked::ChunkedReader::new(reader);
