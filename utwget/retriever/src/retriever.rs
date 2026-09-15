@@ -1155,6 +1155,41 @@ impl Retriever {
             return Ok(RetrieveOutcome::NotModified);
         }
 
+        // -N fallback: the server may have IGNORED If-Modified-Since and
+        // answered 200 with the full entity. GNU wget compares the remote
+        // Last-Modified against the local timestamp and (when known) the
+        // local size: remote not newer + sizes match → nothing to retrieve
+        // (http.c:4003-4026 "Server file has not changed on remote server
+        // since last download."). The previous behavior unconditionally
+        // re-downloaded and overwrote the local file. `if_modified_since`
+        // being set implies the local file existed when the request was
+        // built (build_request_options derives it from its mtime).
+        if self.config.timestamping && self.config.if_modified_since {
+            if let (Some(local_t), Some(remote_lm)) =
+                (opts.if_modified_since, resp_meta.last_modified)
+            {
+                if remote_lm <= local_t {
+                    let local_len = fs::metadata(output_path).map(|m| m.len()).ok();
+                    let remote_len = response.content_length();
+                    // wget: (contlen == -1 || contlen == orig_file_size)
+                    let size_ok = match (remote_len, local_len) {
+                        (Some(r), Some(l)) => r == l,
+                        (None, _) => true,
+                        (Some(_), None) => false,
+                    };
+                    if size_ok {
+                        info!(
+                            "Server file not newer than local file {} -- not retrieving.",
+                            output_path.display()
+                        );
+                        self.discard_pending_body(response.headers.content_length(), 64 * 1024);
+                        self.progress.finish(ut_progress::FinishStatus::NotModified);
+                        return Ok(RetrieveOutcome::NotModified);
+                    }
+                }
+            }
+        }
+
         // For 4xx errors (except 416 Range Not Satisfiable), never save the body
         // to match wget behavior: error responses are not written to disk.
         // --content-on-error overrides this and keeps the error body.
