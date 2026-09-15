@@ -27,6 +27,12 @@ pub struct QueueEntry {
     /// of distinct (non-repeating) redirect URLs makes the recursive crawl
     /// never terminate (arch 6.3-4). Defaults to 0 for seed entries.
     pub redirect_count: u32,
+    /// Whether this entry is an inline page requisite (`-p`): images,
+    /// stylesheets, scripts. GNU wget fetches requisites of leaf pages
+    /// even beyond the depth limit (recur.c dash_p_leaf_HTML), so the
+    /// queue allows these entries to overstep `max_depth` by exactly one
+    /// level. Defaults to false.
+    pub inline_requisite: bool,
 }
 
 impl QueueEntry {
@@ -39,6 +45,7 @@ impl QueueEntry {
             expect_html: false,
             expect_css: false,
             redirect_count: 0,
+            inline_requisite: false,
         }
     }
 }
@@ -98,15 +105,20 @@ impl UrlQueue {
     /// Add a URL entry to the queue.
     ///
     /// The URL is not added if:
-    /// - It exceeds the maximum depth limit.
+    /// - It exceeds the maximum depth limit — except inline page
+    ///   requisites (`-p`) exactly one level beyond, mirroring wget's
+    ///   leaf-page requisite overstep (recur.c dash_p_leaf_HTML).
     /// - It has already been queued or processed (checked by normalized URL).
     ///
     /// # Arguments
     ///
     /// * `entry` - The queue entry to add.
     pub fn push(&mut self, entry: QueueEntry) {
-        if self.max_depth.map_or(false, |md| entry.depth > md) {
-            return;
+        if let Some(md) = self.max_depth {
+            let requisite_overstep = entry.inline_requisite && entry.depth == md.saturating_add(1);
+            if entry.depth > md && !requisite_overstep {
+                return;
+            }
         }
         if self.queue.len() >= MAX_QUEUE_SIZE {
             return;

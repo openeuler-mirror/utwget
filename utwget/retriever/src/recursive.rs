@@ -202,6 +202,7 @@ impl RecursiveRetriever {
                 expect_html: true,
                 expect_css: false,
                 redirect_count: 0,
+                inline_requisite: false,
             });
         } else {
             queue.push(QueueEntry {
@@ -211,6 +212,7 @@ impl RecursiveRetriever {
                 expect_html: true,
                 expect_css: false,
                 redirect_count: 0,
+                inline_requisite: false,
             });
         }
 
@@ -280,6 +282,7 @@ impl RecursiveRetriever {
                                     expect_html: entry.expect_html,
                                     expect_css: entry.expect_css,
                                     redirect_count: next_hops,
+                                    inline_requisite: false,
                                 });
                             }
                         } else {
@@ -385,6 +388,7 @@ impl RecursiveRetriever {
                                     expect_html: entry.expect_html,
                                     expect_css: entry.expect_css,
                                     redirect_count: next_hops,
+                                    inline_requisite: false,
                                 });
                             }
                         } else {
@@ -462,6 +466,7 @@ impl RecursiveRetriever {
                 expect_html: true,
                 expect_css: false,
                 redirect_count: 0,
+                inline_requisite: false,
             });
         }
 
@@ -606,9 +611,18 @@ impl RecursiveRetriever {
                                     any_downloaded.store(true, Ordering::Relaxed);
                                     let local = body_result.local_file.as_ref().map(|p| p.as_path());
 
-                                    // Descend?
+                                    // Descend? Mirrors the sequential path:
+                                    // at the leaf level, -p still follows
+                                    // inline requisites (GNU wget
+                                    // recur.c:390-408 dash_p_leaf_HTML).
                                     let depth_limit = max_depth.unwrap_or(u32::MAX);
-                                    let descend = entry.depth < depth_limit;
+                                    let at_or_beyond_limit = entry.depth >= depth_limit;
+                                    let dash_p_leaf = config.page_requisites
+                                        && at_or_beyond_limit
+                                        && (entry.depth == depth_limit
+                                            || entry.depth == depth_limit.saturating_add(1));
+                                    let descend =
+                                        entry.depth < depth_limit || dash_p_leaf;
 
                                     if descend {
                                         if let Some(lpath) = local {
@@ -623,6 +637,10 @@ impl RecursiveRetriever {
                                                 let mut q = queue.lock().unwrap();
                                                 for link in &links {
                                                     if link.meta_disallow_follow { continue; }
+                                                    // At dash_p_leaf level, only
+                                                    // follow inline links (GNU
+                                                    // wget recur.c:470).
+                                                    if dash_p_leaf && !link.inline { continue; }
                                                     enqueue_child_static(
                                                         link, &url_str, entry.depth, &mut q,
                                                         &start_url_parsed, &config,
@@ -655,6 +673,7 @@ impl RecursiveRetriever {
                                                 expect_html: entry.expect_html,
                                                 expect_css: entry.expect_css,
                                                 redirect_count: next_hops,
+                                    inline_requisite: false,
                                             });
                                         }
                                     } else {
@@ -865,7 +884,11 @@ impl RecursiveRetriever {
             depth: parent_depth + 1,
             expect_html: link.expect_html,
             expect_css: link.expect_css,
-            redirect_count: 0
+            redirect_count: 0,
+            // Inline requisites may overstep the depth limit by one level
+            // when -p is on (GNU wget dash_p_leaf_HTML, recur.c) — the
+            // queue's depth check honors this flag.
+            inline_requisite: self.retriever.config().page_requisites && link.inline,
         });
     }
 
@@ -1329,6 +1352,9 @@ fn enqueue_child_static(
         depth: parent_depth + 1,
         expect_html: link.expect_html,
         expect_css: link.expect_css,
-                                redirect_count: 0
+        redirect_count: 0,
+        // Inline requisites may overstep the depth limit by one level
+        // when -p is on (GNU wget dash_p_leaf_HTML, recur.c).
+        inline_requisite: config.page_requisites && link.inline,
     });
 }
