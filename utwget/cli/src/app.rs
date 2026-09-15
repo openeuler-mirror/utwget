@@ -360,7 +360,17 @@ impl App {
             // an unrelated download that targets the same URL.
             self.retriever.clear_redirect_state();
 
-            let result = self.retriever.retrieve_with_retry(&parsed.display_with_credentials());
+            // New independent download → the redirect chain counter must
+            // start fresh (wget retr.c:888 zeroes redirection_count per
+            // top-level retrieve_url). Previously the counter persisted
+            // across downloads here, so after enough redirecting downloads
+            // every later download failed with a spurious
+            // "too many redirects" on its first hop (P1-12). Redirect
+            // FOLLOW-UPS below still use retrieve_with_retry, which
+            // preserves the chain counter.
+            let result = self
+                .retriever
+                .retrieve_new_chain_with_retry(&parsed.display_with_credentials());
 
             match result {
                 Ok(RetrieveOutcome::Success(body_result)) => {
@@ -572,7 +582,9 @@ impl App {
                     let progress = ut_progress::create_progress_display(style, true);
                     let mut retriever =
                         ut_retriever::Retriever::with_connection_pool(config, progress, pool);
-                    let result = retriever.retrieve_with_retry(&url);
+                    // Fresh retriever per URL → chain counter starts at 0;
+                    // use the chain-start entry point for consistency.
+                    let result = retriever.retrieve_new_chain_with_retry(&url);
 
                     match result {
                         Ok(RetrieveOutcome::Success(_)) | Ok(_) => {
