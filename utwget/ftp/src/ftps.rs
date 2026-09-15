@@ -1217,7 +1217,10 @@ impl FtpsClient {
     /// Sends the `NLST` command over a (possibly encrypted) data connection
     /// and returns the list of entry names (one per line). When `directory`
     /// is `None`, the current directory is listed.
-    pub fn nlst(&mut self, directory: Option<&str>) -> Result<Vec<String>, FtpError> {
+    /// Run a directory-listing command (NLST/LIST) over a data connection
+    /// and return the raw listing text. Shared by [`Self::nlst`] and
+    /// [`Self::list`].
+    fn dir_transfer(&mut self, directory: Option<&str>, cmd_name: &str) -> Result<String, FtpError> {
         if let Some(dir) = directory {
             validate_ftp_input(dir)?;
         }
@@ -1233,14 +1236,14 @@ impl FtpsClient {
             self.enter_passive()?
         };
         let cmd = match directory {
-            Some(dir) => format!("NLST {}", dir),
-            None => "NLST".to_string(),
+            Some(dir) => format!("{} {}", cmd_name, dir),
+            None => cmd_name.to_string(),
         };
         self.send_cmd(&cmd)?;
         let transfer_resp = self.read_response()?;
         if !transfer_resp.is_positive_preliminary {
             return Err(FtpError::DataConnectFailed(format!(
-                "expected 1xx for NLST, got {}: {}", transfer_resp.code, transfer_resp.text
+                "expected 1xx for {}, got {}: {}", cmd_name, transfer_resp.code, transfer_resp.text
             )));
         }
 
@@ -1294,8 +1297,22 @@ impl FtpsClient {
             )));
         }
 
-        let text = String::from_utf8_lossy(&data);
+        Ok(String::from_utf8_lossy(&data).into_owned())
+    }
+
+    /// List directory entry NAMES via NLST.
+    pub fn nlst(&mut self, directory: Option<&str>) -> Result<Vec<String>, FtpError> {
+        let text = self.dir_transfer(directory, "NLST")?;
         Ok(text.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
+    }
+
+    /// List a directory with full details via LIST and parse the entries
+    /// (permissions, sizes, types) — the FTPS counterpart of
+    /// `FtpClient::list`, needed for directory downloads and `.listing`
+    /// output (GNU wget ftp_get_listing).
+    pub fn list(&mut self, directory: Option<&str>) -> Result<Vec<crate::listing::FtpEntry>, FtpError> {
+        let text = self.dir_transfer(directory, "LIST")?;
+        Ok(crate::listing::parse_listing(&text))
     }
 }
 
