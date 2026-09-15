@@ -356,6 +356,36 @@ impl Retriever {
         // again with the Location URL), so the chain counter is incremented
         // in retrieve_inner on each Redirected outcome and must NOT be
         // reset here — only `retrieve()` (chain start) resets it.
+        self.retry_loop(url, false)
+    }
+
+    /// Like [`Retriever::retrieve_with_retry`], but treats the URL as a
+    /// brand-new top-level download: the redirect chain counter is reset
+    /// before the first attempt.
+    ///
+    /// This is the entry point for recursive downloads: each queued URL is
+    /// an independent chain, and without the reset the counter would
+    /// accumulate across the whole crawl until `--max-redirect` is
+    /// spuriously exceeded. The CLI keeps using
+    /// `retrieve_with_retry` for redirect follow-ups, where persistence is
+    /// required.
+    pub fn retrieve_new_chain_with_retry(
+        &mut self,
+        url: &str,
+    ) -> Result<RetrieveOutcome, RetrieveError> {
+        self.retry_loop(url, true)
+    }
+
+    /// Shared retry loop for `retrieve_with_retry` /
+    /// `retrieve_new_chain_with_retry`.
+    fn retry_loop(
+        &mut self,
+        url: &str,
+        reset_chain: bool,
+    ) -> Result<RetrieveOutcome, RetrieveError> {
+        if reset_chain {
+            self.chain_redirect_count = 0;
+        }
         let parsed = ParsedUrl::parse(url).map_err(RetrieveError::Protocol)?;
         let max_tries = self.config.tries;
 

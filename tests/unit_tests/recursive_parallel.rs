@@ -115,6 +115,12 @@ fn parallel_recursive_with_visited_url_terminates() {
     let mut config = Config::default();
     config.recursive.enabled = true;
     config.recursive.max_level = Some(1);
+    // The one-shot server serves a single response; any further fetch
+    // (page /b) hits connection-refused. With --tries retries wired into
+    // the parallel path (P1-2), the default retry loop would sleep far
+    // past the watchdog, so pin tries=1 — this test targets the
+    // active_count leak, not retry behavior.
+    config.tries = 1;
     config.quiet = true;
 
     let progress = ut_progress::create_progress_display(ut_core::ProgressStyle::Silent, true);

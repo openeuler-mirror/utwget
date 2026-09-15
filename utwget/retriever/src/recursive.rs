@@ -262,7 +262,7 @@ impl RecursiveRetriever {
             let page_requisites = self.retriever.config().page_requisites;
 
             if spider_mode {
-                match self.retriever.retrieve(&url_str) {
+                match self.retriever.retrieve_new_chain_with_retry(&url_str) {
                     Ok(RetrieveOutcome::Success(_)) |
                     Ok(RetrieveOutcome::NotModified) => {
                         any_downloaded = true;
@@ -297,7 +297,7 @@ impl RecursiveRetriever {
                     }
                 }
             } else {
-                match self.retriever.retrieve(&url_str) {
+                match self.retriever.retrieve_new_chain_with_retry(&url_str) {
                     Ok(RetrieveOutcome::Success(body_result)) => {
                         any_downloaded = true;
                         let local = body_result.local_file.as_ref().map(|p| p.as_path());
@@ -601,7 +601,7 @@ impl RecursiveRetriever {
                             }
 
                             // Download
-                            match retriever.retrieve(&url_str) {
+                            match retriever.retrieve_new_chain_with_retry(&url_str) {
                                 Ok(RetrieveOutcome::Success(body_result)) => {
                                     any_downloaded.store(true, Ordering::Relaxed);
                                     let local = body_result.local_file.as_ref().map(|p| p.as_path());
