@@ -1306,6 +1306,23 @@ pub fn build_config(args: &Args) -> ut_core::Config {
 /// This function overrides config values with command-line arguments.
 /// It should be called AFTER loading wgetrc files, so that command-line
 /// arguments take precedence over wgetrc settings.
+/// Validates `--regex-type` values.
+///
+/// "posix" (the `regex` crate) is the only supported engine; "pcre"
+/// errors out instead of being silently ignored (report 9.1-2).
+pub fn validate_regex_type(config: &ut_core::Config) -> Result<(), WgetError> {
+    match config.recursive.regex_type.as_deref() {
+        None | Some("posix") => Ok(()),
+        Some("pcre") | Some("pcre2") => Err(WgetError::Other(
+            "--regex-type=pcre is not supported (only posix)".into(),
+        )),
+        Some(other) => Err(WgetError::Other(format!(
+            "invalid --regex-type '{}' (expected posix or pcre)",
+            other
+        ))),
+    }
+}
+
 pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
     if args.quiet {
         config.quiet = true;
@@ -1647,6 +1664,12 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
     }
     if let Some(ref patterns) = args.reject {
         config.recursive.reject_patterns = patterns.split(',').map(String::from).collect();
+    }
+    // --regex-type: store the flavor. Validation happens in
+    // validate_regex_type (called from main) since apply_args cannot
+    // fail (report 9.1-2).
+    if let Some(ref rt) = args.regex_type {
+        config.recursive.regex_type = Some(rt.clone());
     }
     if let Some(ref r) = args.accept_regex {
         config.recursive.accept_regex = Some(r.clone());

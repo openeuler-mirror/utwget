@@ -319,6 +319,10 @@ fn main() -> ExitCode {
 
     // Then apply command-line arguments (they override wgetrc)
     app::apply_args(&mut config, &args);
+    if let Err(e) = app::validate_regex_type(&config) {
+        safe_eprintln!("{}", e);
+        return ExitCode::from(2); // PARSE_ERROR
+    }
 
     // Redirect diagnostic output to -o/-a log file as early as possible so
     // every subsequent message (including those from apply_args/askpass) goes
