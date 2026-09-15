@@ -453,7 +453,6 @@ impl RecursiveRetriever {
         let queue = Arc::new(Mutex::new(UrlQueue::new(max_depth)));
         let error_flag = Arc::new(AtomicBool::new(false));
         let any_downloaded = Arc::new(AtomicBool::new(false));
-        let start_host = parsed.host.clone();
 
         let max_redirect = self.retriever.config().max_redirect;
         // Seed the queue with the start URL
@@ -471,6 +470,22 @@ impl RecursiveRetriever {
         }
 
         self.start_url = Some(parsed.clone());
+
+        // Shared robots.txt state: per-"host:port" fetched content (None =
+        // no/failing robots.txt) plus one parser loaded with every host's
+        // rules. The previous per-worker boolean cache was never populated
+        // at all, so parallel mode silently skipped robots checks, and a
+        // boolean cannot express path-specific rules anyway.
+        let robots_store: Arc<Mutex<HashMap<String, Option<String>>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+        let robots_parser = Arc::new(Mutex::new(RobotParser::new(
+            self.retriever
+                .config()
+                .http
+                .user_agent
+                .as_deref()
+                .unwrap_or("wget-rs"),
+        )));
 
         // Get config and TLS pool for cloning to each worker
         let config = self.retriever.config_arc_clone();
@@ -497,9 +512,10 @@ impl RecursiveRetriever {
                 let config = config.clone();
                 let tls_pool = tls_pool.clone();
                 let start_url_parsed = start_url_parsed.clone();
-                let start_host = start_host.clone();
                 let active_count = active_count.clone();
                 let shared_registry = shared_registry.clone();
+                let robots_store = robots_store.clone();
+                let robots_parser = robots_parser.clone();
 
                 std::thread::Builder::new()
                     .name(format!("recursive-worker-{}", worker_id))
@@ -524,7 +540,6 @@ impl RecursiveRetriever {
                         retriever.set_shared_registry(shared_registry.clone());
                         let html_extractor = HtmlExtractor;
                         let css_extractor = CssExtractor;
-                        let mut robots_cache: HashMap<String, bool> = HashMap::new();
 
                         loop {
                             // Pop next URL from shared queue
@@ -572,9 +587,14 @@ impl RecursiveRetriever {
                                 continue;
                             }
 
-                            // Check robots
-                            if !is_url_allowed_static(
-                                &url_str, &start_host, &config, &mut robots_cache,
+                            // Check robots (shared store + parser across
+                            // workers; fetch on first encounter per host:port)
+                            if !check_robots_parallel(
+                                &url_str,
+                                &config,
+                                &robots_store,
+                                &robots_parser,
+                                &mut retriever,
                             ) {
                                 debug!("URL not allowed by filter/robots: {}", url_str);
                                 continue;
@@ -930,60 +950,53 @@ impl RecursiveRetriever {
         }
 
         let host_lc = parsed.host.to_ascii_lowercase();
+        // Key robots state by host:port — GNU wget keys robots records by
+        // (host, port) (recur.c res_get_specs); two services on the same
+        // host can have different robots policies. The previous host-only
+        // key also built the robots URL without the port, so a site on
+        // :8443 had its robots.txt fetched from :80.
+        let host_key = format!("{}:{}", host_lc, parsed.port);
 
         // Fetch robots.txt from the network if not already cached
-        if !self.robots_cache.contains_key(&host_lc) {
-            let allowed = match self.fetch_robots(&host_lc, &parsed.scheme, robot_parser) {
+        if !self.robots_cache.contains_key(&host_key) {
+            let allowed = match self.fetch_robots(&host_key, &parsed.scheme) {
                 Some(content) => {
-                    robot_parser.load(&host_lc, &content);
-                    robot_parser.is_allowed(&host_lc, url).unwrap_or(true)
+                    robot_parser.load(&host_key, &content);
+                    robot_parser.is_allowed(&host_key, url).unwrap_or(true)
                 }
                 None => true,
             };
-            self.robots_cache.insert(host_lc.clone(), allowed);
+            self.robots_cache.insert(host_key.clone(), allowed);
         }
 
         // Check path-specific rules
-        let allowed = robot_parser.is_allowed(&host_lc, url).unwrap_or(true);
+        let allowed = robot_parser.is_allowed(&host_key, url).unwrap_or(true);
         allowed
     }
 
     /// Fetch robots.txt for a host from the network.
     ///
-    /// Downloads `{scheme}://{host}/robots.txt` via the retriever and returns
-    /// the content. The scheme matches the URL being checked (HTTP or HTTPS),
-    /// matching GNU wget's behavior (recur.c:retrieve_robots), which fetches
-    /// robots.txt using the same scheme as the page being crawled. We do
-    /// NOT write to a predictable `/tmp` path because that would expose us to
-    /// symlink attacks (an attacker could pre-create a symlink at the cache
-    /// path pointing at a sensitive file, which we would then overwrite).
+    /// Downloads `{scheme}://{host}:{port}/robots.txt` via the retriever and
+    /// returns the content. The scheme matches the URL being checked (HTTP or
+    /// HTTPS), matching GNU wget's behavior (recur.c:retrieve_robots).
+    ///
+    /// The file is written to a private temp file and unlinked right after
+    /// reading — wget keeps robots.txt in a scratch file and removes it
+    /// (recur.c:761-772) so it never pollutes the output tree or the
+    /// download registry's local-path map. The temp name is created
+    /// exclusively (no predictable path to race a symlink into).
     ///
     /// # Arguments
     ///
-    /// * `host` - The host to fetch robots.txt for (lowercase).
+    /// * `host_key` - The "host:port" key used for the robots.txt URL.
     /// * `scheme` - The URL scheme to use ("http" or "https").
-    /// * `robot_parser` - The robots.txt parser instance (unused here, kept for API consistency).
     ///
     /// # Returns
     ///
     /// `Some(content)` if robots.txt was successfully fetched, `None` otherwise.
-    fn fetch_robots(&mut self, host: &str, scheme: &ut_core::types::Scheme, _robot_parser: &mut RobotParser) -> Option<String> {
-        // Use the same scheme as the page being crawled (GNU wget semantics).
-        // Previously this was hardcoded to HTTPS, which caused HTTP-only sites
-        // to fail robots.txt retrieval (404 or TLS error) and could abort
-        // recursive downloads.
-        let robots_url = format!("{}://{}/robots.txt", scheme.as_str(), host);
-
-        match self.retriever.retrieve(&robots_url) {
-            Ok(RetrieveOutcome::Success(body)) => {
-                if let Some(ref path) = body.local_file {
-                    std::fs::read_to_string(path).ok()
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        }
+    fn fetch_robots(&mut self, host_key: &str, scheme: &ut_core::types::Scheme) -> Option<String> {
+        let robots_url = format!("{}://{}/robots.txt", scheme.as_str(), host_key);
+        fetch_robots_content(&mut self.retriever, &robots_url)
     }
 
     /// Get a reference to the underlying retriever.
@@ -1127,6 +1140,44 @@ mod no_parent_tests {
 
 // ============ Static helper functions for parallel recursive download ============
 
+/// Fetch robots.txt content into a private temp file and read it back.
+///
+/// Shared by the sequential and parallel paths. The download is redirected
+/// to an exclusively-created temp file via a scoped `output_document`
+/// override, so robots.txt never lands in the output tree or in the
+/// download registry's local-path map (GNU wget keeps it in a scratch file
+/// and unlinks it, recur.c:761-772).
+fn fetch_robots_content(retriever: &mut Retriever, robots_url: &str) -> Option<String> {
+    // Exclusively create the temp file to claim an unpredictable name —
+    // no symlink-race window against a pre-planted path.
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let tmp = std::env::temp_dir()
+        .join(format!("utwget-robots-{}-{:x}", std::process::id(), nanos));
+    if std::fs::OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(&tmp)
+        .is_err()
+    {
+        return None;
+    }
+
+    let saved_doc = retriever.config_mut().output_document.take();
+    retriever.config_mut().output_document = Some(tmp.clone());
+    let result = retriever.retrieve(robots_url);
+    retriever.config_mut().output_document = saved_doc;
+
+    let content = std::fs::read_to_string(&tmp).ok();
+    let _ = std::fs::remove_file(&tmp);
+    match result {
+        Ok(RetrieveOutcome::Success(_)) => content,
+        _ => None,
+    }
+}
+
 /// Whether a filename has an HTML suffix (GNU wget utils.c has_html_suffix_p):
 /// ".html", ".htm" (case-insensitive).
 fn has_html_suffix_p(file: &str) -> bool {
@@ -1184,18 +1235,24 @@ fn log_rejected_url_static(config: &Config, url: &str, reason: &str) {
     }
 }
 
-/// Check if a URL is allowed (parallel worker version, simplified robots check).
+/// Robots.txt check for parallel workers (sequential `is_url_allowed`
+/// equivalent).
 ///
-/// In parallel mode, robots.txt fetching is simplified: we only check the
-/// already-fetched robots_cache. Network fetch of robots.txt is not done in
-/// parallel workers to avoid race conditions. The first encounter of a new
-/// host will allow the URL; a subsequent sequential robots.txt fetch may
-/// block it later (matching wget's "fail open" behavior).
-fn is_url_allowed_static(
+/// Robots content is stored per "host:port" (wget keys robots records by
+/// host+port, recur.c res_get_specs). On the first URL for a host the
+/// worker fetches robots.txt into a private temp file (never the output
+/// tree) and loads it into the shared parser; path-specific rules are then
+/// evaluated per URL. A concurrent first-encounter may fetch twice —
+/// benign, the last write wins.
+///
+/// For FTP URLs robots checking is skipped. Returns `true` when robots
+/// checking is disabled or no rule disallows the URL.
+fn check_robots_parallel(
     url: &str,
-    _start_host: &str,
     config: &Config,
-    robots_cache: &mut HashMap<String, bool>,
+    store: &Arc<Mutex<HashMap<String, Option<String>>>>,
+    parser: &Arc<Mutex<RobotParser>>,
+    retriever: &mut Retriever,
 ) -> bool {
     let parsed = match ParsedUrl::parse(url) {
         Ok(p) => p,
@@ -1211,15 +1268,32 @@ fn is_url_allowed_static(
     }
 
     let host_lc = parsed.host.to_ascii_lowercase();
-    // In parallel mode, if robots.txt hasn't been fetched yet, allow the URL
-    // (fail-open, matching wget's behavior). The cache is checked but not
-    // populated by network fetch in workers.
-    if let Some(&allowed) = robots_cache.get(&host_lc) {
-        return allowed;
+    let host_key = format!("{}:{}", host_lc, parsed.port);
+
+    // Double-checked lazy fetch: avoid the network on the hot path.
+    let needs_fetch = match store.lock().unwrap_or_else(|e| e.into_inner()) {
+        s => !s.contains_key(&host_key),
+    };
+    if needs_fetch {
+        let robots_url =
+            format!("{}://{}:{}/robots.txt", parsed.scheme.as_str(), host_lc, parsed.port);
+        let content = fetch_robots_content(retriever, &robots_url);
+        let mut s = store.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(ref c) = content {
+            parser.lock().unwrap_or_else(|e| e.into_inner()).load(&host_key, c);
+        }
+        s.insert(host_key.clone(), content);
     }
 
-    true
+    parser
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .is_allowed(&host_key, url)
+        .unwrap_or(true)
 }
+
+/// Append a rejected URL to `--reject-log` (parallel worker version of
+/// `log_rejected_url`).
 
 /// Extract links from a downloaded file (parallel worker version).
 fn extract_links_static(

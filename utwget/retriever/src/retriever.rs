@@ -2681,6 +2681,18 @@ impl Retriever {
         &self.config
     }
 
+    /// Get a mutable reference to the application configuration.
+    ///
+    /// The config lives in an `Arc` shared with parallel workers, so the
+    /// first mutation through this method clones the inner value
+    /// (`Arc::make_mut`) — mutations are scoped to THIS retriever and
+    /// never leak into other workers or the parent. Used for scoped
+    /// overrides around internal sub-fetches (e.g. the robots.txt
+    /// temp-file download); callers must restore the previous value.
+    pub fn config_mut(&mut self) -> &mut Config {
+        Arc::make_mut(&mut self.config)
+    }
+
     /// Clone the shared `Arc<Config>` for use in a parallel worker.
     pub fn config_arc_clone(&self) -> Arc<Config> {
         self.config.clone()
