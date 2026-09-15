@@ -920,11 +920,18 @@ fn load_certs_from_dir(dir: &std::path::Path, root_store: &mut RootCertStore) ->
         let entry = entry.map_err(|_| TlsError::InvalidCertFile(dir.to_path_buf()))?;
         let path = entry.path();
 
-        // Only process .pem, .crt, .cer files
-        let ext = path.extension()
-            .and_then(|e| e.to_str())
-            .map(|e| e.to_lowercase());
-        if !matches!(ext.as_deref(), Some("pem") | Some("crt") | Some("cer")) {
+        // Load EVERY regular file, not just .pem/.crt/.cer: GnuTLS/OpenSSL
+        // CA-directory handling (SSL_CTX_load_verify_locations) reads all
+        // entries, and c_rehash-style directories (the default layout of
+        // /etc/ssl/certs) consist of `<hash>.0` symlinks with no
+        // recognizable extension — filtering by extension silently loaded
+        // ZERO certificates there and fell back to the system roots,
+        // ignoring the user's private CA directory entirely (P1-18).
+        // metadata() follows symlinks, so hash.0 links are read.
+        let is_file = std::fs::metadata(&path)
+            .map(|m| m.is_file())
+            .unwrap_or(false);
+        if !is_file {
             continue;
         }
 
