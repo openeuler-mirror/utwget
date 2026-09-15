@@ -110,6 +110,15 @@ pub enum WgetError {
     #[error("connection closed before response received (stale keep-alive connection)")]
     StaleConnection,
 
+    /// The server misunderstood our Range request: a 206 response whose
+    /// Content-Range does not start at the requested resume offset.
+    /// Fatal for this download — appending the 206 tail fragment would
+    /// corrupt the local file, so we bail out with the file untouched,
+    /// exactly like GNU wget's RANGEERR ("The Range request was somehow
+    /// misunderstood by the server, quitting.", http.c:4056-4063).
+    #[error("the Range request was somehow misunderstood by the server (Content-Range mismatch), quitting")]
+    RangeMismatch,
+
     /// Response body was truncated: the server closed the connection before
     /// all bytes promised by Content-Length were delivered.
     #[error("response body truncated: got {received} of {expected} bytes")]

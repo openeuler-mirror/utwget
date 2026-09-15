@@ -1083,16 +1083,22 @@ impl Retriever {
             }
         }
         // - 206 (Partial Content): verify the server honored our exact offset.
-        //   If Content-Range does not start where we asked, restart from scratch.
+        //   If Content-Range does not start where we asked, bail out: the
+        //   response body is only the tail fragment the server chose to send,
+        //   and falling through to the truncated open below would destroy the
+        //   existing file and replace it with that fragment (P0-5). GNU wget
+        //   quits with RANGEERR and leaves the local file untouched
+        //   (http.c:4056-4063).
         else if effective_resume_pos > 0 && response.status_code == 206 {
             let server_start = response.content_range_start();
             if server_start != Some(effective_resume_pos) {
                 warn!(
-                    "server returned Content-Range {:?}, requested resume from {}; restarting from scratch",
+                    "server returned Content-Range {:?}, requested resume from {}; \
+                     the Range request was misunderstood by the server, quitting \
+                     (local file left untouched)",
                     server_start, effective_resume_pos
                 );
-                effective_resume_pos = 0;
-                state.resume_position = 0;
+                return Err(RetrieveError::Response(WgetError::RangeMismatch));
             }
         }
 
