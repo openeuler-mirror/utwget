@@ -81,6 +81,11 @@ pub struct WarcWriterImpl {
     /// UUID of the warcinfo record for the current file; written as
     /// WARC-Warcinfo-ID on subsequent records (wget warc.c:262-264).
     warcinfo_id: Option<String>,
+    /// All WARC file names produced by this writer (for the MANIFEST
+    /// metadata record, --warc-keep-log, wget warc.c:1215-1260).
+    produced_files: Vec<String>,
+    /// Whether to write metadata records on close (--warc-keep-log).
+    keep_log: bool,
 }
 
 /// Returns a standard HTTP reason phrase for the given status code.
@@ -235,6 +240,8 @@ impl WarcWriterImpl {
             dedup_table: std::collections::HashMap::new(),
             dedup_urls: std::collections::HashMap::new(),
             warcinfo_id: None,
+            produced_files: Vec::new(),
+            keep_log: false,
         };
         writer.open_file()?;
         Ok(writer)
@@ -271,6 +278,7 @@ impl WarcWriterImpl {
 
         let path = parent.join(&name);
         self.filename = path.to_string_lossy().to_string();
+        self.produced_files.push(self.filename.clone());
 
         let raw = create_restricted_file(&path).map_err(WarcError::Io)?;
         self.file = Some(Box::new(raw));
@@ -919,6 +927,11 @@ impl WarcWriterImpl {
         Ok(())
     }
 
+    /// Enables metadata records on close (`--warc-keep-log`).
+    pub fn set_keep_log(&mut self, enabled: bool) {
+        self.keep_log = enabled;
+    }
+
     /// Loads a CDX file for deduplication (`--warc-dedup=FILE`).
     ///
     /// Mirrors GNU wget's `warc_load_cdx_dedup_file` (warc.c:1061-1043):
@@ -1170,6 +1183,48 @@ impl WarcWriterImpl {
         // checked error in write_record), so no GzEncoder Drop is involved
         // anymore — but a plain flush still catches buffered-write errors
         // that a silent Drop would swallow (report 8.1-4).
+        // --warc-keep-log: write metadata records (MANIFEST + invocation
+        // arguments), mirroring GNU wget warc_write_metadata
+        // (warc.c:1215-1260). The wget.log capture is not implemented —
+        // stderr redirection into the writer is invasive — but the
+        // MANIFEST and argument records carry the essential provenance.
+        // MUST run BEFORE self.file is taken: write_record needs the
+        // handle.
+        if self.keep_log && !self.produced_files.is_empty() {
+            let now = Utc::now();
+            let manifest = self
+                .produced_files
+                .iter()
+                .map(|f| format!("{}\n", f))
+                .collect::<String>();
+            let args_line = std::env::args().collect::<Vec<_>>().join(" ");
+            let records: Vec<(&str, String)> = vec![
+                (
+                    "metadata://gnu.org/software/wget/warc/MANIFEST.txt",
+                    manifest,
+                ),
+                (
+                    "metadata://gnu.org/software/wget/warc/wget_arguments.txt",
+                    format!("{}\n", args_line),
+                ),
+            ];
+            for (uri, body) in records {
+                let header = self.make_header(
+                    WarcRecordType::Metadata,
+                    uri,
+                    "text/plain",
+                    body.len() as u64,
+                    format_date(now),
+                    None,
+                    self.block_digest_for(body.as_bytes()),
+                )?;
+                if let Err(e) = self.write_record(&header, body.as_bytes()) {
+                    log::warn!("failed to write WARC metadata record {}: {}", uri, e);
+                }
+            }
+        }
+
+        // Flush + close the data file AFTER metadata records.
         if let Some(mut f) = self.file.take() {
             f.flush().map_err(WarcError::Io)?;
         }

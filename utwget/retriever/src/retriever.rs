@@ -281,6 +281,11 @@ impl Retriever {
                     retriever.config.warc.user_headers.clone(),
                 ) {
                     Ok(mut w) => {
+                        // --warc-keep-log: write MANIFEST/arguments metadata
+                        // records on close (report 9.1-5; wget warc_write_metadata).
+                        if retriever.config.warc.keep_log {
+                            w.set_keep_log(true);
+                        }
                         // --warc-dedup=FILE: load the CDX dedup table
                         // (GNU wget warc_load_cdx_dedup_file).
                         if let Some(ref dedup_file) = retriever.config.warc.cdx_dedup_filename {
