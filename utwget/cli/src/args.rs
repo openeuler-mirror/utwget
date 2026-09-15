@@ -738,6 +738,14 @@ pub struct Args {
     #[arg(long = "input-metalink")]
     pub input_metalink: Option<PathBuf>,
 
+    /// Prefer mirrors located in the given country/locale code.
+    #[arg(long = "preferred-location")]
+    pub preferred_location: Option<String>,
+
+    /// Comma-separated list of allowed mirror protocols in priority order.
+    #[arg(long = "preferred-protocols", value_delimiter = ',')]
+    pub preferred_protocols: Vec<String>,
+
     /// Output as Metalink format (deprecated).
     #[arg(long = "metalink")]
     pub metalink: bool,

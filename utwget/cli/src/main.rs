@@ -676,6 +676,8 @@ fn print_wget_help() {
     safe_println!("{}:", t("utwget.help_metalink_options"));
     safe_println!("       --metalink-over-http        {}", t("utwget.help_metalink_over_http"));
     safe_println!("       --input-metalink=FILE       {}", t("utwget.help_input_metalink"));
+    safe_println!("       --preferred-location=LOCALE {}", t("utwget.help_preferred_location"));
+    safe_println!("       --preferred-protocols=L1,L2 {}", t("utwget.help_preferred_protocols"));
     safe_println!();
 
     safe_println!("{}:", t("utwget.help_warc_options"));
