@@ -99,3 +99,44 @@ fn convert_preserves_fragment_on_local_links() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+// ============================================================================
+// --convert-file-only basename rewriting (report 9.1-4)
+// ============================================================================
+
+#[test]
+fn convert_file_only_rewrites_basename_only() {
+    let dir = std::env::temp_dir().join(format!("conv_fo_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let html = br#"<html><body><a href="http://x.com/deep/dir/page2.html">go</a></body></html>"#;
+    let in_path = dir.join("page1.html");
+    std::fs::write(&in_path, html).unwrap();
+    std::fs::write(dir.join("page2.html"), b"<html>p2</html>").unwrap();
+
+    let mut url_to_local = std::collections::HashMap::new();
+    // Local file is at the FLAT dir root, not deep/dir/.
+    url_to_local.insert("http://x.com/deep/dir/page2.html".to_string(), "page2.html".to_string());
+
+    let converter = ut_html::LinkConverter::new();
+    let opts = ut_html::ConvertOptions {
+        convert_to_relative: true,
+        convert_file_only: true,
+        nullify_base: false,
+        backup_converted: false,
+    };
+    converter.convert_links_with_base(
+        in_path.to_str().unwrap(),
+        &url_to_local,
+        &opts,
+        Some("http://x.com/page1.html"),
+    ).unwrap();
+
+    let converted = std::fs::read_to_string(&in_path).unwrap();
+    assert!(
+        converted.contains(r#"href="page2.html""#),
+        "basename-only rewrite expected, got: {}",
+        converted
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}

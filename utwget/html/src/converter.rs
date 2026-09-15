@@ -273,6 +273,7 @@ impl LinkConverter {
         let rewritten_a = rewritten_content.clone();
         let count_a = rewrite_count.clone();
         let nullify_base = opts.nullify_base;
+        let convert_file_only = opts.convert_file_only;
         let base_for_resolve = base_parsed.clone();
         let current_dir_owned = current_dir.to_path_buf();
 
@@ -331,12 +332,22 @@ impl LinkConverter {
 
                             if let Some(ref lookup) = lookup_url {
                                 if let Some(local_path) = url_to_local_clone.get(lookup) {
-                                    // Found in download map: compute a relative
-                                    // path from the current file's directory to
-                                    // the target file, so offline browsing works
-                                    // regardless of the mirror directory depth.
+                                    // Found in download map. With
+                                    // --convert-file-only only the basename
+                                    // is rewritten (GNU wget convert.c:331
+                                    // CO_CONVERT_BASENAME_ONLY); otherwise a
+                                    // relative path from the current file's
+                                    // directory is computed (offline browsing
+                                    // regardless of mirror directory depth).
                                     let target = std::path::Path::new(local_path);
-                                    let mut rel = relative_path(&current_dir_owned, target);
+                                    let mut rel = if convert_file_only {
+                                        target
+                                            .file_name()
+                                            .map(|f| f.to_string_lossy().to_string())
+                                            .unwrap_or_else(|| local_path.clone())
+                                    } else {
+                                        relative_path(&current_dir_owned, target)
+                                    };
                                     if let Some(ref frag) = fragment {
                                         // GNU wget convert.c re-attaches the
                                         // fragment to the local link.

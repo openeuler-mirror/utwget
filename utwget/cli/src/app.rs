@@ -839,7 +839,10 @@ impl App {
         let converter = LinkConverter::new();
         let opts = ConvertOptions {
             convert_to_relative: true,
-            convert_file_only: false,
+            // --convert-file-only: convert only the basename portion of
+            // the URL (GNU wget convert.c:142 CO_CONVERT_BASENAME_ONLY);
+            // previously hardcoded false (report 9.1-4).
+            convert_file_only: self.config.convert_file_only,
             nullify_base: true,
             backup_converted: self.config.backup_converted,
         };
