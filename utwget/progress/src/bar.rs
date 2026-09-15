@@ -139,7 +139,6 @@ impl BarProgress {
 
         let elapsed = self.start_time.elapsed();
         let elapsed_secs = elapsed.as_secs_f64();
-        let secs = elapsed_secs.max(1e-6);
         // Sliding-window speed over the last ~3 seconds (falls back to the
         // whole-run average before enough samples exist) (8.3-2).
         let speed = self.sliding_speed();

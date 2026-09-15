@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::io::Write;
 
-use log::{debug, info, warn};
+use log::{debug, warn};
 use ut_core::url::ParsedUrl;
 use ut_core::{Config, RobotParser, Scheme, UrlFilter};
 use ut_html::css_extractor::CssExtractor;
@@ -558,9 +558,6 @@ impl RecursiveRetriever {
                             }
 
                             // Download
-                            let spider_mode = config.recursive.spider;
-                            let page_requisites = config.page_requisites;
-
                             match retriever.retrieve(&url_str) {
                                 Ok(RetrieveOutcome::Success(body_result)) => {
                                     any_downloaded.store(true, Ordering::Relaxed);

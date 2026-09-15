@@ -286,10 +286,13 @@ pub fn enter_epsv(
         };
         let stream = TcpStream::connect(addr).map_err(FtpCommandError::Io)?;
         stream.set_nonblocking(false).ok();
-        // Set timeout to prevent indefinite hang if server stops mid-transfer
-        stream.set_read_timeout(Some(std::time::Duration::from_secs(60))).ok();
-        stream.set_write_timeout(Some(std::time::Duration::from_secs(60))).ok();
-        log::debug!("FTP EPSV data connection to {}", addr);
+        // Timeout to prevent an indefinite hang if the server stops
+        // mid-transfer. Honors --timeout/--read-timeout via data_timeout;
+        // defaults to 60s when no configuration reached us (M14).
+        let dt = data_timeout.unwrap_or(std::time::Duration::from_secs(60));
+        stream.set_read_timeout(Some(dt)).ok();
+        stream.set_write_timeout(Some(dt)).ok();
+        log::debug!("FTP EPSV data connection to {} (timeout {:?})", addr, dt);
         return Ok(DataConnection::new(Box::new(stream)));
     }
 
@@ -326,11 +329,11 @@ pub fn enter_epsv(
 /// as `enter_port`/`enter_eprt` (H-7). `ctrl_local_ip` is the control
 /// connection's local IP when known (see `Transport::local_addr`); without
 /// it the listener defaults to IPv4 wildcard behavior.
-/// See [`TcpListenerBind::bind_for_control`].
+/// See [`bind_for_control`].
 pub fn bind_active_listener(
     ctrl_local_ip: Option<std::net::IpAddr>,
 ) -> Result<(TcpListener, IpAddr, u16), FtpCommandError> {
-    TcpListenerBind::bind_for_control(ctrl_local_ip)
+    bind_for_control(ctrl_local_ip)
 }
 
 pub fn enter_active_mode(
@@ -366,7 +369,7 @@ pub fn enter_active_mode(
 pub fn enter_port(
     ctrl: &mut dyn Transport<Error = io::Error>,
 ) -> Result<(), FtpCommandError> {
-    let (_listener, ip, port) = TcpListenerBind::bind_for_control(ctrl.local_addr().map(|a| a.ip()))?;
+    let (_listener, ip, port) = bind_for_control(ctrl.local_addr().map(|a| a.ip()))?;
 
     match ip {
         // Advertise the control connection's local IP (H-7), not 0.0.0.0.
@@ -408,7 +411,7 @@ pub fn enter_port(
 pub fn enter_eprt(
     ctrl: &mut dyn Transport<Error = io::Error>,
 ) -> Result<(), FtpCommandError> {
-    let (_listener, ip, port) = TcpListenerBind::bind_for_control(ctrl.local_addr().map(|a| a.ip()))?;
+    let (_listener, ip, port) = bind_for_control(ctrl.local_addr().map(|a| a.ip()))?;
 
     match ip {
         IpAddr::V4(v4) => {
@@ -428,63 +431,45 @@ pub fn enter_eprt(
     }
 }
 
-/// Helper for binding a TCP listener on an arbitrary port.
-struct TcpListenerBind {
-    /// The bound TCP listener socket.
-    socket: std::net::TcpListener,
-}
+/// Bind an active-mode listener and resolve the IP to advertise.
+///
+/// GNU wget advertises the CONTROL connection's local IP (getsockname,
+/// ftp-basic.c). Binding to 0.0.0.0 and reading the listener's
+/// `local_addr()` would advertise `0,0,0,0` in the PORT command, which
+/// compliant servers reject (H-7). The advertised address family also
+/// selects the listener family: a control connection over IPv6 gets an
+/// IPv6 listener (the previous hardcoded 0.0.0.0 bind made EPRT
+/// unreachable on dual-stack hosts).
+///
+/// Returns the bound listener and the (ip, port) pair to advertise.
+fn bind_for_control(
+    ctrl_local_ip: Option<std::net::IpAddr>,
+) -> Result<(std::net::TcpListener, std::net::IpAddr, u16), FtpCommandError> {
+    // Prefer the control connection's local IP for family + address.
+    let want_ipv4 = ctrl_local_ip.map_or(true, |a| a.is_ipv4());
+    let ctrl_ip = ctrl_local_ip;
 
-impl TcpListenerBind {
-    /// Bind a TCP listener on any available port.
-    ///
-    /// Tries IPv4 first, falling back to IPv6 if needed.
-    fn bind_any() -> Result<Self, FtpCommandError> {
-        let socket = std::net::TcpListener::bind("0.0.0.0:0")
-            .or_else(|_| std::net::TcpListener::bind("[::]:0"))
-            .map_err(FtpCommandError::Io)?;
-        Ok(TcpListenerBind { socket })
-    }
+    // Bind on the matching family first, then fall back.
+    let bind_addr: &str = if want_ipv4 { "0.0.0.0:0" } else { "[::]:0" };
+    let socket = std::net::TcpListener::bind(bind_addr)
+        .or_else(|_| {
+            let fallback = if want_ipv4 { "[::]:0" } else { "0.0.0.0:0" };
+            std::net::TcpListener::bind(fallback)
+        })
+        .map_err(FtpCommandError::Io)?;
 
-    /// Bind an active-mode listener and resolve the IP to advertise.
-    ///
-    /// GNU wget advertises the CONTROL connection's local IP (getsockname,
-    /// ftp-basic.c). Binding to 0.0.0.0 and reading the listener's
-    /// `local_addr()` would advertise `0,0,0,0` in the PORT command, which
-    /// compliant servers reject (H-7). The advertised address family also
-    /// selects the listener family: a control connection over IPv6 gets an
-    /// IPv6 listener (the previous hardcoded 0.0.0.0 bind made EPRT
-    /// unreachable on dual-stack hosts).
-    ///
-    /// Returns the bound listener and the (ip, port) pair to advertise.
-    fn bind_for_control(
-        ctrl_local_ip: Option<std::net::IpAddr>,
-    ) -> Result<(std::net::TcpListener, std::net::IpAddr, u16), FtpCommandError> {
-        // Prefer the control connection's local IP for family + address.
-        let want_ipv4 = ctrl_local_ip.map_or(true, |a| a.is_ipv4());
-        let ctrl_ip = ctrl_local_ip;
-
-        // Bind on the matching family first, then fall back.
-        let bind_addr: &str = if want_ipv4 { "0.0.0.0:0" } else { "[::]:0" };
-        let socket = std::net::TcpListener::bind(bind_addr)
-            .or_else(|_| {
-                let fallback = if want_ipv4 { "[::]:0" } else { "0.0.0.0:0" };
-                std::net::TcpListener::bind(fallback)
-            })
-            .map_err(FtpCommandError::Io)?;
-
-        let port = socket.local_addr().map_err(FtpCommandError::Io)?.port();
-        // Advertised IP: control connection's local IP if known, else the
-        // wildcard address (last resort — same as the old behavior but the
-        // port is at least correct).
-        let advertise_ip = ctrl_ip.unwrap_or_else(|| {
-            if want_ipv4 {
-                std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED)
-            } else {
-                std::net::IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED)
-            }
-        });
-        Ok((socket, advertise_ip, port))
-    }
+    let port = socket.local_addr().map_err(FtpCommandError::Io)?.port();
+    // Advertised IP: control connection's local IP if known, else the
+    // wildcard address (last resort — same as the old behavior but the
+    // port is at least correct).
+    let advertise_ip = ctrl_ip.unwrap_or_else(|| {
+        if want_ipv4 {
+            std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED)
+        } else {
+            std::net::IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED)
+        }
+    });
+    Ok((socket, advertise_ip, port))
 }
 
 /// Parse a PASV response to extract the data connection address.

@@ -7,7 +7,7 @@
 //! unchanged; `retriever.rs` keeps the HTTP engine.
 
 use std::fs::{self, OpenOptions};
-use std::io::{self, Write as _};
+use std::io;
 use std::path::Path;
 use std::time::Instant;
 
@@ -15,13 +15,11 @@ use log::{debug, info, warn};
 use ut_core::types::Scheme;
 use ut_core::url::ParsedUrl;
 use ut_core::WgetError;
-use ut_progress::ProgressDisplay;
 
-use crate::protocol::{apply_rate_limit, OwnedRateLimitedWriter};
+use crate::protocol::apply_rate_limit;
 use crate::retriever::{filter_glob_entries, Retriever};
 use crate::types::{BodyResult, ProtocolState, RequestOptions, RetrieveError, RetrieveOutcome};
 use crate::utils::apply_file_timestamp;
-use crate::xattr;
 
 impl Retriever {
     /// Perform an FTP or FTPS download.
@@ -459,27 +457,4 @@ impl Retriever {
             None => Ok(last_outcome),
         }
     }
-
-/// Returns true if the URL's filename component contains glob wildcard
-/// characters (`*`, `?`, `[`), indicating FTP glob expansion is needed.
-fn ftp_url_has_glob(url: &ParsedUrl) -> bool {
-    url.file.contains('*') || url.file.contains('?') || url.file.contains('[')
-}
-
-/// Filter a list of directory entry names against a glob pattern, honoring
-/// `--ignore-case`. Sorted for deterministic download order.
-fn filter_glob_entries(entries: &[String], pattern: &str, ignore_case: bool) -> Vec<String> {
-    let mut matched: Vec<String> = entries.iter()
-        .filter(|name| {
-            if ignore_case {
-                ut_core::regex_filter::glob_match(&name.to_ascii_lowercase(), &pattern.to_ascii_lowercase())
-            } else {
-                ut_core::regex_filter::glob_match(name, pattern)
-            }
-        })
-        .cloned()
-        .collect();
-    matched.sort();
-    matched
-}
 }

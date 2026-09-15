@@ -5,7 +5,7 @@
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
-use std::net::{IpAddr, ToSocketAddrs};
+use std::net::ToSocketAddrs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -1532,8 +1532,6 @@ impl Retriever {
             return Ok(conn);
         }
 
-        use std::net::ToSocketAddrs;
-
         let _addr_str = format!("{}:{}", host, port);
 
         // Resolve addresses with optional DNS timeout.
@@ -2059,7 +2057,7 @@ type ReturnInfo = (String, u16); // (host, port)
 // 2026-09-09: HTTP 响应解析函数（stream_response_body / read_response_head 等）
 // 已抽取到 response.rs 模块。
 use crate::response::{
-    BodyReadResult, IO_BUFFER_SIZE,
+    IO_BUFFER_SIZE,
     stream_response_body, read_response_head,
 };
 

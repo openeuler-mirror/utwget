@@ -1,5 +1,5 @@
 use std::fs::{self, File};
-use std::io::{Read as _, Seek as _, Write as _};
+use std::io::{Read as _, Seek as _};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -783,7 +783,7 @@ impl WarcWriterImpl {
     fn write_revisit(
         &mut self,
         url: &str,
-        original_uri: &str,
+        _original_uri: &str,
         refers_to: &str,
         payload_digest: &str,
         _original_date: &str,

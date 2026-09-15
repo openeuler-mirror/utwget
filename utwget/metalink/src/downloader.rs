@@ -218,28 +218,6 @@ impl MetalinkDownloader {
         &self,
         resources: &'a [MetalinkResource],
     ) -> Result<Vec<&'a MetalinkResource>, MetalinkError> {
-
-    /// Selects the best resource from a list of available mirrors.
-    ///
-    /// Selection is performed in the following order:
-    /// 1. Filter by allowed protocols (if configured).
-    /// 2. Filter by preferred location (if configured).
-    /// 3. Sort by preference value (higher is better).
-    /// 4. Select the first resource with a non-empty URL.
-    ///
-    /// # Arguments
-    ///
-    /// * `resources` - List of available Metalink resources.
-    ///
-    /// # Returns
-    ///
-    /// A reference to the best resource on success.
-    ///
-    /// # Errors
-    ///
-    /// Returns `MetalinkError::NoResources` if no suitable resource is found.
-
-
         let mut indices: Vec<usize> = (0..resources.len()).collect();
 
         if !self.allowed_protocols.is_empty() {

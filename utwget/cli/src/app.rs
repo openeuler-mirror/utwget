@@ -2156,23 +2156,6 @@ fn parse_address_family_arg(s: &str) -> ut_core::AddressFamily {
     }
 }
 
-/// Parse a `--progress` argument string into a `ProgressStyle` value.
-///
-/// Accepts the following values (case-insensitive):
-/// * `"none"` or `"silent"` — no progress output.
-/// * `"verbose"` or `"v"` — per-file verbose progress.
-/// * `"dot"` or `"d"` — classic dot-style progress (1024 bytes/dot, 50 dots/line).
-/// * Any other value — the default bar-style progress indicator.
-///
-/// # Arguments
-/// * `s` — The progress style string from the command line.
-///
-/// # Returns
-/// The resolved `ProgressStyle` variant.
-fn parse_progress_style_arg(s: &str) -> ut_core::ProgressStyle {
-    parse_progress_style_full(s).0
-}
-
 /// Parse `--progress` values including the colon-parameter forms GNU wget
 /// supports (report 8.3-4):
 ///
