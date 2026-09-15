@@ -184,6 +184,32 @@ pub fn validate_pasv_ip(
     }
 }
 
+/// Parse the data port from an EPSV response body (RFC 2428 §3):
+/// the parenthesized field is `proto|sport|addr|port` — for the common
+/// `|||port|` form the first two fields are empty. The port is always the
+/// fourth delimitation field.
+pub fn parse_epsv_port(text: &str) -> Result<u16, FtpError> {
+    let start = text
+        .find('(')
+        .ok_or_else(|| FtpError::ParseError(format!("invalid EPSV: {}", text)))?;
+    let end = text
+        .find(')')
+        .ok_or_else(|| FtpError::ParseError(format!("invalid EPSV: {}", text)))?;
+    if start + 1 >= end {
+        return Err(FtpError::ParseError(format!("invalid EPSV: {}", text)));
+    }
+    let inner = &text[start + 1..end];
+    let parts: Vec<&str> = inner.split('|').collect();
+    if parts.len() >= 4 {
+        if let Ok(port) = parts[3].trim().parse::<u16>() {
+            if port != 0 {
+                return Ok(port);
+            }
+        }
+    }
+    Err(FtpError::ParseError(format!("invalid EPSV: {}", text)))
+}
+
 /// FTPS client supporting FTP over TLS/SSL
 pub struct FtpsClient {
     /// Raw TCP stream (before TLS upgrade)
@@ -899,7 +925,40 @@ impl FtpsClient {
     }
 
     /// Enter passive mode and return the data connection address.
+    ///
+    /// EPSV (RFC 2428) is tried first: it is scheme-independent and the
+    /// only passive mode that works over IPv6 control connections — PASV
+    /// advertises a dotted-quad IPv4 address, which made FTPS over IPv6
+    /// unusable. Fall back to PASV only on explicit "not implemented"
+    /// replies (500-504), mirroring wget's EPSV→PASV attempt order
+    /// (ftp.c).
     fn enter_passive(&mut self) -> Result<(String, u16), FtpError> {
+        if self.send_cmd("EPSV").is_ok() {
+            let resp = self.read_response()?;
+            if resp.is_positive_completion {
+                let port = parse_epsv_port(resp.text.trim())?;
+                // EPSV returns only a port; the data server is the control
+                // connection's peer (RFC 2428 §3).
+                let host = self
+                    .control_peer_ip()
+                    .ok_or_else(|| {
+                        FtpError::DataConnectFailed(
+                            "EPSV: cannot determine data connection address".to_string(),
+                        )
+                    })?
+                    .to_string();
+                log::debug!("FTPS EPSV data port {}", port);
+                return Ok((host, port));
+            }
+            if !(500..=504).contains(&resp.code) {
+                return Err(FtpError::DataConnectFailed(format!(
+                    "EPSV failed: {} {}",
+                    resp.code, resp.text
+                )));
+            }
+            log::debug!("FTPS EPSV rejected ({}), falling back to PASV", resp.code);
+        }
+
         self.send_cmd("PASV")?;
         let resp = self.read_response()?;
 
@@ -1254,3 +1313,26 @@ impl Drop for FtpsClient {
     }
 }
 
+
+#[cfg(test)]
+mod epsv_tests {
+    use super::*;
+
+    #[test]
+    fn parse_epsv_port_standard_form() {
+        assert_eq!(parse_epsv_port("Entering Extended Passive Mode (|||6446|)").unwrap(), 6446);
+    }
+
+    #[test]
+    fn parse_epsv_port_extended_form() {
+        // RFC 2428 alternate form with address fields.
+        assert_eq!(parse_epsv_port("(2|1|132.235.1.2|6446|)").unwrap(), 6446);
+    }
+
+    #[test]
+    fn parse_epsv_port_rejects_garbage() {
+        assert!(parse_epsv_port("no parens").is_err());
+        assert!(parse_epsv_port("(|||abc|)").is_err());
+        assert!(parse_epsv_port("(|||0|)").is_err());
+    }
+}
