@@ -112,8 +112,15 @@ impl Retriever {
             ftps_client.type_binary()
                 .map_err(|e| RetrieveError::Protocol(WgetError::FtpIo(format!("FTP type error: {}", e))))?;
 
-            let path_segments: Vec<&str> = url.path.trim_start_matches('/')
-                .split('/').filter(|s| !s.is_empty()).collect();
+            // Percent-escapes must be decoded before FTP commands: wget uses
+            // the decoded u->dir/u->file for CWD/RETR (url.c); ParsedUrl keeps
+            // the encoded form for HTTP, so `my%20file.txt` must become
+            // `my file.txt` or servers return 550. Decoded control characters
+            // are still rejected by the FTP client's command-injection guard.
+            let path_segments: Vec<String> = url.path.trim_start_matches('/')
+                .split('/').filter(|s| !s.is_empty())
+                .map(ut_core::url::decode_iri)
+                .collect();
             if path_segments.len() > 1 {
                 for dir in &path_segments[..path_segments.len() - 1] {
                     if let Err(e) = ftps_client.cwd(dir) {
@@ -122,7 +129,7 @@ impl Retriever {
                 }
             }
 
-            let filename = path_segments.last().map(|s| *s).unwrap_or("index.html");
+            let filename = path_segments.last().map(|s| s.as_str()).unwrap_or("index.html");
             let file_size = ftps_client.size(filename).ok().flatten();
 
             // Handle directory creation
@@ -211,8 +218,12 @@ impl Retriever {
         ftp_client.type_binary()
             .map_err(|e| RetrieveError::Protocol(WgetError::FtpIo(format!("FTP type error: {}", e))))?;
 
-        let path_segments: Vec<&str> = url.path.trim_start_matches('/')
-            .split('/').filter(|s| !s.is_empty()).collect();
+        // Percent-escapes decoded before FTP commands (see the FTPS branch
+        // above; wget uses decoded u->dir/u->file for CWD/RETR).
+        let path_segments: Vec<String> = url.path.trim_start_matches('/')
+            .split('/').filter(|s| !s.is_empty())
+            .map(ut_core::url::decode_iri)
+            .collect();
         if path_segments.len() > 1 {
             for dir in &path_segments[..path_segments.len() - 1] {
                 if let Err(e) = ftp_client.cwd(dir) {
@@ -221,7 +232,7 @@ impl Retriever {
             }
         }
 
-        let filename = path_segments.last().map(|s| *s).unwrap_or("index.html");
+        let filename = path_segments.last().map(|s| s.as_str()).unwrap_or("index.html");
         let file_size = ftp_client.size(filename).ok().flatten();
 
         // Handle directory creation based on --no-directories / --force-directories
@@ -352,10 +363,14 @@ impl Retriever {
         };
 
         // Directory components (everything except the last segment, which is
-        // the glob pattern). CWD into each in turn.
-        let path_segments: Vec<&str> = url.path.trim_start_matches('/')
-            .split('/').filter(|s| !s.is_empty()).collect();
-        let glob_pattern = path_segments.last().map(|s| *s).unwrap_or("*");
+        // the glob pattern). CWD into each in turn. Percent-escapes decoded
+        // before commands (wget semantics) and so the decoded pattern can
+        // match raw NLST entry names.
+        let path_segments: Vec<String> = url.path.trim_start_matches('/')
+            .split('/').filter(|s| !s.is_empty())
+            .map(ut_core::url::decode_iri)
+            .collect();
+        let glob_pattern = path_segments.last().map(|s| s.as_str()).unwrap_or("*");
 
         // Collect matching filenames via a directory listing.
         let matches: Vec<String> = if use_ftps {
