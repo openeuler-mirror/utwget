@@ -15,7 +15,7 @@ use std::io::Write;
 
 use log::{debug, warn};
 use ut_core::url::ParsedUrl;
-use ut_core::{Config, RobotParser, Scheme, UrlFilter};
+use ut_core::{Config, RobotParser, Scheme};
 use ut_html::css_extractor::CssExtractor;
 use ut_html::html_extractor::HtmlExtractor;
 use ut_html::types::ContentExtractor;
@@ -242,7 +242,17 @@ impl RecursiveRetriever {
                 continue;
             }
 
-            if !UrlFilter::is_accepted(self.retriever.url_filter(), &url_str, &url_str) {
+            // The start URL (depth 0, including its redirect chain) is
+            // never subject to acc/rej rules: wget filters only children
+            // through download_child (recur.c).
+            if entry.depth > 0
+                && !passes_acc_rej_rules(
+                    self.retriever.url_filter(),
+                    &url_str,
+                    entry.depth,
+                    self.retriever.config(),
+                )
+            {
                 debug!("URL filtered out: {}", url_str);
                 self.log_rejected_url(&url_str, "filtered by accept/reject patterns");
                 continue;
@@ -570,14 +580,17 @@ impl RecursiveRetriever {
                             // path previously skipped the CompositeFilter
                             // entirely, so workers downloaded URLs the user
                             // explicitly excluded. The sequential path applies
-                            // the same check (recursive.rs `is_accepted` call);
-                            // both now mirror wget's download_child filtering
-                            // (recur.c:695-720).
-                            if !UrlFilter::is_accepted(
-                                retriever.url_filter(),
-                                &url_str,
-                                &url_str,
-                            ) {
+                            // the same check; both mirror wget's
+                            // download_child filtering (recur.c:695-720).
+                            // The start URL (depth 0) is exempt, like wget.
+                            if entry.depth > 0
+                                && !passes_acc_rej_rules(
+                                    retriever.url_filter(),
+                                    &url_str,
+                                    entry.depth,
+                                    &config,
+                                )
+                            {
                                 debug!("URL filtered out: {}", url_str);
                                 log_rejected_url_static(
                                     &config,
@@ -1090,6 +1103,45 @@ mod no_parent_tests {
 }
 
 // ============ Static helper functions for parallel recursive download ============
+
+/// Whether a filename has an HTML suffix (GNU wget utils.c has_html_suffix_p):
+/// ".html", ".htm" (case-insensitive).
+fn has_html_suffix_p(file: &str) -> bool {
+    let lower = file.to_ascii_lowercase();
+    lower.ends_with(".html") || lower.ends_with(".htm")
+}
+
+/// Apply the -A/-R acc/rej rules the way GNU wget does (recur.c:695-720
+/// download_child rule 6 + utils.c acceptable):
+///
+/// - glob patterns match the URL's **file (basename)** part, not the whole
+///   URL (the previous code passed the full URL as the filename, so e.g.
+///   `-A 'index*'` never matched);
+/// - the rules are skipped entirely for directories (empty file part) and
+///   for **non-leaf HTML** documents, which can lead to other files that do
+///   need to be downloaded — a leaf is a child at the last allowed level;
+///   `-p` always implies non-leaf because requisites may overstep the
+///   depth limit;
+/// - structural filters (domains, regexes, -I/-X) always apply.
+fn passes_acc_rej_rules(
+    filter: &ut_core::regex_filter::CompositeFilter,
+    url: &str,
+    entry_depth: u32,
+    config: &Config,
+) -> bool {
+    let file = ParsedUrl::parse(url)
+        .map(|p| p.file)
+        .unwrap_or_default();
+    // Directories (no file name to match) are not subject to acc/rej.
+    if file.is_empty() {
+        return true;
+    }
+    let non_leaf_html = has_html_suffix_p(&file)
+        && (config.recursive.max_level.is_none()
+            || entry_depth.saturating_add(1) < config.recursive.max_level.unwrap()
+            || config.page_requisites);
+    filter.is_accepted_html_exempt(url, &file, non_leaf_html)
+}
 
 /// Append a rejected URL to `--reject-log` (parallel worker version of
 /// `log_rejected_url`).

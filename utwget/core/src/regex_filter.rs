@@ -30,9 +30,14 @@ pub trait UrlFilter: Send + Sync {
 /// A composite filter that combines multiple filters.
 ///
 /// A URL is accepted only if all contained filters accept it.
+///
+/// Filters are tagged with a "leaf rule" flag: leaf rules (`-A`/`-R` glob
+/// patterns) are the ones GNU wget exempts for non-leaf HTML documents and
+/// directories (recur.c:695-720), while structural rules (domains,
+/// regexes, include/exclude directories) always apply.
 pub struct CompositeFilter {
-    /// The filters to apply.
-    filters: Vec<Box<dyn UrlFilter>>,
+    /// The filters to apply, with their leaf-rule tags.
+    filters: Vec<(Box<dyn UrlFilter>, bool)>,
 }
 
 impl CompositeFilter {
@@ -53,13 +58,49 @@ impl CompositeFilter {
     ///
     /// * `filter` - The filter to add.
     pub fn add<F: UrlFilter + 'static>(&mut self, filter: F) {
-        self.filters.push(Box::new(filter));
+        self.filters.push((Box::new(filter), false));
+    }
+
+    /// Adds a "leaf rule" filter to the composite.
+    ///
+    /// Leaf rules (`-A`/`-R` glob patterns) may be skipped for non-leaf
+    /// HTML documents — see [`CompositeFilter::is_accepted_html_exempt`].
+    ///
+    /// # Arguments
+    ///
+    /// * `filter` - The filter to add.
+    pub fn add_leaf_rule<F: UrlFilter + 'static>(&mut self, filter: F) {
+        self.filters.push((Box::new(filter), true));
+    }
+}
+
+impl CompositeFilter {
+    /// Checks acceptance with GNU wget's non-leaf-HTML exemption.
+    ///
+    /// When `non_leaf_html` is `true`, leaf rules (`-A`/`-R` globs) are
+    /// skipped while structural filters (domains, regexes, directories)
+    /// still apply. Mirrors wget's download_child rule 6 (recur.c:695-720).
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - The full URL to check.
+    /// * `filename` - The filename portion of the URL.
+    /// * `non_leaf_html` - Whether this URL is a non-leaf HTML document.
+    pub fn is_accepted_html_exempt(
+        &self,
+        url: &str,
+        filename: &str,
+        non_leaf_html: bool,
+    ) -> bool {
+        self.filters
+            .iter()
+            .all(|(f, leaf)| (non_leaf_html && *leaf) || f.is_accepted(url, filename))
     }
 }
 
 impl UrlFilter for CompositeFilter {
     fn is_accepted(&self, url: &str, filename: &str) -> bool {
-        self.filters.iter().all(|f| f.is_accepted(url, filename))
+        self.filters.iter().all(|(f, _)| f.is_accepted(url, filename))
     }
 }
 
