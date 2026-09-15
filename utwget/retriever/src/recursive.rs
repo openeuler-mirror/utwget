@@ -557,6 +557,28 @@ impl RecursiveRetriever {
                                 continue;
                             }
 
+                            // Check accept/reject filters (-A/-R/--accept-regex/
+                            // --reject-regex/-D/-I/-X). P0 fix: the parallel
+                            // path previously skipped the CompositeFilter
+                            // entirely, so workers downloaded URLs the user
+                            // explicitly excluded. The sequential path applies
+                            // the same check (recursive.rs `is_accepted` call);
+                            // both now mirror wget's download_child filtering
+                            // (recur.c:695-720).
+                            if !UrlFilter::is_accepted(
+                                retriever.url_filter(),
+                                &url_str,
+                                &url_str,
+                            ) {
+                                debug!("URL filtered out: {}", url_str);
+                                log_rejected_url_static(
+                                    &config,
+                                    &url_str,
+                                    "filtered by accept/reject patterns",
+                                );
+                                continue;
+                            }
+
                             // Download
                             match retriever.retrieve(&url_str) {
                                 Ok(RetrieveOutcome::Success(body_result)) => {
@@ -1047,6 +1069,24 @@ mod no_parent_tests {
 }
 
 // ============ Static helper functions for parallel recursive download ============
+
+/// Append a rejected URL to `--reject-log` (parallel worker version of
+/// `log_rejected_url`).
+///
+/// Workers cannot reach the `RecursiveRetriever` method, so the log write is
+/// duplicated here. Line-sized O_APPEND writes are atomic on POSIX, so
+/// concurrent workers cannot interleave mid-line.
+fn log_rejected_url_static(config: &Config, url: &str, reason: &str) {
+    if let Some(ref reject_log_path) = config.reject_log {
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(reject_log_path)
+        {
+            let _ = writeln!(file, "{}: {}", url, reason);
+        }
+    }
+}
 
 /// Check if a URL is allowed (parallel worker version, simplified robots check).
 ///
