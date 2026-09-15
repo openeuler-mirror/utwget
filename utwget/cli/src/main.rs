@@ -682,10 +682,13 @@ fn print_wget_help() {
     safe_println!("       --warc-file=FILENAME        {}", t("utwget.help_warc_file"));
     safe_println!("       --warc-max-size=NUMBER      {}", t("utwget.help_warc_maxsize"));
     safe_println!("       --warc-cdx                  {}", t("utwget.help_warc_cdx"));
-    safe_println!("       --warc-dedup=URL            {}", t("utwget.help_warc_dedup"));
+    safe_println!("       --warc-dedup=FILE           {}", t("utwget.help_warc_dedup"));
     safe_println!("       --warc-compression          {}", t("utwget.help_warc_compression"));
+    safe_println!("       --no-warc-compression       {}", t("utwget.help_warc_compression"));
     safe_println!("       --warc-digests              {}", t("utwget.help_warc_digests"));
+    safe_println!("       --no-warc-digests           {}", t("utwget.help_warc_digests"));
     safe_println!("       --warc-keep-log             {}", t("utwget.help_warc_keep_log"));
+    safe_println!("       --no-warc-keep-log          {}", t("utwget.help_warc_keep_log"));
     safe_println!("       --warc-tempdir=DIR          {}", t("utwget.help_warc_temp_dir"));
     safe_println!("       --warc-header=STRING        {}", t("utwget.help_warc_header"));
     safe_println!();
