@@ -1152,11 +1152,20 @@ impl Retriever {
                 self.registry().register_redirection(&url.display(), &redirect_url.display());
                 self.progress.set_redirected(&redirect_url.display());
                 info!("redirected to {}", redirect_url.display());
+                // Drain the (usually tiny) redirect body so the keep-alive
+                // connection returns to the pool for the next hop — wget
+                // skip_short_body's exactly this before following
+                // (http.c:3866-3875). Without it every redirect hop opened
+                // a fresh TCP/TLS connection.
+                self.discard_pending_body(response.headers.content_length(), 64 * 1024);
                 return Ok(RetrieveOutcome::Redirected(redirect_url.display()));
             }
         }
 
         if response.not_modified() {
+            // Same keep-alive discipline as redirects: 304 bodies are
+            // header-only in practice; drain when small and bounded.
+            self.discard_pending_body(response.headers.content_length(), 64 * 1024);
             self.progress.finish(ut_progress::FinishStatus::NotModified);
             return Ok(RetrieveOutcome::NotModified);
         }
@@ -1284,6 +1293,9 @@ impl Retriever {
         //   requested range (wget treats this as "file already fully
         //   retrieved; nothing to do"). Never write the 416 body to the file.
         if response.status_code == 416 {
+            // 416: the local file already covers the requested range —
+            // drain the (small) body and keep the connection alive.
+            self.discard_pending_body(response.headers.content_length(), 64 * 1024);
             self.progress.finish(ut_progress::FinishStatus::NotModified);
             let result = BodyResult {
                 bytes_read: 0,
