@@ -1338,7 +1338,7 @@ impl Retriever {
         // is "-", we write the body to stdout instead of opening a file.
         let write_to_stdout = output_path == std::path::Path::new("-");
 
-        let file: Box<dyn io::Write> = if write_to_stdout {
+        let mut file: Box<dyn io::Write> = if write_to_stdout {
             Box::new(io::BufWriter::with_capacity(IO_BUFFER_SIZE, io::stdout()))
         } else {
             Box::new(
@@ -1365,12 +1365,20 @@ impl Retriever {
         self.progress.reset();
         self.progress.begin_with_output_path(&url.display(), &output_path.to_string_lossy(), total_size, Some(effective_resume_pos));
 
-        if self.config.http.save_headers {
-            let mut header_file = File::create(output_path.with_extension("headers"))
-                .map_err(RetrieveError::Io)?;
+        // --save-headers: prepend the raw response head to the OUTPUT file
+        // ahead of the body (GNU wget http.c:1709-1712 writes `head` into
+        // fp when restval == 0), not a `.headers` sidecar file. Only for
+        // fresh downloads — a resumed file must not grow a second head.
+        if self.config.http.save_headers && resume_for_open == 0 {
+            let mut head = format!(
+                "{} {} {}\r\n",
+                response.version, response.status_code, response.reason
+            );
             for (k, v) in response.headers.iter() {
-                let _ = writeln!(header_file, "{}: {}", k, v);
+                head.push_str(&format!("{}: {}\r\n", k, v));
             }
+            head.push_str("\r\n");
+            file.write_all(head.as_bytes()).map_err(RetrieveError::Io)?;
         }
 
         let mut body_bytes_read = 0u64;
