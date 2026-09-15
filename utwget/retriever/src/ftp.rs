@@ -505,7 +505,7 @@ impl Retriever {
     pub(crate) fn retrieve_ftp_glob(
         &mut self,
         url: &ParsedUrl,
-        referer: Option<&str>,
+        _referer: Option<&str>,
     ) -> Result<RetrieveOutcome, RetrieveError> {
         let user = url.user.clone()
             .or(self.config.ftp.user.clone())
@@ -532,7 +532,7 @@ impl Retriever {
         let glob_pattern = path_segments.last().map(|s| s.as_str()).unwrap_or("*");
 
         // Collect matching filenames via a directory listing.
-        let matches: Vec<String> = if use_ftps {
+        let matches: Vec<ut_ftp::FtpEntry> = if use_ftps {
             let ftps_cfg = ut_ftp::FtpsConfig {
                 verify_certificate: self.config.tls.check_certificate != ut_core::types::CheckCertMode::Off,
                 ca_cert: self.config.tls.ca_cert.clone(),
@@ -564,10 +564,12 @@ impl Retriever {
             for dir in &path_segments[..path_segments.len().saturating_sub(1)] {
                 ftps.cwd(dir).map_err(RetrieveError::Ftp)?;
             }
-            let entries = ftps.nlst(None)
-                .map_err(|e| RetrieveError::Protocol(WgetError::FtpIo(format!("FTP NLST error: {}", e))))?;
+            // LIST (not NLST) so entry types are known: directories can be
+            // descended into and symlinks skipped (wget ftp_retrieve_glob).
+            let listing = ftps.list(None)
+                .map_err(|e| RetrieveError::Protocol(WgetError::FtpIo(format!("FTP LIST error: {}", e))))?;
             let _ = ftps.quit();
-            filter_glob_entries(&entries, glob_pattern, self.config.ignore_case)
+            filter_glob_entries(&listing, glob_pattern, self.config.ignore_case)
         } else {
             let mut ftp = ut_ftp::FtpClient::new().with_passive(self.config.ftp.passive);
             ftp.connect(&url.host, url.port)
@@ -579,10 +581,10 @@ impl Retriever {
             for dir in &path_segments[..path_segments.len().saturating_sub(1)] {
                 ftp.cwd(dir).map_err(RetrieveError::Ftp)?;
             }
-            let entries = ftp.nlst(None)
-                .map_err(|e| RetrieveError::Protocol(WgetError::FtpIo(format!("FTP NLST error: {}", e))))?;
+            let listing = ftp.list(None)
+                .map_err(|e| RetrieveError::Ftp(e))?;
             let _ = ftp.quit();
-            filter_glob_entries(&entries, glob_pattern, self.config.ignore_case)
+            filter_glob_entries(&listing, glob_pattern, self.config.ignore_case)
         };
 
         if matches.is_empty() {
@@ -593,35 +595,42 @@ impl Retriever {
         info!("FTP glob '{}' matched {} file(s)", glob_pattern, matches.len());
 
         // Download each matched file by re-running the single-file retrieval
-        // path with a concrete URL (no glob characters).
+        // path with a concrete URL (no glob characters). Matched
+        // directories descend through the directory-listing path (trailing
+        // slash) when recursion is enabled.
+        // dir_part keeps its trailing slash: "/pub/docs" + "report.txt"
+        // would otherwise concatenate into "/pub/docsreport.txt".
         let dir_part = if path_segments.len() > 1 {
-            format!("/{}", path_segments[..path_segments.len() - 1].join("/"))
+            format!("/{}/", path_segments[..path_segments.len() - 1].join("/"))
         } else {
             String::new()
         };
         let mut worst: Option<RetrieveError> = None;
         let mut last_outcome = RetrieveOutcome::SpiderOnly;
-        for name in matches {
-            // Percent-encode the expanded filename: NLST entries may contain
+        for entry in matches {
+            if entry.is_symlink {
+                // Symlink targets are untrustworthy; wget follows only with
+                // --retr-symlinks.
+                debug!("skipping FTP symlink {} (no --retr-symlinks)", entry.name);
+                continue;
+            }
+            if entry.is_dir && !self.config.recursive.enabled {
+                debug!("skipping FTP directory {} (not recursive)", entry.name);
+                continue;
+            }
+            // Percent-encode the expanded filename: LIST entries may contain
             // spaces or other characters that would break URL parsing
             // (M15: previously a file "a b.txt" failed ParsedUrl::parse and
             // was silently skipped). encode_request_target escapes
             // control/space/high bytes while keeping '/' and '?' intact.
-            let encoded_name = ut_core::url::encode_request_target(&name);
-            let concrete = format!("{}://{}:{}{}{}",
-                url.scheme.as_str(), url.host, url.port, dir_part, encoded_name);
-            let parsed = match ParsedUrl::parse(&concrete) {
-                Ok(p) => p,
-                Err(e) => {
-                    warn!("skipping malformed expanded FTP URL '{}': {}", concrete, e);
-                    continue;
-                }
-            };
-            let mut state = ProtocolState::default();
-            match self.retrieve_inner(&parsed, &mut state, referer) {
+            let encoded_name = ut_core::url::encode_request_target(&entry.name);
+            let concrete = format!("{}://{}:{}{}{}{}",
+                url.scheme.as_str(), url.host, url.port, dir_part, encoded_name,
+                if entry.is_dir { "/" } else { "" });
+            match self.retrieve_new_chain_with_retry(&concrete) {
                 Ok(o) => last_outcome = o,
                 Err(e) => {
-                    warn!("failed to download '{}': {}", name, e);
+                    warn!("failed to download '{}': {}", entry.name, e);
                     worst = worst.or(Some(e));
                 }
             }

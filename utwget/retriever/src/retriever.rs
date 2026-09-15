@@ -2318,20 +2318,26 @@ pub(crate) fn ftp_url_has_glob(url: &ParsedUrl) -> bool {
     url.file.contains('*') || url.file.contains('?') || url.file.contains('[')
 }
 
-/// Filter a list of directory entry names against a glob pattern, honoring
-/// `--ignore-case`. Sorted for deterministic download order.
-pub(crate) fn filter_glob_entries(entries: &[String], pattern: &str, ignore_case: bool) -> Vec<String> {
-    let mut matched: Vec<String> = entries.iter()
-        .filter(|name| {
+/// Filter a list of directory entries against a glob pattern, honoring
+/// `--ignore-case`. `.`/`..` are always dropped. Sorted by name for
+/// deterministic download order.
+pub(crate) fn filter_glob_entries(
+    entries: &[ut_ftp::FtpEntry],
+    pattern: &str,
+    ignore_case: bool,
+) -> Vec<ut_ftp::FtpEntry> {
+    let mut matched: Vec<ut_ftp::FtpEntry> = entries.iter()
+        .filter(|e| e.name != "." && e.name != "..")
+        .filter(|e| {
             if ignore_case {
-                ut_core::regex_filter::glob_match(&name.to_ascii_lowercase(), &pattern.to_ascii_lowercase())
+                ut_core::regex_filter::glob_match(&e.name.to_ascii_lowercase(), &pattern.to_ascii_lowercase())
             } else {
-                ut_core::regex_filter::glob_match(name, pattern)
+                ut_core::regex_filter::glob_match(&e.name, pattern)
             }
         })
         .cloned()
         .collect();
-    matched.sort();
+    matched.sort_by(|a, b| a.name.cmp(&b.name));
     matched
 }
 
