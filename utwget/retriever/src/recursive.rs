@@ -1325,14 +1325,29 @@ fn enqueue_child_static(
         return;
     }
 
-    // No-parent check
+    // No-parent check — with the same guards as the sequential path
+    // (enqueue_child, mirroring wget recur.c:663-678): the check only
+    // applies when the child is on the same logical site as the start
+    // URL (schemes similar, host matches, port matches when schemes are
+    // identical), and page requisites (inline resources) are exempt in
+    // -p mode. The previous unconditional is_subdir wrongly rejected
+    // requisites and cross-host children under -H -np.
     if config.recursive.no_parent {
-        if !is_subdir(
-            &start_url.dir,
-            &child_parsed.dir,
-            config.ignore_case,
-        ) {
-            return;
+        let schemes_similar = schemes_are_similar(child_parsed.scheme, start_url.scheme);
+        let host_match = child_parsed.host.eq_ignore_ascii_case(&start_url.host);
+        // GNU wget skips the port test when the schemes differ (e.g.
+        // http vs https), because their default ports legitimately differ.
+        let port_ok =
+            child_parsed.scheme != start_url.scheme || child_parsed.port == start_url.port;
+        let page_reqs_inline = config.page_requisites && link.inline;
+        if schemes_similar && host_match && port_ok && !page_reqs_inline {
+            if !is_subdir(
+                &start_url.dir,
+                &child_parsed.dir,
+                config.ignore_case,
+            ) {
+                return;
+            }
         }
     }
 
