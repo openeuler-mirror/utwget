@@ -130,6 +130,15 @@ pub struct Retriever {
     /// URLs that were redirected from a POST/非GET request with 301/302/303,
     /// and therefore must be fetched with GET (and without body), per RFC 9110.
     redirect_get_method_urls: std::collections::HashSet<String>,
+    /// Session-level "method suspended" flag for the current redirect chain
+    /// (GNU wget retr.c:838-858 SUSPEND_METHOD clears opt.method/body for
+    /// the whole chain). Unlike the URL-keyed set above, this survives an
+    /// HSTS http→https rewrite between hops: the set is keyed by the
+    /// redirect target string recorded BEFORE the rewrite, while
+    /// build_request_options checks the effective (post-rewrite) URL —
+    /// a mismatch re-attached the POST body and replayed it (P1-13).
+    /// Cleared at every chain start and by `clear_redirect_state`.
+    redirect_method_suspended: bool,
 }
 
 impl Retriever {
@@ -261,6 +270,7 @@ impl Retriever {
             pending_keep_alive: false,
             pending_method: ut_core::types::HttpMethod::Get,
             redirect_get_method_urls: std::collections::HashSet::new(),
+            redirect_method_suspended: false,
             chain_redirect_count: 0,
             last_server_ip: std::cell::Cell::new(None),
         };
@@ -385,6 +395,9 @@ impl Retriever {
     ) -> Result<RetrieveOutcome, RetrieveError> {
         if reset_chain {
             self.chain_redirect_count = 0;
+            // A fresh chain also starts with an unsuspended method (wget
+            // retr.c SUSPEND_METHOD scope is one retrieve_url chain).
+            self.redirect_method_suspended = false;
         }
         let parsed = ParsedUrl::parse(url).map_err(RetrieveError::Protocol)?;
         let max_tries = self.config.tries;
@@ -1069,6 +1082,10 @@ impl Retriever {
                         response.status_code
                     );
                     self.redirect_get_method_urls.insert(redirect_url.display());
+                    // Chain-level suspension (wget SUSPEND_METHOD): also set
+                    // the session flag so the downgrade survives an HSTS
+                    // scheme rewrite of the target URL between hops.
+                    self.redirect_method_suspended = true;
                 }
                 // For non-POST methods with 303, also downgrade to GET.
                 if opts.method != ut_core::types::HttpMethod::Get
@@ -1076,6 +1093,7 @@ impl Retriever {
                     && response.status_code == 303
                 {
                     self.redirect_get_method_urls.insert(redirect_url.display());
+                    self.redirect_method_suspended = true;
                 }
 
                 // Security: block HTTPS -> HTTP downgrade when --https-only is set
@@ -2309,8 +2327,12 @@ impl Retriever {
         // RFC 9110: after a 301/302/303 redirect of a POST (or other unsafe
         // method), the client must follow up with GET and no body. Such target
         // URLs are recorded in redirect_get_method_urls when the redirect is
-        // processed, and enforced here for the follow-up request.
-        if self.redirect_get_method_urls.contains(&url.display()) {
+        // processed, and enforced here for the follow-up request. The
+        // session-level flag additionally covers the case where HSTS rewrote
+        // the scheme between hops (the URL-keyed check would miss).
+        if self.redirect_method_suspended
+            || self.redirect_get_method_urls.contains(&url.display())
+        {
             opts.method = ut_core::types::HttpMethod::Get;
             opts.post_data = None;
             opts.body_data = None;
@@ -2776,6 +2798,7 @@ impl Retriever {
     /// from a previous download bleeding into a new one.
     pub fn clear_redirect_state(&mut self) {
         self.redirect_get_method_urls.clear();
+        self.redirect_method_suspended = false;
     }
 
     /// Discard the pending response body, returning the connection to the
