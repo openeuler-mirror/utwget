@@ -530,8 +530,9 @@ impl Default for RecursiveConfig {
             follow_tags: vec![
                 "a".into(), "area".into(), "audio".into(), "base".into(),
                 "body".into(), "embed".into(), "frame".into(), "iframe".into(),
-                "img".into(), "input".into(), "link".into(), "object".into(),
-                "script".into(), "source".into(), "track".into(), "video".into(),
+                "img".into(), "input".into(), "link".into(), "meta".into(),
+                "object".into(), "script".into(), "source".into(), "track".into(),
+                "video".into(),
             ],
             ignore_tags: Vec::new(),
             strict_comments: false,
