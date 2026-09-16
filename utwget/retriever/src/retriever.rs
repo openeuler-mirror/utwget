@@ -2095,7 +2095,7 @@ impl Retriever {
 
             if url.scheme.is_secure() {
                 // Use HTTP CONNECT method to establish tunnel for HTTPS
-                let (tunneled_stream, leftover) = self.establish_connect_tunnel(&mut stream, host, port)?;
+                let (tunneled_stream, leftover) = self.establish_connect_tunnel(&mut stream, host, port, proxy_user, proxy_pass)?;
                 debug!("CONNECT tunnel established for {}:{} ({} leftover bytes)", host, port, leftover.len());
 
                 // Now wrap with TLS, injecting leftover bytes so the TLS layer sees them first
@@ -2208,14 +2208,22 @@ impl Retriever {
         stream: &mut std::net::TcpStream,
         host: &str,
         port: u16,
+        proxy_user: Option<&str>,
+        proxy_password: Option<&str>,
     ) -> Result<(std::net::TcpStream, Vec<u8>), RetrieveError> {
         // Shared CONNECT request builder (arch 6.3-9: one implementation of
         // request construction + status parsing for the H1/H2/proxy paths).
+        // Credential precedence matches the plain-HTTP proxy path and wget's
+        // initialize_proxy_configuration (http.c:2021-2052): --proxy-user/
+        // --proxy-password first, URL-embedded proxy userinfo as fallback.
+        // The previous code only read the config, so
+        // https_proxy=http://user:pass@proxy/ authenticated for plain HTTP
+        // but not for HTTPS tunneling (P2-3).
         let connect_req = ut_net::proxy::build_connect_request(
             host,
             port,
-            self.config.proxy.proxy_user.as_deref(),
-            self.config.proxy.proxy_password.as_deref(),
+            proxy_user,
+            proxy_password,
         );
         debug!("CONNECT request: {}", crate::utils::redact_sensitive_headers(&connect_req));
         stream.write_all(connect_req.as_bytes()).map_err(RetrieveError::Io)?;
