@@ -82,6 +82,8 @@ pub struct UrlQueue {
     blacklist: HashSet<String>,
     /// Maximum recursion depth, if configured.
     max_depth: Option<u32>,
+    /// Whether the queue-cap warning has been emitted (emit once).
+    cap_warned: bool,
 }
 
 impl UrlQueue {
@@ -99,6 +101,7 @@ impl UrlQueue {
             queue: VecDeque::new(),
             blacklist: HashSet::new(),
             max_depth,
+            cap_warned: false,
         }
     }
 
@@ -121,6 +124,18 @@ impl UrlQueue {
             }
         }
         if self.queue.len() >= MAX_QUEUE_SIZE {
+            // wget has no queue cap; ours is a memory guard against
+            // hostile pages. It previously dropped URLs SILENTLY — a large
+            // site quietly lost everything past 10k entries. Surface the
+            // truncation loudly (once per queue, not per drop).
+            if !self.cap_warned {
+                log::warn!(
+                    "URL queue reached its {}-entry cap; further URLs will be silently dropped \
+                     (memory guard, no wget equivalent)",
+                    MAX_QUEUE_SIZE
+                );
+                self.cap_warned = true;
+            }
             return;
         }
         let normalized = normalize(&entry.url);
@@ -218,9 +233,16 @@ impl UrlQueue {
 /// The normalized URL string.
 fn normalize(url: &str) -> String {
     let url = url.trim();
-    if let Some(idx) = url.find('#') {
-        url[..idx].to_string()
-    } else {
-        url.to_string()
+    // Strip fragment, then an EMPTY query ("a?#/x" → "a?" → "a") —
+    // wget canonicalizes empty queries away (url.c), so `a` and `a?`
+    // dedup to one download. A trailing slash is kept distinct: `a` and
+    // `a/` are different resources under HTTP semantics.
+    let no_frag = match url.find('#') {
+        Some(idx) => &url[..idx],
+        None => url,
+    };
+    match no_frag.strip_suffix('?') {
+        Some(stripped) => stripped.to_string(),
+        None => no_frag.to_string(),
     }
 }
