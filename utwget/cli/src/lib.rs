@@ -4,6 +4,7 @@
 //! including argument parsing, application logic, and internationalization.
 
 pub mod args;
+pub mod askpass;
 pub mod exit_status;
 pub mod app;
 pub mod wgetrc;
