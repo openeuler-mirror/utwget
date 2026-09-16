@@ -302,14 +302,14 @@ impl ContentExtractor for HtmlExtractor {
                         if let Some(style) = el.get_attribute("style") {
                             for url in extract_css_urls_from_str(&style) {
                                 let link_type = classify_link(&url);
-                                results_clone.lock().unwrap().push(UrlPosition {
+                                results_clone.lock().unwrap_or_else(|e| e.into_inner()).push(UrlPosition {
                                     url,
                                     link_type,
                                     inline: true,
                                     attr_name: Some("style".to_string()),
                                     expect_html: false,
                                     expect_css: false,
-                                    meta_disallow_follow: *nofollow_clone.lock().unwrap(),
+                                    meta_disallow_follow: *nofollow_clone.lock().unwrap_or_else(|e| e.into_inner()),
                                 });
                             }
                         }
@@ -353,7 +353,7 @@ impl ContentExtractor for HtmlExtractor {
                         if tag_str == "base" {
                             if let Some(href) = el.get_attribute("href") {
                                 if !href.trim().is_empty() {
-                                    results_clone.lock().unwrap().push(UrlPosition {
+                                    results_clone.lock().unwrap_or_else(|e| e.into_inner()).push(UrlPosition {
                                         url: href.trim().to_string(),
                                         link_type: LinkType::BaseHref,
                                         inline: false,
@@ -391,14 +391,14 @@ impl ContentExtractor for HtmlExtractor {
                                             .map(|r| r.eq_ignore_ascii_case("stylesheet"))
                                             .unwrap_or(false);
 
-                                    results_clone.lock().unwrap().push(UrlPosition {
+                                    results_clone.lock().unwrap_or_else(|e| e.into_inner()).push(UrlPosition {
                                         url,
                                         link_type,
                                         inline,
                                         attr_name: Some(attr_name.to_string()),
                                         expect_html,
                                         expect_css,
-                                        meta_disallow_follow: *nofollow_clone.lock().unwrap(),
+                                        meta_disallow_follow: *nofollow_clone.lock().unwrap_or_else(|e| e.into_inner()),
                                     });
                                 }
                             }
@@ -409,14 +409,14 @@ impl ContentExtractor for HtmlExtractor {
                             if let Some(srcset) = el.get_attribute("srcset") {
                                 for url in parse_srcset_urls(&srcset) {
                                     let link_type = classify_link(&url);
-                                    results_clone.lock().unwrap().push(UrlPosition {
+                                    results_clone.lock().unwrap_or_else(|e| e.into_inner()).push(UrlPosition {
                                         url,
                                         link_type,
                                         inline: true,
                                         attr_name: Some("srcset".to_string()),
                                         expect_html: false,
                                         expect_css: false,
-                                        meta_disallow_follow: *nofollow_clone.lock().unwrap(),
+                                        meta_disallow_follow: *nofollow_clone.lock().unwrap_or_else(|e| e.into_inner()),
                                     });
                                 }
                             }
@@ -429,14 +429,14 @@ impl ContentExtractor for HtmlExtractor {
                         let css = t.as_str();
                         for url in extract_css_urls_from_str(css) {
                             let link_type = classify_link(&url);
-                            results_clone2.lock().unwrap().push(UrlPosition {
+                            results_clone2.lock().unwrap_or_else(|e| e.into_inner()).push(UrlPosition {
                                 url,
                                 link_type,
                                 inline: true,
                                 attr_name: None,
                                 expect_html: false,
                                 expect_css: true,
-                                meta_disallow_follow: *nofollow_clone2.lock().unwrap(),
+                                meta_disallow_follow: *nofollow_clone2.lock().unwrap_or_else(|e| e.into_inner()),
                             });
                         }
                         Ok(())
