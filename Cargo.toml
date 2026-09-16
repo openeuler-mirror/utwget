@@ -89,7 +89,7 @@ sha2.workspace = true
 flate2.workspace = true
 chrono = "0.4"
 # FTPS end-to-end test: in-process rustls FTPS server
-rustls = { version = "0.23", features = ["ring"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 
 # 启用 thin LTO + 单 codegen unit，跨 crate 内联（如 chunked reader ↔ stream body）。
 # 实测 10-20% 性能改善，编译时间略增（值得）。
