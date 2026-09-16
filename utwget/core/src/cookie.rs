@@ -72,6 +72,16 @@ fn default_cookie_path(request_path: &str) -> String {
 
 /// Represents an HTTP cookie.
 ///
+/// Monotonic creation-order counter for cookies (see `Cookie::created`).
+static COOKIE_CREATION_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Next creation-order stamp.
+fn next_creation_stamp() -> u64 {
+    COOKIE_CREATION_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
+/// A single HTTP cookie.
+///
 /// Contains all cookie attributes as defined in RFC 6265, including
 /// domain, path, expiration, and security flags.
 #[derive(Debug, Clone)]
@@ -103,6 +113,11 @@ pub struct Cookie {
     /// requests (no cross-site context), so this is primarily stored for
     /// cookie file compatibility.
     pub samesite: SameSite,
+    /// Creation-order stamp (RFC 6265 §5.4: equal-path cookies are sent
+    /// earliest-created first). A monotonically increasing counter, not
+    /// persisted — a fresh process starts the ordering over, which is
+    /// also when the jar is empty.
+    pub created: u64,
 }
 
 /// SameSite cookie attribute values (RFC 6265bis §5.3.7).
@@ -394,6 +409,7 @@ impl CookieJar {
             persistent,
             host_only: !has_domain_attr,
             samesite,
+            created: next_creation_stamp(),
         };
 
         let key = (cookie.domain.clone(), cookie.path.clone(), cookie.name.clone());
@@ -449,7 +465,10 @@ impl CookieJar {
             if path_cmp != std::cmp::Ordering::Equal {
                 return path_cmp;
             }
-            a.persistent.cmp(&b.persistent)
+            // RFC 6265 §5.4 + wget cookies.c: equal-path cookies are sent
+            // earliest-created first (the previous persistent-flag tiebreak
+            // had no spec basis).
+            a.created.cmp(&b.created)
         });
 
         matching
@@ -548,7 +567,12 @@ impl CookieJar {
             // a domain cookie (subdomain matching); the second field is the
             // "domain_exact" flag (FALSE for host-only, TRUE for domain).
             // A host-only cookie has no leading dot and field[1]=="FALSE".
-            let host_only = !fields[0].starts_with('.');
+            // GNU wget (cookies.c:1317): the subdomain flag is field[1] —
+            // domain_exact (= host-only) iff field[1] != "TRUE". The
+            // leading dot on field[0] is NOT the signal: curl writes
+            // domain cookies without a leading dot (field[1]=TRUE), which
+            // the previous dot heuristic misread as host-only.
+            let host_only = !fields[1].eq_ignore_ascii_case("TRUE");
             let path = fields[2].to_string();
             let secure = fields[3] == "TRUE";
             let expires = if fields[4] == "0" {
@@ -573,6 +597,7 @@ impl CookieJar {
                 persistent: expires.is_some(),
                 host_only,
                 samesite: SameSite::Unspecified,
+                created: next_creation_stamp(),
             };
             self.store(cookie);
         }
