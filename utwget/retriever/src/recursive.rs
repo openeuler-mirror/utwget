@@ -894,7 +894,11 @@ impl RecursiveRetriever {
             return;
         }
 
-        if child_parsed.scheme == Scheme::Ftp && !self.retriever.config().ftp.follow_ftp {
+        // wget rule 1 (recur.c:627-636): FTPS is gated by --follow-ftp
+        // exactly like FTP.
+        if (child_parsed.scheme == Scheme::Ftp || child_parsed.scheme == Scheme::Ftps)
+            && !self.retriever.config().ftp.follow_ftp
+        {
             return;
         }
 
@@ -1431,7 +1435,11 @@ fn enqueue_child_static(
     }
 
     // FTP following check
-    if child_parsed.scheme == Scheme::Ftp && !config.ftp.follow_ftp {
+    // wget rule 1 (recur.c:627-636): FTPS is gated by --follow-ftp
+    // exactly like FTP.
+    if (child_parsed.scheme == Scheme::Ftp || child_parsed.scheme == Scheme::Ftps)
+        && !config.ftp.follow_ftp
+    {
         return;
     }
 
