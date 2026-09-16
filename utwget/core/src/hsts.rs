@@ -18,6 +18,9 @@ use std::path::Path;
 pub struct HstsEntry {
     /// The hostname for which HSTS is active.
     pub host: String,
+    /// The port this policy applies to (GNU wget keys records by host+port,
+    /// hsts.c MAKE_EXPLICIT_PORT). 0 = unspecified/legacy default.
+    pub port: u16,
     /// Whether the policy applies to subdomains.
     pub include_subdomains: bool,
     /// The max-age directive value in seconds.
@@ -40,7 +43,7 @@ impl HstsEntry {
     /// # Returns
     ///
     /// A new `HstsEntry` with calculated expiration time.
-    pub fn new(host: String, include_subdomains: bool, max_age: u64) -> Self {
+    pub fn new(host: String, port: u16, include_subdomains: bool, max_age: u64) -> Self {
         let now = Utc::now();
         // 将 max_age 限制在 i64::MAX 以内，避免 u64→i64 截断后变为负值。
         let safe_secs = max_age.min(i64::MAX as u64) as i64;
@@ -51,6 +54,7 @@ impl HstsEntry {
             .unwrap_or(DateTime::<Utc>::MAX_UTC);
         HstsEntry {
             host,
+            port,
             include_subdomains,
             max_age,
             created: now,
@@ -79,6 +83,12 @@ pub struct HstsStore {
     entries: HashMap<String, HstsEntry>,
 }
 
+/// Map key for an HSTS entry: lowercase "host:port" (wget keys records by
+/// host+port, hsts.c MAKE_EXPLICIT_PORT).
+fn hsts_key(host: &str, port: u16) -> String {
+    format!("{}:{}", host, port)
+}
+
 impl HstsStore {
     /// Creates a new empty HSTS store.
     ///
@@ -104,18 +114,26 @@ impl HstsStore {
     ///
     /// `Some(include_subdomains)` if HSTS is active for the host,
     /// `None` otherwise.
-    pub fn lookup(&self, host: &str) -> Option<bool> {
+    pub fn lookup(&self, host: &str, port: u16) -> Option<bool> {
         let host_lc = host.to_ascii_lowercase();
-        if let Some(entry) = self.entries.get(&host_lc) {
-            if !entry.is_expired() {
-                return Some(entry.include_subdomains);
+        // Direct host:port match, with a legacy fallback: pre-port-aware
+        // utwget files stored port 0.
+        for key in [hsts_key(&host_lc, port), hsts_key(&host_lc, 0)] {
+            if let Some(entry) = self.entries.get(&key) {
+                if !entry.is_expired() {
+                    return Some(entry.include_subdomains);
+                }
             }
         }
         // Subdomain matching: walk all entries with include_subdomains.
         // Avoid allocating a String via format!(".{}", ...) in the hot loop;
-        // use a stack buffer and ends_with on byte slices instead.
+        // use a stack buffer and ends_with on byte slices instead. The
+        // entry's port must match (wget matches host+port, hsts.c:374-418).
         for entry in self.entries.values() {
-            if entry.include_subdomains && !entry.is_expired() {
+            if entry.include_subdomains
+                && !entry.is_expired()
+                && (entry.port == port || entry.port == 0)
+            {
                 // host must end with ".<entry.host>" or equal entry.host
                 // (already covered by the direct get above, but check again
                 // for safety in case the direct entry was expired).
@@ -149,20 +167,22 @@ impl HstsStore {
     /// # Arguments
     ///
     /// * `host` - The hostname.
+    /// * `port` - The port the policy was received on (wget keys by
+    ///   host+port, hsts.c).
     /// * `include_subdomains` - Whether to include subdomains.
     /// * `max_age` - The max-age in seconds.
-    pub fn add(&mut self, host: &str, include_subdomains: bool, max_age: u64) {
+    pub fn add(&mut self, host: &str, port: u16, include_subdomains: bool, max_age: u64) {
         // RFC 6797 §8.1: HSTS only applies to hostnames, not IP literals.
         if host.parse::<std::net::IpAddr>().is_ok() {
             return;
         }
         let host_lc = host.to_ascii_lowercase();
         if max_age == 0 {
-            self.remove(host);
+            self.remove(host, port);
             return;
         }
-        let entry = HstsEntry::new(host_lc.clone(), include_subdomains, max_age);
-        self.entries.insert(host_lc, entry);
+        let entry = HstsEntry::new(host_lc.clone(), port, include_subdomains, max_age);
+        self.entries.insert(hsts_key(&host_lc, port), entry);
     }
 
     /// Removes an HSTS entry.
@@ -170,9 +190,10 @@ impl HstsStore {
     /// # Arguments
     ///
     /// * `host` - The hostname to remove.
-    pub fn remove(&mut self, host: &str) {
+    /// * `port` - The port of the policy.
+    pub fn remove(&mut self, host: &str, port: u16) {
         let host_lc = host.to_ascii_lowercase();
-        self.entries.remove(&host_lc);
+        self.entries.remove(&hsts_key(&host_lc, port));
     }
 
     /// Determines if a URL should be upgraded to HTTPS.
@@ -185,9 +206,9 @@ impl HstsStore {
     /// # Returns
     ///
     /// `Scheme::Https` if HSTS policy requires upgrade, otherwise the original scheme.
-    pub fn should_upgrade(&self, host: &str, scheme: Scheme) -> Scheme {
+    pub fn should_upgrade(&self, host: &str, port: u16, scheme: Scheme) -> Scheme {
         if scheme == Scheme::Http {
-            if self.lookup(host).is_some() {
+            if self.lookup(host, port).is_some() {
                 return Scheme::Https;
             }
         }
@@ -254,7 +275,9 @@ impl HstsStore {
                 continue; // skip malformed lines
             }
             let host = parts[0].to_ascii_lowercase();
-            // parts[1] is port (ignored: utwget doesn't track port-specific HSTS)
+            // parts[1] is the port (wget keys records by host+port;
+            // previously ignored, so an entry for host:8443 applied to 443).
+            let port: u16 = parts[1].parse().unwrap_or(0);
             let include_subdomains = parts[2].parse::<i32>().unwrap_or(0) != 0;
             let created_ts: i64 = parts[3].parse().unwrap_or(0);
             let max_age: u64 = parts[4].parse().unwrap_or(0);
@@ -269,13 +292,14 @@ impl HstsStore {
 
             let entry = HstsEntry {
                 host: host.clone(),
+                port,
                 include_subdomains,
                 max_age,
                 created,
                 expires,
             };
             if !entry.is_expired() {
-                self.entries.insert(host, entry);
+                self.entries.insert(hsts_key(&host, port), entry);
             }
         }
         self.entries.retain(|_, e| !e.is_expired());
@@ -293,8 +317,9 @@ impl HstsStore {
     /// # Arguments
     ///
     /// * `host` - The hostname that sent the header.
+    /// * `port` - The port the response arrived on.
     /// * `header_value` - The raw `Strict-Transport-Security` header value.
-    pub fn add_from_header(&mut self, host: &str, header_value: &str) {
+    pub fn add_from_header(&mut self, host: &str, port: u16, header_value: &str) {
         // RFC 6797 §8.1: HSTS is not applicable to IP-address hosts. The
         // caller (retriever) already gates this on scheme == HTTPS, but IP
         // addresses must be rejected here as well (defense in depth), matching
@@ -325,7 +350,7 @@ impl HstsStore {
         }
 
         if let Some(age) = max_age {
-            self.add(host, include_subdomains, age);
+            self.add(host, port, include_subdomains, age);
         }
     }
 
@@ -367,9 +392,9 @@ impl HstsStore {
         content.push_str("# Edit at your own risk.\n");
         content.push_str("# <hostname>\t<port>\t<incl. subdomains>\t<created>\t<max-age>\n");
         for entry in to_save.entries.values() {
-            // port is 0 (utwget doesn't track port-specific HSTS; GNU wget uses 0
-            // for default port as well).
-            let port = 0;
+            // The port the policy was received on (wget writes the real
+            // port; legacy utwget files used 0 for every entry).
+            let port = entry.port;
             let inc_sub = if entry.include_subdomains { 1 } else { 0 };
             let created_ts = entry.created.timestamp();
             content.push_str(&format!(

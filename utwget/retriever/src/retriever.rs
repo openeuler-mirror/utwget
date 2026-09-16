@@ -514,7 +514,11 @@ impl Retriever {
         #[cfg(feature = "hsts")]
         {
             if self.config.hsts.enabled {
-                let upgraded = self.hsts.should_upgrade(&effective_url.host, effective_url.scheme);
+                let upgraded = self.hsts.should_upgrade(
+                    &effective_url.host,
+                    effective_url.port,
+                    effective_url.scheme,
+                );
                 if upgraded != effective_url.scheme {
                     debug!("HSTS: upgrading {} to HTTPS", effective_url.display());
                     effective_url.scheme = upgraded;
@@ -964,7 +968,7 @@ impl Retriever {
         {
             if self.config.hsts.enabled && url.scheme == Scheme::Https {
                 if let Some(sts) = response.headers.get("strict-transport-security") {
-                    self.hsts.add_from_header(&url.host, sts);
+                    self.hsts.add_from_header(&url.host, url.port, sts);
                 }
             }
         }
@@ -1073,7 +1077,7 @@ impl Retriever {
                         {
                             if self.config.hsts.enabled && url.scheme == Scheme::Https {
                                 if let Some(sts) = response.headers.get("strict-transport-security") {
-                                    self.hsts.add_from_header(&url.host, sts);
+                                    self.hsts.add_from_header(&url.host, url.port, sts);
                                 }
                             }
                         }
