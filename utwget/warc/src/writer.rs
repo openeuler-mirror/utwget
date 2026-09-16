@@ -21,7 +21,7 @@ use crate::{format_date, format_record_id, generate_uuid_v4, Result, WarcError};
 /// wget's on the same system (report 8.1-6). The WARC file does not
 /// embed credentials (cookies/passwords are never written), so the
 /// tighter mode is unnecessary.
-fn create_restricted_file(path: &Path) -> std::io::Result<File> {
+pub(super) fn create_restricted_file(path: &Path) -> std::io::Result<File> {
     File::create(path)
 }
 
@@ -506,20 +506,17 @@ impl WarcWriterImpl {
         } else {
             redirect.trim().to_string()
         };
-        let line = format!(
-            "{} {} {} {} {} {} {} - {} {} {}",
-            url,
-            ts,
-            url,
-            mime,
+        self.cdx_entries.push(crate::cdx::cdx_line(
+            &url,
+            &ts,
+            &mime,
             response_code,
-            checksum,
-            redirect,
+            &checksum,
+            &redirect,
             self.last_record_offset,
-            self.filename,
-            header.record_id,
-        );
-        self.cdx_entries.push(line);
+            &self.filename,
+            &header.record_id,
+        ));
     }
 
     /// Creates a WARC header with standard fields.
@@ -940,35 +937,10 @@ impl WarcWriterImpl {
     /// instead of a full duplicate. Lines that fail to parse are skipped
     /// (wget does the same).
     pub fn load_cdx_dedup_file(&mut self, path: &Path) -> Result<usize> {
-        let data = fs::read_to_string(path).map_err(WarcError::Io)?;
-        let mut loaded = 0usize;
-        for line in data.lines() {
-            // Skip the CDX header line (" CDX a b a m s k r M V g u").
-            if line.starts_with(" CDX") || line.trim().is_empty() {
-                continue;
-            }
-            // Field layout (11 fields): url ts url mime response_code
-            // checksum redirect - offset filename record_uuid
-            let fields: Vec<&str> = line.split(' ').collect();
-            if fields.len() != 11 {
-                continue;
-            }
-            let url = fields[0];
-            let date = fields[1];
-            let checksum = fields[5];
-            let uuid = fields[10];
-            if checksum == "-" || uuid == "-" || uuid.is_empty() {
-                continue;
-            }
-            // Re-add the sha1: prefix stripped when the CDX was written.
-            self.dedup_table
-                .insert(format!("sha1:{}", checksum), (uuid.to_string(), date.to_string()));
-            // Keep the target URI for revisit WARC-Target-URI.
-            self.dedup_urls.insert(format!("sha1:{}", checksum), url.to_string());
-            loaded += 1;
-        }
-        log::info!("CDX dedup table loaded: {} entries from {}", loaded, path.display());
-        Ok(loaded)
+        let (table, urls) = crate::cdx::parse_cdx_dedup(path)?;
+        self.dedup_table = table;
+        self.dedup_urls = urls;
+        Ok(self.dedup_table.len())
     }
 
     /// Creates a temporary file for accumulating large content.
@@ -1231,19 +1203,7 @@ impl WarcWriterImpl {
         self.file = None;
 
         if self.cdx_enabled && !self.cdx_entries.is_empty() {
-            let cdx_name = format!("{}.cdx", self.filename);
-            let mut cdx_file = create_restricted_file(Path::new(&cdx_name)).map_err(WarcError::Io)?;
-            // CDX header line, matching GNU wget (warc.c:938).
-            cdx_file
-                .write_all(b" CDX a b a m s k r M V g u\n")
-                .map_err(WarcError::Io)?;
-            let newline: &[u8] = b"\n";
-            for entry in &self.cdx_entries {
-                cdx_file
-                    .write_all(entry.as_bytes())
-                    .map_err(WarcError::Io)?;
-                cdx_file.write_all(newline).map_err(WarcError::Io)?;
-            }
+            crate::cdx::write_cdx_file(&self.filename, &self.cdx_entries)?;
             self.cdx_entries.clear();
         }
 

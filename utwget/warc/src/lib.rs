@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 
+pub mod cdx;
 pub mod digest;
 pub mod format;
 pub mod writer;
