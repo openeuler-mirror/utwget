@@ -84,7 +84,7 @@ impl Retriever {
 
             // Bind — 在 match 分支内完成内存复制，避免局部 sockaddr 变量
             // 离开作用域后产生悬垂指针 (dangling pointer) 导致 UB。
-            let bind_storage: [u8; 128] = [0u8; 128];
+            let mut bind_storage: [u8; 128] = [0u8; 128];
             let bind_len: libc::socklen_t = match &bind {
                 std::net::SocketAddr::V4(v4) => {
                     let mut sa: libc::sockaddr_in = std::mem::zeroed();
@@ -94,7 +94,7 @@ impl Retriever {
                     let sa_len = std::mem::size_of::<libc::sockaddr_in>();
                     std::ptr::copy_nonoverlapping(
                         &sa as *const libc::sockaddr_in as *const u8,
-                        bind_storage.as_ptr() as *mut u8,
+                        bind_storage.as_mut_ptr(),
                         sa_len,
                     );
                     sa_len as libc::socklen_t
@@ -107,7 +107,7 @@ impl Retriever {
                     let sa_len = std::mem::size_of::<libc::sockaddr_in6>();
                     std::ptr::copy_nonoverlapping(
                         &sa as *const libc::sockaddr_in6 as *const u8,
-                        bind_storage.as_ptr() as *mut u8,
+                        bind_storage.as_mut_ptr(),
                         sa_len,
                     );
                     sa_len as libc::socklen_t
@@ -121,7 +121,7 @@ impl Retriever {
             }
 
             // Connect — 同样在 match 分支内完成复制
-            let remote_storage: [u8; 128] = [0u8; 128];
+            let mut remote_storage: [u8; 128] = [0u8; 128];
             let remote_len: libc::socklen_t = match remote {
                 std::net::SocketAddr::V4(v4) => {
                     let mut sa: libc::sockaddr_in = std::mem::zeroed();
@@ -131,7 +131,7 @@ impl Retriever {
                     let sa_len = std::mem::size_of::<libc::sockaddr_in>();
                     std::ptr::copy_nonoverlapping(
                         &sa as *const libc::sockaddr_in as *const u8,
-                        remote_storage.as_ptr() as *mut u8,
+                        remote_storage.as_mut_ptr(),
                         sa_len,
                     );
                     sa_len as libc::socklen_t
@@ -144,7 +144,7 @@ impl Retriever {
                     let sa_len = std::mem::size_of::<libc::sockaddr_in6>();
                     std::ptr::copy_nonoverlapping(
                         &sa as *const libc::sockaddr_in6 as *const u8,
-                        remote_storage.as_ptr() as *mut u8,
+                        remote_storage.as_mut_ptr(),
                         sa_len,
                     );
                     sa_len as libc::socklen_t
