@@ -110,15 +110,39 @@ impl H2Client {
         host: &str,
         port: u16,
         tls_config: ClientConfig,
+        connect_timeout: Option<std::time::Duration>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let runtime: &'static Runtime = h2_runtime_or_err()?;
 
         let tls_connector = TlsConnector::from(Arc::new(tls_config));
 
-        let tcp = runtime.block_on(TcpStream::connect(format!("{}:{}", host, port)))?;
+        // Honor --connect-timeout on the direct connect (the HTTP/1.1 path
+        // does; the previous bare connect blocked indefinitely on a
+        // black-holed address). IDN hosts are converted to punycode first
+        // (M19), matching the TLS path — the previous raw hostname made
+        // every IDN HTTP/2 connect fail and fall back to HTTP/1.1.
+        let addr = format!("{}:{}", ut_core::url::to_punycode(host), port);
+        let tcp = match connect_timeout {
+            Some(t) => {
+                let attempt =
+                    runtime.block_on(async { tokio::time::timeout(t, TcpStream::connect(addr)).await });
+                match attempt {
+                    Ok(r) => r?,
+                    Err(_) => {
+                        return Err(Box::new(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            "connect timeout",
+                        )) as Box<dyn std::error::Error>)
+                    }
+                }
+            }
+            None => runtime.block_on(TcpStream::connect(addr))?,
+        };
 
-        // Parse server name for TLS
-        let server_name = rustls::pki_types::ServerName::try_from(host.to_string())?;
+        // Parse server name for TLS (punycode for IDN hosts)
+        let server_name = rustls::pki_types::ServerName::try_from(
+            ut_core::url::to_punycode(host).to_string(),
+        )?;
 
         // Perform TLS handshake
         let tls_stream = runtime.block_on(tls_connector.connect(server_name, tcp))?;
