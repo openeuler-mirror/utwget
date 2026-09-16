@@ -1186,7 +1186,15 @@ impl Retriever {
                 // (http.c:3866-3875). Without it every redirect hop opened
                 // a fresh TCP/TLS connection.
                 self.discard_pending_body(response.headers.content_length(), 64 * 1024);
-                return Ok(RetrieveOutcome::Redirected(redirect_url.display()));
+                // The outcome carries the RAW target (wget passes mynewloc
+                // unmasked internally, retr.c:1000-1013): the caller
+                // re-fetches it, and a masked string would turn embedded
+                // credentials into literal "***:***" userinfo that
+                // resolve_credentials would then treat as real ones
+                // (P2-5). Logging above stays masked for safety.
+                return Ok(RetrieveOutcome::Redirected(
+                    redirect_url.display_with_credentials(),
+                ));
             }
         }
 
