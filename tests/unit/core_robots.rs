@@ -199,3 +199,16 @@ Disallow: /search
     // Query string should not affect matching
     assert_eq!(parser.is_allowed("example.com", "http://example.com/search?q=test"), Some(false));
 }
+
+#[test]
+fn test_path_wildcard() {
+    let content = r#"
+User-agent: *
+Disallow: *
+"#;
+    let mut parser = RobotParser::new("wget");
+    parser.load("example.com", content);
+
+    // Wildcard should disallow everything
+    assert_eq!(parser.is_allowed("example.com", "http://example.com/any/path"), Some(false));
+}
