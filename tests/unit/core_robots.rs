@@ -284,3 +284,19 @@ Sitemap: https://example.com/sitemap2.xml
     let sitemaps = parser.sitemaps("example.com");
     assert_eq!(sitemaps.len(), 2);
 }
+
+#[test]
+fn test_sitemap_no_duplicates() {
+    let content = r#"
+User-agent: *
+Sitemap: https://example.com/sitemap.xml
+
+User-agent: googlebot
+Sitemap: https://example.com/sitemap.xml
+"#;
+    let mut parser = RobotParser::new("wget");
+    parser.load("example.com", content);
+
+    let sitemaps = parser.sitemaps("example.com");
+    assert_eq!(sitemaps.len(), 1);
+}
