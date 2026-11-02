@@ -270,3 +270,17 @@ Sitemap: https://example.com/sitemap.xml
     assert_eq!(sitemaps.len(), 1);
     assert_eq!(sitemaps[0], "https://example.com/sitemap.xml");
 }
+
+#[test]
+fn test_multiple_sitemaps() {
+    let content = r#"
+User-agent: *
+Sitemap: https://example.com/sitemap1.xml
+Sitemap: https://example.com/sitemap2.xml
+"#;
+    let mut parser = RobotParser::new("wget");
+    parser.load("example.com", content);
+
+    let sitemaps = parser.sitemaps("example.com");
+    assert_eq!(sitemaps.len(), 2);
+}
