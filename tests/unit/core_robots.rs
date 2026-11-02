@@ -186,3 +186,16 @@ Disallow: /admin/
     assert_eq!(parser.is_allowed("example.com", "http://example.com/admin/"), Some(false));
     assert_eq!(parser.is_allowed("example.com", "http://example.com/admin/page"), Some(false));
 }
+
+#[test]
+fn test_path_with_query() {
+    let content = r#"
+User-agent: *
+Disallow: /search
+"#;
+    let mut parser = RobotParser::new("wget");
+    parser.load("example.com", content);
+
+    // Query string should not affect matching
+    assert_eq!(parser.is_allowed("example.com", "http://example.com/search?q=test"), Some(false));
+}
