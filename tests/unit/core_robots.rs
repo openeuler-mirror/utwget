@@ -252,3 +252,21 @@ fn test_crawl_delay_not_set() {
 
     assert_eq!(parser.crawl_delay("example.com"), None);
 }
+
+// ============================================================================
+// Sitemap Tests
+// ============================================================================
+
+#[test]
+fn test_sitemap() {
+    let content = r#"
+User-agent: *
+Sitemap: https://example.com/sitemap.xml
+"#;
+    let mut parser = RobotParser::new("wget");
+    parser.load("example.com", content);
+
+    let sitemaps = parser.sitemaps("example.com");
+    assert_eq!(sitemaps.len(), 1);
+    assert_eq!(sitemaps[0], "https://example.com/sitemap.xml");
+}
