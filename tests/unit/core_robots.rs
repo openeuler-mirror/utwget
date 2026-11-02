@@ -228,3 +228,18 @@ Crawl-delay: 5
 
     assert_eq!(parser.crawl_delay("example.com"), Some(5.0));
 }
+
+#[test]
+fn test_crawl_delay_specific_agent() {
+    let content = r#"
+User-agent: googlebot
+Crawl-delay: 10
+
+User-agent: *
+Crawl-delay: 5
+"#;
+    let mut parser = RobotParser::new("googlebot");
+    parser.load("example.com", content);
+
+    assert_eq!(parser.crawl_delay("example.com"), Some(10.0));
+}
