@@ -348,3 +348,14 @@ Disallow: /admin/
 
     assert_eq!(parser.is_allowed("example.com", "http://example.com/admin/file"), Some(false));
 }
+
+// ============================================================================
+// Edge Cases
+// ============================================================================
+
+#[test]
+fn test_unknown_host() {
+    let parser = RobotParser::new("wget");
+    // Unknown host should return None
+    assert_eq!(parser.is_allowed("unknown.com", "http://unknown.com/path"), None);
+}
