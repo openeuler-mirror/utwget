@@ -383,3 +383,25 @@ fn test_no_user_agent() {
     // The behavior depends on implementation
     let _ = parser.is_allowed("example.com", "http://example.com/admin/");
 }
+
+#[test]
+fn test_set_user_agent() {
+    let content = r#"
+User-agent: googlebot
+Disallow: /search/
+
+User-agent: *
+Disallow: /admin/
+"#;
+    let mut parser = RobotParser::new("wget");
+    parser.load("example.com", content);
+
+    // Initially using wget, should match wildcard
+    assert_eq!(parser.is_allowed("example.com", "http://example.com/admin/"), Some(false));
+
+    // Change user agent
+    parser.set_user_agent("googlebot");
+    // Now should match googlebot rules
+    assert_eq!(parser.is_allowed("example.com", "http://example.com/admin/"), Some(true));
+    assert_eq!(parser.is_allowed("example.com", "http://example.com/search/"), Some(false));
+}
