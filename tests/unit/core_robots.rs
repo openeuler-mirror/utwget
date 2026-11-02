@@ -212,3 +212,19 @@ Disallow: *
     // Wildcard should disallow everything
     assert_eq!(parser.is_allowed("example.com", "http://example.com/any/path"), Some(false));
 }
+
+// ============================================================================
+// Crawl Delay Tests
+// ============================================================================
+
+#[test]
+fn test_crawl_delay() {
+    let content = r#"
+User-agent: *
+Crawl-delay: 5
+"#;
+    let mut parser = RobotParser::new("wget");
+    parser.load("example.com", content);
+
+    assert_eq!(parser.crawl_delay("example.com"), Some(5.0));
+}
