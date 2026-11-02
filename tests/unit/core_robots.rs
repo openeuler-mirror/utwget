@@ -300,3 +300,23 @@ Sitemap: https://example.com/sitemap.xml
     let sitemaps = parser.sitemaps("example.com");
     assert_eq!(sitemaps.len(), 1);
 }
+
+// ============================================================================
+// Multiple Hosts Tests
+// ============================================================================
+
+#[test]
+fn test_multiple_hosts() {
+    let content1 = "User-agent: *\nDisallow: /private/";
+    let content2 = "User-agent: *\nDisallow: /secret/";
+
+    let mut parser = RobotParser::new("wget");
+    parser.load("host1.com", content1);
+    parser.load("host2.com", content2);
+
+    assert_eq!(parser.is_allowed("host1.com", "http://host1.com/private/file"), Some(false));
+    assert_eq!(parser.is_allowed("host1.com", "http://host1.com/secret/file"), Some(true));
+
+    assert_eq!(parser.is_allowed("host2.com", "http://host2.com/secret/file"), Some(false));
+    assert_eq!(parser.is_allowed("host2.com", "http://host2.com/private/file"), Some(true));
+}
