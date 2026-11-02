@@ -359,3 +359,16 @@ fn test_unknown_host() {
     // Unknown host should return None
     assert_eq!(parser.is_allowed("unknown.com", "http://unknown.com/path"), None);
 }
+
+#[test]
+fn test_empty_disallow() {
+    let content = r#"
+User-agent: *
+Disallow:
+"#;
+    let mut parser = RobotParser::new("wget");
+    parser.load("example.com", content);
+
+    // Empty disallow means allow everything
+    assert_eq!(parser.is_allowed("example.com", "http://example.com/any/path"), Some(true));
+}
