@@ -422,3 +422,16 @@ Allow: /a/b/c/
     assert_eq!(parser.is_allowed("example.com", "http://example.com/a/b/x"), Some(false));
     assert_eq!(parser.is_allowed("example.com", "http://example.com/a/b/c/x"), Some(true));
 }
+
+#[test]
+fn test_url_with_fragment() {
+    let content = r#"
+User-agent: *
+Disallow: /admin/
+"#;
+    let mut parser = RobotParser::new("wget");
+    parser.load("example.com", content);
+
+    // Fragment should not affect path matching
+    assert_eq!(parser.is_allowed("example.com", "http://example.com/admin/page#section"), Some(false));
+}
