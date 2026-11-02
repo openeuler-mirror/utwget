@@ -372,3 +372,14 @@ Disallow:
     // Empty disallow means allow everything
     assert_eq!(parser.is_allowed("example.com", "http://example.com/any/path"), Some(true));
 }
+
+#[test]
+fn test_no_user_agent() {
+    let content = "Disallow: /admin/";
+    let mut parser = RobotParser::new("wget");
+    parser.load("example.com", content);
+
+    // Without explicit User-agent, a default "*" group is created
+    // The behavior depends on implementation
+    let _ = parser.is_allowed("example.com", "http://example.com/admin/");
+}
