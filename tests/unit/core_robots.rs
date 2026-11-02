@@ -243,3 +243,12 @@ Crawl-delay: 5
 
     assert_eq!(parser.crawl_delay("example.com"), Some(10.0));
 }
+
+#[test]
+fn test_crawl_delay_not_set() {
+    let content = "User-agent: *\nDisallow:";
+    let mut parser = RobotParser::new("wget");
+    parser.load("example.com", content);
+
+    assert_eq!(parser.crawl_delay("example.com"), None);
+}
