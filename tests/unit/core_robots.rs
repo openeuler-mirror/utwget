@@ -320,3 +320,13 @@ fn test_multiple_hosts() {
     assert_eq!(parser.is_allowed("host2.com", "http://host2.com/secret/file"), Some(false));
     assert_eq!(parser.is_allowed("host2.com", "http://host2.com/private/file"), Some(true));
 }
+
+#[test]
+fn test_host_case_insensitive() {
+    let content = "User-agent: *\nDisallow: /private/";
+    let mut parser = RobotParser::new("wget");
+    parser.load("Example.COM", content);
+
+    assert_eq!(parser.is_allowed("example.com", "http://example.com/private/file"), Some(false));
+    assert_eq!(parser.is_allowed("EXAMPLE.COM", "http://example.com/private/file"), Some(false));
+}
