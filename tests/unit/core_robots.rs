@@ -330,3 +330,21 @@ fn test_host_case_insensitive() {
     assert_eq!(parser.is_allowed("example.com", "http://example.com/private/file"), Some(false));
     assert_eq!(parser.is_allowed("EXAMPLE.COM", "http://example.com/private/file"), Some(false));
 }
+
+// ============================================================================
+// Comments Tests
+// ============================================================================
+
+#[test]
+fn test_comments() {
+    let content = r#"
+# This is a comment
+User-agent: *
+# Another comment
+Disallow: /admin/
+"#;
+    let mut parser = RobotParser::new("wget");
+    parser.load("example.com", content);
+
+    assert_eq!(parser.is_allowed("example.com", "http://example.com/admin/file"), Some(false));
+}
