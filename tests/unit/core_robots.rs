@@ -405,3 +405,20 @@ Disallow: /admin/
     assert_eq!(parser.is_allowed("example.com", "http://example.com/admin/"), Some(true));
     assert_eq!(parser.is_allowed("example.com", "http://example.com/search/"), Some(false));
 }
+
+#[test]
+fn test_longest_rule_wins() {
+    let content = r#"
+User-agent: *
+Disallow: /a/
+Disallow: /a/b/
+Allow: /a/b/c/
+"#;
+    let mut parser = RobotParser::new("wget");
+    parser.load("example.com", content);
+
+    // Most specific (longest) rule should win
+    assert_eq!(parser.is_allowed("example.com", "http://example.com/a/x"), Some(false));
+    assert_eq!(parser.is_allowed("example.com", "http://example.com/a/b/x"), Some(false));
+    assert_eq!(parser.is_allowed("example.com", "http://example.com/a/b/c/x"), Some(true));
+}
