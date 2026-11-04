@@ -274,3 +274,100 @@ fn test_encode_decode_roundtrip() {
     let decoded = decode_iri(&encoded);
     assert_eq!(decoded, original);
 }
+
+// ============================================================================
+// URL Display Tests
+// ============================================================================
+
+#[test]
+fn test_url_display_simple() {
+    let url = ParsedUrl::parse("http://example.com/path").unwrap();
+    assert_eq!(url.to_string(), "http://example.com/path#");
+}
+
+#[test]
+fn test_url_display_with_port() {
+    let url = ParsedUrl::parse("http://example.com:8080/path").unwrap();
+    assert_eq!(url.to_string(), "http://example.com:8080/path#");
+}
+
+#[test]
+fn test_url_display_default_port_omitted() {
+    let url = ParsedUrl::parse("http://example.com:80/path").unwrap();
+    // Default port should be omitted
+    assert_eq!(url.to_string(), "http://example.com/path#");
+}
+
+#[test]
+fn test_url_display_with_query() {
+    let url = ParsedUrl::parse("http://example.com/path?q=1").unwrap();
+    assert_eq!(url.to_string(), "http://example.com/path?q=1");
+}
+
+#[test]
+fn test_url_display_with_fragment() {
+    let url = ParsedUrl::parse("http://example.com/path#frag").unwrap();
+    assert_eq!(url.to_string(), "http://example.com/path#frag");
+}
+
+#[test]
+fn test_url_display_with_user_info() {
+    let url = ParsedUrl::parse("http://user:pass@example.com/path").unwrap();
+    assert_eq!(url.to_string(), "http://user:pass@example.com/path#");
+}
+
+// ============================================================================
+// Full Path Tests
+// ============================================================================
+
+#[test]
+fn test_full_path_simple() {
+    let url = ParsedUrl::parse("http://example.com/path").unwrap();
+    assert_eq!(url.full_path(), "/path");
+}
+
+#[test]
+fn test_full_path_with_query() {
+    let url = ParsedUrl::parse("http://example.com/path?q=1").unwrap();
+    assert_eq!(url.full_path(), "/path?q=1");
+}
+
+#[test]
+fn test_full_path_with_params() {
+    let url = ParsedUrl::parse("http://example.com/path;params").unwrap();
+    assert_eq!(url.full_path(), "/path;params");
+}
+
+#[test]
+fn test_full_path_with_params_and_query() {
+    let url = ParsedUrl::parse("http://example.com/path;params?q=1").unwrap();
+    assert_eq!(url.full_path(), "/path;params?q=1");
+}
+
+// ============================================================================
+// Error Cases
+// ============================================================================
+
+#[test]
+fn test_parse_missing_scheme() {
+    let result = ParsedUrl::parse("example.com/path");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_unsupported_scheme() {
+    let result = ParsedUrl::parse("gopher://example.com/path");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_empty_host() {
+    let result = ParsedUrl::parse("http:///path");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_invalid_port() {
+    let result = ParsedUrl::parse("http://example.com:abc/path");
+    assert!(result.is_err());
+}
