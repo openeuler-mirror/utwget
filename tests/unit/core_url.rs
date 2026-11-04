@@ -24,3 +24,12 @@ fn test_parse_https_url() {
     assert_eq!(url.port, 443);
     assert_eq!(url.path, "/path");
 }
+
+#[test]
+fn test_parse_ftp_url() {
+    let url = ParsedUrl::parse("ftp://ftp.example.com/files/file.txt").unwrap();
+    assert_eq!(url.scheme, Scheme::Ftp);
+    assert_eq!(url.host, "ftp.example.com");
+    assert_eq!(url.port, 21);
+    assert_eq!(url.path, "/files/file.txt");
+}
