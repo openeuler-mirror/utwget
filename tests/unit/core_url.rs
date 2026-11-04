@@ -158,3 +158,12 @@ fn test_merge_scheme_relative() {
     assert_eq!(merged.host, "other.com");
     assert_eq!(merged.scheme, Scheme::Http);
 }
+
+#[test]
+fn test_merge_absolute_url() {
+    let base = ParsedUrl::parse("http://example.com/path").unwrap();
+    let merged = base.merge("https://other.com/page").unwrap();
+    assert_eq!(merged.scheme, Scheme::Https);
+    assert_eq!(merged.host, "other.com");
+    assert_eq!(merged.path, "/page");
+}
