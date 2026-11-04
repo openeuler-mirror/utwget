@@ -95,3 +95,9 @@ fn test_parse_url_root() {
     assert_eq!(url.dir, "/");
     assert_eq!(url.file, "");
 }
+
+#[test]
+fn test_parse_url_no_path() {
+    let url = ParsedUrl::parse("http://example.com").unwrap();
+    assert_eq!(url.path, "/");
+}
