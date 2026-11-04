@@ -175,3 +175,10 @@ fn test_merge_query_string() {
     assert_eq!(merged.path, "/page");
     assert_eq!(merged.query.as_deref(), Some("key=value"));
 }
+
+#[test]
+fn test_merge_fragment() {
+    let base = ParsedUrl::parse("http://example.com/page").unwrap();
+    let merged = base.merge("#section").unwrap();
+    assert_eq!(merged.fragment.as_deref(), Some("section"));
+}
