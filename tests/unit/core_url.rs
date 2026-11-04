@@ -196,3 +196,14 @@ fn test_merge_from_directory() {
     let merged = base.merge("file.html").unwrap();
     assert_eq!(merged.path, "/dir/file.html");
 }
+
+// ============================================================================
+// Filename Generation Tests
+// ============================================================================
+
+#[test]
+fn test_to_filename_simple() {
+    let url = ParsedUrl::parse("http://example.com/file.txt").unwrap();
+    let filename = url.to_filename(true);
+    assert_eq!(filename.to_str().unwrap(), "file.txt");
+}
