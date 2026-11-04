@@ -109,3 +109,10 @@ fn test_parse_url_deep_path() {
     assert_eq!(url.dir, "/a/b/c/d/");
     assert_eq!(url.file, "file.txt");
 }
+
+#[test]
+fn test_parse_ipv6_url() {
+    let url = ParsedUrl::parse("http://[::1]:8080/path").unwrap();
+    assert_eq!(url.host, "::1");
+    assert_eq!(url.port, 8080);
+}
