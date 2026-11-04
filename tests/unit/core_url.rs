@@ -101,3 +101,11 @@ fn test_parse_url_no_path() {
     let url = ParsedUrl::parse("http://example.com").unwrap();
     assert_eq!(url.path, "/");
 }
+
+#[test]
+fn test_parse_url_deep_path() {
+    let url = ParsedUrl::parse("http://example.com/a/b/c/d/file.txt").unwrap();
+    assert_eq!(url.path, "/a/b/c/d/file.txt");
+    assert_eq!(url.dir, "/a/b/c/d/");
+    assert_eq!(url.file, "file.txt");
+}
