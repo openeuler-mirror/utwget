@@ -189,3 +189,10 @@ fn test_merge_parent_directory() {
     let merged = base.merge("../other.html").unwrap();
     assert_eq!(merged.path, "/a/b/c/../other.html");
 }
+
+#[test]
+fn test_merge_from_directory() {
+    let base = ParsedUrl::parse("http://example.com/dir/").unwrap();
+    let merged = base.merge("file.html").unwrap();
+    assert_eq!(merged.path, "/dir/file.html");
+}
