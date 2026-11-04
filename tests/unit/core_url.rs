@@ -50,3 +50,10 @@ fn test_parse_url_with_port() {
     assert_eq!(url.host, "example.com");
     assert_eq!(url.port, 8080);
 }
+
+#[test]
+fn test_parse_url_with_query() {
+    let url = ParsedUrl::parse("http://example.com/path?key=value&foo=bar").unwrap();
+    assert_eq!(url.path, "/path");
+    assert_eq!(url.query.as_deref(), Some("key=value&foo=bar"));
+}
