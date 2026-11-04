@@ -80,3 +80,10 @@ fn test_parse_url_with_user_info() {
     assert_eq!(url.password.as_deref(), Some("pass"));
     assert_eq!(url.host, "example.com");
 }
+
+#[test]
+fn test_parse_url_with_user_only() {
+    let url = ParsedUrl::parse("ftp://user@ftp.example.com/").unwrap();
+    assert_eq!(url.user.as_deref(), Some("user"));
+    assert_eq!(url.password, None);
+}
