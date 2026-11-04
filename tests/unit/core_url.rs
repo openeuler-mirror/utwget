@@ -131,3 +131,15 @@ fn test_parse_url_with_params() {
     assert_eq!(url.params.as_deref(), Some("params"));
     assert_eq!(url.query.as_deref(), Some("query"));
 }
+
+// ============================================================================
+// URL Merge Tests
+// ============================================================================
+
+#[test]
+fn test_merge_relative_path() {
+    let base = ParsedUrl::parse("http://example.com/dir/page.html").unwrap();
+    let merged = base.merge("other.html").unwrap();
+    assert_eq!(merged.path, "/dir/other.html");
+    assert_eq!(merged.host, "example.com");
+}
