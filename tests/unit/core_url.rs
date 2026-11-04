@@ -116,3 +116,10 @@ fn test_parse_ipv6_url() {
     assert_eq!(url.host, "::1");
     assert_eq!(url.port, 8080);
 }
+
+#[test]
+fn test_parse_ipv6_url_no_port() {
+    let url = ParsedUrl::parse("http://[2001:db8::1]/path").unwrap();
+    assert_eq!(url.host, "2001:db8::1");
+    assert_eq!(url.port, 80);
+}
