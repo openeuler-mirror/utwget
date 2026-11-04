@@ -182,3 +182,10 @@ fn test_merge_fragment() {
     let merged = base.merge("#section").unwrap();
     assert_eq!(merged.fragment.as_deref(), Some("section"));
 }
+
+#[test]
+fn test_merge_parent_directory() {
+    let base = ParsedUrl::parse("http://example.com/a/b/c/page.html").unwrap();
+    let merged = base.merge("../other.html").unwrap();
+    assert_eq!(merged.path, "/a/b/c/../other.html");
+}
