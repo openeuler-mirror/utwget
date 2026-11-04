@@ -57,3 +57,10 @@ fn test_parse_url_with_query() {
     assert_eq!(url.path, "/path");
     assert_eq!(url.query.as_deref(), Some("key=value&foo=bar"));
 }
+
+#[test]
+fn test_parse_url_with_fragment() {
+    let url = ParsedUrl::parse("http://example.com/path#section").unwrap();
+    assert_eq!(url.path, "/path");
+    assert_eq!(url.fragment.as_deref(), Some("section"));
+}
