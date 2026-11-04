@@ -143,3 +143,10 @@ fn test_merge_relative_path() {
     assert_eq!(merged.path, "/dir/other.html");
     assert_eq!(merged.host, "example.com");
 }
+
+#[test]
+fn test_merge_absolute_path() {
+    let base = ParsedUrl::parse("http://example.com/dir/page.html").unwrap();
+    let merged = base.merge("/other/path").unwrap();
+    assert_eq!(merged.path, "/other/path");
+}
