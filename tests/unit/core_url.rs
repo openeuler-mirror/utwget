@@ -207,3 +207,10 @@ fn test_to_filename_simple() {
     let filename = url.to_filename(true);
     assert_eq!(filename.to_str().unwrap(), "file.txt");
 }
+
+#[test]
+fn test_to_filename_default_index() {
+    let url = ParsedUrl::parse("http://example.com/").unwrap();
+    let filename = url.to_filename(true);
+    assert_eq!(filename.to_str().unwrap(), "index.html");
+}
