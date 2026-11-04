@@ -123,3 +123,11 @@ fn test_parse_ipv6_url_no_port() {
     assert_eq!(url.host, "2001:db8::1");
     assert_eq!(url.port, 80);
 }
+
+#[test]
+fn test_parse_url_with_params() {
+    let url = ParsedUrl::parse("http://example.com/path;params?query").unwrap();
+    assert_eq!(url.path, "/path");
+    assert_eq!(url.params.as_deref(), Some("params"));
+    assert_eq!(url.query.as_deref(), Some("query"));
+}
