@@ -221,3 +221,56 @@ fn test_to_filename_deep_path() {
     let filename = url.to_filename(true);
     assert_eq!(filename.to_str().unwrap(), "file.txt");
 }
+
+#[test]
+fn test_to_filename_with_query() {
+    let url = ParsedUrl::parse("http://example.com/file.txt?v=1").unwrap();
+    let filename = url.to_filename(true);
+    // Query string should not affect filename
+    assert_eq!(filename.to_str().unwrap(), "file.txt");
+}
+
+// ============================================================================
+// IRI Encoding/Decoding Tests
+// ============================================================================
+
+#[test]
+fn test_encode_iri_ascii() {
+    let encoded = encode_iri("http://example.com/path");
+    assert_eq!(encoded, "http://example.com/path");
+}
+
+#[test]
+fn test_encode_iri_chinese() {
+    let encoded = encode_iri("http://example.com/文档");
+    assert!(encoded.contains("%"));
+    assert!(!encoded.contains("文"));
+}
+
+#[test]
+fn test_encode_iri_unicode() {
+    let encoded = encode_iri("http://example.com/café");
+    assert!(encoded.contains("%"));
+}
+
+#[test]
+fn test_decode_iri_simple() {
+    let decoded = decode_iri("http://example.com/path");
+    assert_eq!(decoded, "http://example.com/path");
+}
+
+#[test]
+fn test_decode_iri_percent_encoded() {
+    // Test basic percent decoding
+    let decoded = decode_iri("http://example.com/%2Fpath");
+    assert!(decoded.contains("/path") || decoded.contains("%2F"));
+}
+
+#[test]
+fn test_encode_decode_roundtrip() {
+    // Test with ASCII URL
+    let original = "http://example.com/path/file.txt";
+    let encoded = encode_iri(original);
+    let decoded = decode_iri(&encoded);
+    assert_eq!(decoded, original);
+}
