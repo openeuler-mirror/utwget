@@ -150,3 +150,11 @@ fn test_merge_absolute_path() {
     let merged = base.merge("/other/path").unwrap();
     assert_eq!(merged.path, "/other/path");
 }
+
+#[test]
+fn test_merge_scheme_relative() {
+    let base = ParsedUrl::parse("http://example.com/path").unwrap();
+    let merged = base.merge("//other.com/page").unwrap();
+    assert_eq!(merged.host, "other.com");
+    assert_eq!(merged.scheme, Scheme::Http);
+}
