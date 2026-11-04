@@ -72,3 +72,11 @@ fn test_parse_url_with_query_and_fragment() {
     assert_eq!(url.query.as_deref(), Some("q=1"));
     assert_eq!(url.fragment.as_deref(), Some("frag"));
 }
+
+#[test]
+fn test_parse_url_with_user_info() {
+    let url = ParsedUrl::parse("https://user:pass@example.com/path").unwrap();
+    assert_eq!(url.user.as_deref(), Some("user"));
+    assert_eq!(url.password.as_deref(), Some("pass"));
+    assert_eq!(url.host, "example.com");
+}
