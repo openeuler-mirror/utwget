@@ -33,3 +33,12 @@ fn test_parse_ftp_url() {
     assert_eq!(url.port, 21);
     assert_eq!(url.path, "/files/file.txt");
 }
+
+#[test]
+fn test_parse_ftps_url() {
+    let url = ParsedUrl::parse("ftps://secure.example.com/files/file.txt").unwrap();
+    assert_eq!(url.scheme, Scheme::Ftps);
+    assert_eq!(url.host, "secure.example.com");
+    assert_eq!(url.port, 990);
+    assert_eq!(url.path, "/files/file.txt");
+}
