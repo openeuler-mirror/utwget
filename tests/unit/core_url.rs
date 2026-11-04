@@ -87,3 +87,11 @@ fn test_parse_url_with_user_only() {
     assert_eq!(url.user.as_deref(), Some("user"));
     assert_eq!(url.password, None);
 }
+
+#[test]
+fn test_parse_url_root() {
+    let url = ParsedUrl::parse("http://example.com/").unwrap();
+    assert_eq!(url.path, "/");
+    assert_eq!(url.dir, "/");
+    assert_eq!(url.file, "");
+}
