@@ -167,3 +167,11 @@ fn test_merge_absolute_url() {
     assert_eq!(merged.host, "other.com");
     assert_eq!(merged.path, "/page");
 }
+
+#[test]
+fn test_merge_query_string() {
+    let base = ParsedUrl::parse("http://example.com/page").unwrap();
+    let merged = base.merge("?key=value").unwrap();
+    assert_eq!(merged.path, "/page");
+    assert_eq!(merged.query.as_deref(), Some("key=value"));
+}
