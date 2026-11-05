@@ -330,3 +330,56 @@ fn test_header_map_set_cookies() {
     let cookies = hm.set_cookies();
     assert_eq!(cookies.len(), 2);
 }
+
+#[test]
+fn test_header_map_www_authenticate() {
+    let mut hm = HeaderMap::new();
+    hm.insert("WWW-Authenticate", "Basic realm=\"test\"");
+    hm.insert("WWW-Authenticate", "Bearer realm=\"api\"");
+
+    let auth = hm.www_authenticate();
+    assert_eq!(auth.len(), 2);
+}
+
+#[test]
+fn test_header_map_content_disposition() {
+    let mut hm = HeaderMap::new();
+    hm.insert("Content-Disposition", "attachment; filename=\"test.txt\"");
+
+    assert_eq!(hm.content_disposition(), Some("attachment; filename=\"test.txt\""));
+}
+
+// =============================================================================
+// Response Parsing Tests
+// =============================================================================
+
+#[test]
+fn test_parse_response_head_simple() {
+    let raw = b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n";
+    let resp = parse_response_head(raw).unwrap();
+
+    assert_eq!(resp.version, "HTTP/1.1");
+    assert_eq!(resp.status_code, 200);
+    assert_eq!(resp.reason, "OK");
+    assert_eq!(resp.headers.get("Content-Type"), Some("text/html"));
+}
+
+#[test]
+fn test_parse_response_head_with_body() {
+    let raw = b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello";
+    let resp = parse_response_head(raw).unwrap();
+
+    assert_eq!(resp.status_code, 200);
+    assert_eq!(resp.headers.content_length(), Some(5));
+}
+
+#[test]
+fn test_parse_response_head_multiple_headers() {
+    let raw = b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 123\r\nServer: nginx\r\nConnection: keep-alive\r\n\r\n";
+    let resp = parse_response_head(raw).unwrap();
+
+    assert_eq!(resp.headers.get("Content-Type"), Some("text/html"));
+    assert_eq!(resp.headers.content_length(), Some(123));
+    assert_eq!(resp.headers.server(), Some("nginx"));
+    assert_eq!(resp.headers.get("Connection"), Some("keep-alive"));
+}
