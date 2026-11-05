@@ -51,3 +51,56 @@ fn test_safe_filename_unicode() {
     assert_eq!(safe_filename("文件.txt"), "文件.txt");
     assert_eq!(safe_filename("файл.txt"), "файл.txt");
 }
+
+#[test]
+fn test_safe_filename_empty() {
+    assert_eq!(safe_filename(""), "");
+}
+
+#[test]
+fn test_safe_filename_control_chars() {
+    // Control characters should be escaped
+    let result = safe_filename("file\x01name.txt");
+    assert!(result.contains("\\x"));
+}
+
+// ============================================================================
+// safe_filename_with_restrictions Tests
+// ============================================================================
+
+#[test]
+fn test_safe_filename_restrictions_unix() {
+    let result = safe_filename_with_restrictions(
+        "file.txt",
+        RestrictOs::Unix,
+        false,
+        false,
+        CaseRestriction::None,
+    );
+    assert_eq!(result, "file.txt");
+}
+
+#[test]
+fn test_safe_filename_restrictions_windows() {
+    let result = safe_filename_with_restrictions(
+        "file<name>.txt",
+        RestrictOs::Windows,
+        false,
+        false,
+        CaseRestriction::None,
+    );
+    // < is forbidden on Windows
+    assert_eq!(result, "file_name_.txt");
+}
+
+#[test]
+fn test_safe_filename_restrictions_lowercase() {
+    let result = safe_filename_with_restrictions(
+        "FILE.TXT",
+        RestrictOs::Unix,
+        false,
+        false,
+        CaseRestriction::Lowercase,
+    );
+    assert_eq!(result, "file.txt");
+}
