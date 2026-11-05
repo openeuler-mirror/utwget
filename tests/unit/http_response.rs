@@ -115,3 +115,55 @@ fn test_is_server_error() {
     let resp = HttpResponse::new("HTTP/1.1".into(), 404, "Not Found".into());
     assert!(!resp.is_server_error());
 }
+
+#[test]
+fn test_not_modified() {
+    let resp = HttpResponse::new("HTTP/1.1".into(), 304, "Not Modified".into());
+    assert!(resp.not_modified());
+
+    let resp = HttpResponse::new("HTTP/1.1".into(), 200, "OK".into());
+    assert!(!resp.not_modified());
+}
+
+// =============================================================================
+// HeaderMap Tests
+// =============================================================================
+
+#[test]
+fn test_header_map_new() {
+    let hm = HeaderMap::new();
+    assert!(hm.get("Content-Type").is_none());
+}
+
+#[test]
+fn test_header_map_insert() {
+    let mut hm = HeaderMap::new();
+    hm.insert("Content-Type", "text/html");
+    hm.insert("Content-Length", "123");
+
+    assert!(hm.get("Content-Type").is_some());
+    assert!(hm.get("Content-Length").is_some());
+}
+
+#[test]
+fn test_header_map_get() {
+    let mut hm = HeaderMap::new();
+    hm.insert("Content-Type", "text/html");
+
+    assert_eq!(hm.get("Content-Type"), Some("text/html"));
+    assert_eq!(hm.get("content-type"), Some("text/html")); // case-insensitive
+    assert_eq!(hm.get("CONTENT-TYPE"), Some("text/html"));
+    assert_eq!(hm.get("Nonexistent"), None);
+}
+
+#[test]
+fn test_header_map_get_all() {
+    let mut hm = HeaderMap::new();
+    hm.insert("Set-Cookie", "a=1");
+    hm.insert("Set-Cookie", "b=2");
+    hm.insert("Set-Cookie", "c=3");
+
+    let all = hm.get_all("Set-Cookie");
+    assert_eq!(all.len(), 3);
+    assert_eq!(all, vec!["a=1", "b=2", "c=3"]);
+}
