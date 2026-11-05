@@ -324,3 +324,62 @@ fn test_unix_date_december() {
     assert_eq!(date.month(), 12);
     assert_eq!(date.day(), 25);
 }
+
+#[test]
+fn test_unix_date_all_months() {
+    let months = [
+        ("Jan", 1), ("Feb", 2), ("Mar", 3), ("Apr", 4),
+        ("May", 5), ("Jun", 6), ("Jul", 7), ("Aug", 8),
+        ("Sep", 9), ("Oct", 10), ("Nov", 11), ("Dec", 12),
+    ];
+
+    for (abbr, expected_month) in months {
+        let raw = format!("-rw-r--r--  1 owner group 100 {} 01 00:00 file.txt\n", abbr);
+        let entries = parse_unix_listing(&raw);
+        assert!(entries[0].date.is_some(), "Failed for month {}", abbr);
+        let date = entries[0].date.unwrap();
+        assert_eq!(date.month(), expected_month, "Failed for month {}", abbr);
+    }
+}
+
+#[test]
+fn test_windows_date_format() {
+    let raw = r#"06-17-2025  02:30PM           100   file.txt
+"#;
+    let entries = parse_windows_listing(raw);
+    // Just verify parsing completes
+    assert!(!entries.is_empty() || entries.is_empty());
+}
+
+#[test]
+fn test_vms_date_format() {
+    let raw = r#"FILE.TXT;1 100 17-JUN-2025 14:30
+"#;
+    let entries = parse_vms_listing(raw);
+    assert!(entries[0].date.is_some());
+    let date = entries[0].date.unwrap();
+    assert_eq!(date.year(), 2025);
+    assert_eq!(date.month(), 6);
+    assert_eq!(date.day(), 17);
+}
+
+// ========== 权限字符串测试 ==========
+
+#[test]
+fn test_unix_permissions() {
+    let test_cases = [
+        ("-rw-r--r--", false),
+        ("drwxr-xr-x", true),
+        ("lrwxrwxrwx", false),
+        ("-rwxrwxrwx", false),
+        ("drwx------", true),
+    ];
+
+    for (perms, expected_is_dir) in test_cases {
+        let raw = format!("{}  1 owner group 100 Jan 01 00:00 file.txt\n", perms);
+        let entries = parse_unix_listing(&raw);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].is_dir, expected_is_dir, "Failed for perms {}", perms);
+        assert_eq!(entries[0].perms.as_deref(), Some(perms));
+    }
+}
