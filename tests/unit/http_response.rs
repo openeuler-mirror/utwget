@@ -52,3 +52,66 @@ fn test_is_informational() {
     let resp = HttpResponse::new("HTTP/1.1".into(), 200, "OK".into());
     assert!(!resp.is_informational());
 }
+
+#[test]
+fn test_is_success() {
+    let resp = HttpResponse::new("HTTP/1.1".into(), 200, "OK".into());
+    assert!(resp.is_success());
+
+    let resp = HttpResponse::new("HTTP/1.1".into(), 201, "Created".into());
+    assert!(resp.is_success());
+
+    let resp = HttpResponse::new("HTTP/1.1".into(), 204, "No Content".into());
+    assert!(resp.is_success());
+
+    let resp = HttpResponse::new("HTTP/1.1".into(), 301, "Moved".into());
+    assert!(!resp.is_success());
+}
+
+#[test]
+fn test_is_redirect() {
+    let resp = HttpResponse::new("HTTP/1.1".into(), 301, "Moved Permanently".into());
+    assert!(resp.is_redirect());
+
+    let resp = HttpResponse::new("HTTP/1.1".into(), 302, "Found".into());
+    assert!(resp.is_redirect());
+
+    let resp = HttpResponse::new("HTTP/1.1".into(), 304, "Not Modified".into());
+    assert!(resp.is_redirect());
+
+    let resp = HttpResponse::new("HTTP/1.1".into(), 200, "OK".into());
+    assert!(!resp.is_redirect());
+}
+
+#[test]
+fn test_is_client_error() {
+    let resp = HttpResponse::new("HTTP/1.1".into(), 400, "Bad Request".into());
+    assert!(resp.is_client_error());
+
+    let resp = HttpResponse::new("HTTP/1.1".into(), 401, "Unauthorized".into());
+    assert!(resp.is_client_error());
+
+    let resp = HttpResponse::new("HTTP/1.1".into(), 403, "Forbidden".into());
+    assert!(resp.is_client_error());
+
+    let resp = HttpResponse::new("HTTP/1.1".into(), 404, "Not Found".into());
+    assert!(resp.is_client_error());
+
+    let resp = HttpResponse::new("HTTP/1.1".into(), 500, "Error".into());
+    assert!(!resp.is_client_error());
+}
+
+#[test]
+fn test_is_server_error() {
+    let resp = HttpResponse::new("HTTP/1.1".into(), 500, "Internal Server Error".into());
+    assert!(resp.is_server_error());
+
+    let resp = HttpResponse::new("HTTP/1.1".into(), 502, "Bad Gateway".into());
+    assert!(resp.is_server_error());
+
+    let resp = HttpResponse::new("HTTP/1.1".into(), 503, "Service Unavailable".into());
+    assert!(resp.is_server_error());
+
+    let resp = HttpResponse::new("HTTP/1.1".into(), 404, "Not Found".into());
+    assert!(!resp.is_server_error());
+}
