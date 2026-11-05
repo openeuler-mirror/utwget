@@ -383,3 +383,57 @@ fn test_parse_response_head_multiple_headers() {
     assert_eq!(resp.headers.server(), Some("nginx"));
     assert_eq!(resp.headers.get("Connection"), Some("keep-alive"));
 }
+
+#[test]
+fn test_parse_response_head_404() {
+    let raw = b"HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\n\r\n";
+    let resp = parse_response_head(raw).unwrap();
+
+    assert_eq!(resp.status_code, 404);
+    assert!(resp.is_client_error());
+}
+
+#[test]
+fn test_parse_response_head_redirect() {
+    let raw = b"HTTP/1.1 301 Moved Permanently\r\nLocation: http://example.com/new\r\n\r\n";
+    let resp = parse_response_head(raw).unwrap();
+
+    assert_eq!(resp.status_code, 301);
+    assert!(resp.is_redirect());
+    assert_eq!(resp.location(), Some("http://example.com/new"));
+}
+
+#[test]
+fn test_parse_response_head_chunked() {
+    let raw = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nContent-Type: text/plain\r\n\r\n";
+    let resp = parse_response_head(raw).unwrap();
+
+    assert!(resp.is_chunked());
+}
+
+#[test]
+fn test_parse_response_head_http10() {
+    let raw = b"HTTP/1.0 200 OK\r\nContent-Length: 0\r\n\r\n";
+    let resp = parse_response_head(raw).unwrap();
+
+    assert_eq!(resp.version, "HTTP/1.0");
+}
+
+#[test]
+fn test_parse_response_head_with_cookies() {
+    let raw = b"HTTP/1.1 200 OK\r\nSet-Cookie: session=abc\r\nSet-Cookie: user=john\r\n\r\n";
+    let resp = parse_response_head(raw).unwrap();
+
+    let cookies = resp.headers.set_cookies();
+    assert_eq!(cookies.len(), 2);
+}
+
+// =============================================================================
+// Find Header End Tests
+// =============================================================================
+
+#[test]
+fn test_find_header_end_simple() {
+    let data = b"HTTP/1.1 200 OK\r\n\r\nbody";
+    assert_eq!(find_header_end(data), Some(15));
+}
