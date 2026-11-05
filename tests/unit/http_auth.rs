@@ -358,3 +358,53 @@ mod digest_tests {
         assert!(header.starts_with("Digest "));
         assert!(header.contains("algorithm=SHA-256"));
     }
+
+    #[test]
+    fn test_digest_auth_no_qop() {
+        let mut auth = DigestAuthenticator::new();
+        let mut challenge = make_digest_challenge("test", "nonce123", None, "MD5");
+        challenge.qop = None;
+        let creds = make_credentials("user", "pass");
+
+        let result = auth.authenticate(&challenge, &creds, "GET", "/", None).unwrap();
+        assert!(result.is_some());
+
+        let header = result.unwrap();
+        assert!(header.starts_with("Digest "));
+        // Without qop, nc and cnonce should not be present
+        assert!(!header.contains("nc="));
+    }
+
+    #[test]
+    fn test_digest_missing_nonce() {
+        let mut auth = DigestAuthenticator::new();
+        let challenge = AuthChallenge {
+            scheme: AuthScheme::Digest,
+            realm: Some("test".to_string()),
+            nonce: None,
+            opaque: None,
+            qop: None,
+            algorithm: None,
+            charset: None,
+            userhash: None,
+            stale: None,
+            domain: None,
+            ntlm_type2_msg: None,
+        };
+        let creds = make_credentials("user", "pass");
+
+        let result = auth.authenticate(&challenge, &creds, "GET", "/", None);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), AuthError::MissingNonce));
+    }
+
+    #[test]
+    fn test_digest_unsupported_algorithm() {
+        let mut auth = DigestAuthenticator::new();
+        let challenge = make_digest_challenge("r", "n", Some("auth"), "SHA-512");
+        let creds = make_credentials("user", "pass");
+
+        let result = auth.authenticate(&challenge, &creds, "GET", "/", None);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), AuthError::AlgorithmUnsupported(_)));
+    }
