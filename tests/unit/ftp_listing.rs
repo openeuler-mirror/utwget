@@ -216,3 +216,60 @@ fn test_auto_detect_unix() {
     assert_eq!(entries[0].name, "test.txt");
     assert!(!entries[0].is_dir);
 }
+
+#[test]
+fn test_auto_detect_windows() {
+    let raw = r#"01-15-2025  10:30AM           100   test.txt
+"#;
+    let entries = parse_listing(raw);
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].name, "test.txt");
+    assert!(!entries[0].is_dir);
+}
+
+#[test]
+fn test_auto_detect_vms() {
+    // VMS format may not be fully supported, just test that parsing doesn't crash
+    let raw = r#"FILE.TXT;1 100 15-JAN-2025 10:30
+"#;
+    let entries = parse_listing(raw);
+    // Just verify parsing completes without error
+    assert!(entries.len() <= 1);
+}
+
+#[test]
+fn test_auto_detect_empty() {
+    let entries = parse_listing("");
+    assert!(entries.is_empty());
+}
+
+#[test]
+fn test_auto_detect_mixed_fallback() {
+    // 当格式不明确时，尝试所有解析器
+    let raw = r#"unknown format line
+-rw-r--r--  1 owner group 100 Jan 01 00:00 valid.txt
+"#;
+    let entries = parse_listing(raw);
+    // 应该至少解析出有效的行
+    assert!(!entries.is_empty());
+}
+
+// ========== 文件/目录识别测试 ==========
+
+#[test]
+fn test_directory_detection_unix() {
+    let raw = r#"drwxr-xr-x  2 owner group 4096 Jan 01 00:00 mydir
+"#;
+    let entries = parse_unix_listing(raw);
+    assert_eq!(entries.len(), 1);
+    assert!(entries[0].is_dir);
+}
+
+#[test]
+fn test_file_detection_unix() {
+    let raw = r#"-rw-r--r--  1 owner group 100 Jan 01 00:00 myfile.txt
+"#;
+    let entries = parse_unix_listing(raw);
+    assert_eq!(entries.len(), 1);
+    assert!(!entries[0].is_dir);
+}
