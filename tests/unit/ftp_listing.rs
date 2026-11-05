@@ -273,3 +273,54 @@ fn test_file_detection_unix() {
     assert_eq!(entries.len(), 1);
     assert!(!entries[0].is_dir);
 }
+
+#[test]
+fn test_directory_detection_windows() {
+    let raw = r#"01-15-2025  10:30AM       <DIR>          mydir
+"#;
+    let entries = parse_windows_listing(raw);
+    assert_eq!(entries.len(), 1);
+    assert!(entries[0].is_dir);
+}
+
+#[test]
+fn test_file_detection_windows() {
+    let raw = r#"01-15-2025  10:30AM           100   myfile.txt
+"#;
+    let entries = parse_windows_listing(raw);
+    assert_eq!(entries.len(), 1);
+    assert!(!entries[0].is_dir);
+}
+
+#[test]
+fn test_directory_detection_vms() {
+    let raw = r#"MYDIR.DIR;1 512 15-JAN-2025 10:30
+"#;
+    let entries = parse_vms_listing(raw);
+    assert_eq!(entries.len(), 1);
+    assert!(entries[0].is_dir);
+}
+
+// ========== 日期解析测试 ==========
+
+#[test]
+fn test_unix_date_january() {
+    let raw = r#"-rw-r--r--  1 owner group 100 Jan 15 10:30 file.txt
+"#;
+    let entries = parse_unix_listing(raw);
+    assert!(entries[0].date.is_some());
+    let date = entries[0].date.unwrap();
+    assert_eq!(date.month(), 1);
+    assert_eq!(date.day(), 15);
+}
+
+#[test]
+fn test_unix_date_december() {
+    let raw = r#"-rw-r--r--  1 owner group 100 Dec 25 12:00 xmas.txt
+"#;
+    let entries = parse_unix_listing(raw);
+    assert!(entries[0].date.is_some());
+    let date = entries[0].date.unwrap();
+    assert_eq!(date.month(), 12);
+    assert_eq!(date.day(), 25);
+}
