@@ -104,3 +104,62 @@ fn test_safe_filename_restrictions_lowercase() {
     );
     assert_eq!(result, "file.txt");
 }
+
+#[test]
+fn test_safe_filename_restrictions_uppercase() {
+    let result = safe_filename_with_restrictions(
+        "file.txt",
+        RestrictOs::Unix,
+        false,
+        false,
+        CaseRestriction::Uppercase,
+    );
+    assert_eq!(result, "FILE.TXT");
+}
+
+#[test]
+fn test_safe_filename_restrictions_ctrl_chars() {
+    let result = safe_filename_with_restrictions(
+        "file\x01name.txt",
+        RestrictOs::Unix,
+        true,
+        false,
+        CaseRestriction::None,
+    );
+    assert!(result.contains("\\x"));
+}
+
+#[test]
+fn test_safe_filename_restrictions_nonascii() {
+    let result = safe_filename_with_restrictions(
+        "文件.txt",
+        RestrictOs::Unix,
+        false,
+        true,
+        CaseRestriction::None,
+    );
+    assert!(result.contains("\\x"));
+}
+
+#[test]
+fn test_safe_filename_restrictions_empty() {
+    let result = safe_filename_with_restrictions(
+        "",
+        RestrictOs::Unix,
+        false,
+        false,
+        CaseRestriction::None,
+    );
+    assert_eq!(result, "_");
+}
+
+// ============================================================================
+// parse_size_string Tests
+// ============================================================================
+
+#[test]
+fn test_parse_size_string_bytes() {
+    assert_eq!(parse_size_string("1024"), Some(1024));
+    assert_eq!(parse_size_string("0"), Some(0));
+    assert_eq!(parse_size_string("1"), Some(1));
+}
