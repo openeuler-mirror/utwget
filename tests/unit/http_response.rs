@@ -280,3 +280,53 @@ fn test_header_map_accept_ranges() {
 
     assert!(!hm.accept_ranges());
 }
+
+#[test]
+fn test_header_map_location() {
+    let mut hm = HeaderMap::new();
+    hm.insert("Location", "http://example.com/new-location");
+
+    assert_eq!(hm.location(), Some("http://example.com/new-location"));
+}
+
+#[test]
+fn test_header_map_etag() {
+    let mut hm = HeaderMap::new();
+    hm.insert("ETag", "\"abc123\"");
+
+    assert_eq!(hm.etag(), Some("\"abc123\""));
+}
+
+#[test]
+fn test_header_map_last_modified() {
+    let mut hm = HeaderMap::new();
+    hm.insert("Last-Modified", "Wed, 21 Oct 2015 07:28:00 GMT");
+
+    assert_eq!(hm.last_modified(), Some("Wed, 21 Oct 2015 07:28:00 GMT"));
+}
+
+#[test]
+fn test_header_map_server() {
+    let mut hm = HeaderMap::new();
+    hm.insert("Server", "nginx/1.18.0");
+
+    assert_eq!(hm.server(), Some("nginx/1.18.0"));
+}
+
+#[test]
+fn test_header_map_retry_after() {
+    let mut hm = HeaderMap::new();
+    hm.insert("Retry-After", "120");
+
+    assert_eq!(hm.retry_after(), Some(120));
+}
+
+#[test]
+fn test_header_map_set_cookies() {
+    let mut hm = HeaderMap::new();
+    hm.insert("Set-Cookie", "session=abc; Path=/");
+    hm.insert("Set-Cookie", "user=john; HttpOnly");
+
+    let cookies = hm.set_cookies();
+    assert_eq!(cookies.len(), 2);
+}
