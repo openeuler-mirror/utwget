@@ -112,3 +112,53 @@ fn test_parse_status_line_404_not_found() {
     assert_eq!(code, 404);
     assert_eq!(reason, "Not Found");
 }
+
+#[test]
+fn test_parse_status_line_500_internal_error() {
+    let (version, code, reason) = parse_status_line("HTTP/1.1 500 Internal Server Error\r\n").unwrap();
+    assert_eq!(version, "HTTP/1.1");
+    assert_eq!(code, 500);
+    assert_eq!(reason, "Internal Server Error");
+}
+
+#[test]
+fn test_parse_status_line_301_moved() {
+    let (version, code, reason) = parse_status_line("HTTP/1.1 301 Moved Permanently\r\n").unwrap();
+    assert_eq!(version, "HTTP/1.1");
+    assert_eq!(code, 301);
+    assert_eq!(reason, "Moved Permanently");
+}
+
+#[test]
+fn test_parse_status_line_302_found() {
+    let (version, code, reason) = parse_status_line("HTTP/1.1 302 Found\r\n").unwrap();
+    assert_eq!(version, "HTTP/1.1");
+    assert_eq!(code, 302);
+    assert_eq!(reason, "Found");
+}
+
+#[test]
+fn test_parse_status_line_204_no_content() {
+    let (version, code, reason) = parse_status_line("HTTP/1.1 204 No Content\r\n").unwrap();
+    assert_eq!(version, "HTTP/1.1");
+    assert_eq!(code, 204);
+    assert_eq!(reason, "No Content");
+}
+
+#[test]
+fn test_parse_status_line_100_continue() {
+    let (version, code, reason) = parse_status_line("HTTP/1.1 100 Continue\r\n").unwrap();
+    assert_eq!(version, "HTTP/1.1");
+    assert_eq!(code, 100);
+    assert_eq!(reason, "Continue");
+}
+
+#[test]
+fn test_parse_status_line_invalid_no_space() {
+    assert!(parse_status_line("HTTP/1.1").is_none());
+}
+
+#[test]
+fn test_parse_status_line_invalid_no_code() {
+    assert!(parse_status_line("HTTP/1.1 OK").is_none());
+}
