@@ -167,3 +167,55 @@ fn test_header_map_get_all() {
     assert_eq!(all.len(), 3);
     assert_eq!(all, vec!["a=1", "b=2", "c=3"]);
 }
+
+#[test]
+fn test_header_map_contains() {
+    let mut hm = HeaderMap::new();
+    hm.insert("Content-Type", "text/html");
+
+    assert!(hm.contains("Content-Type"));
+    assert!(hm.contains("content-type"));
+    assert!(!hm.contains("Content-Length"));
+}
+
+#[test]
+fn test_header_map_remove() {
+    let mut hm = HeaderMap::new();
+    hm.insert("Content-Type", "text/html");
+    hm.insert("Content-Length", "123");
+
+    hm.remove("Content-Type");
+
+    assert!(!hm.contains("Content-Type"));
+    assert!(hm.contains("Content-Length"));
+}
+
+#[test]
+fn test_header_map_remove_case_insensitive() {
+    let mut hm = HeaderMap::new();
+    hm.insert("Content-Type", "text/html");
+
+    hm.remove("content-type");
+
+    assert!(!hm.contains("Content-Type"));
+}
+
+// =============================================================================
+// HeaderMap Convenience Methods Tests
+// =============================================================================
+
+#[test]
+fn test_header_map_content_length() {
+    let mut hm = HeaderMap::new();
+    hm.insert("Content-Length", "12345");
+
+    assert_eq!(hm.content_length(), Some(12345));
+}
+
+#[test]
+fn test_header_map_content_length_invalid() {
+    let mut hm = HeaderMap::new();
+    hm.insert("Content-Length", "not-a-number");
+
+    assert_eq!(hm.content_length(), None);
+}
