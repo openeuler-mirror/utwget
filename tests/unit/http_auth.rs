@@ -115,3 +115,55 @@ fn test_parse_basic_challenge() {
     assert_eq!(challenges[0].scheme, AuthScheme::Basic);
     assert_eq!(challenges[0].realm.as_deref(), Some("WallyWorld"));
 }
+
+#[test]
+fn test_parse_basic_challenge_no_quotes() {
+    let challenges = AuthChallenge::from_www_authenticate("Basic realm=test");
+
+    assert_eq!(challenges.len(), 1);
+    assert_eq!(challenges[0].scheme, AuthScheme::Basic);
+    assert_eq!(challenges[0].realm.as_deref(), Some("test"));
+}
+
+#[test]
+fn test_parse_digest_challenge_md5() {
+    let header = r#"Digest realm="testrealm@host.com", nonce="dcd98b7102dd2f0e8b11d0f600bfb0c093", qop="auth,auth-int", algorithm=MD5, opaque="5ccc069c403ebaf9f0171e9517a40e""#;
+    let challenges = AuthChallenge::from_www_authenticate(header);
+
+    assert_eq!(challenges.len(), 1);
+    assert_eq!(challenges[0].scheme, AuthScheme::Digest);
+    assert_eq!(challenges[0].realm.as_deref(), Some("testrealm@host.com"));
+    assert_eq!(challenges[0].nonce.as_deref(), Some("dcd98b7102dd2f0e8b11d0f600bfb0c093"));
+    assert_eq!(challenges[0].qop.as_deref(), Some("auth,auth-int"));
+    assert_eq!(challenges[0].algorithm.as_deref(), Some("MD5"));
+    assert_eq!(challenges[0].opaque.as_deref(), Some("5ccc069c403ebaf9f0171e9517a40e"));
+}
+
+#[test]
+fn test_parse_digest_challenge_sha256() {
+    let header = r#"Digest realm="api", nonce="abc123", algorithm=SHA-256, qop="auth""#;
+    let challenges = AuthChallenge::from_www_authenticate(header);
+
+    assert_eq!(challenges.len(), 1);
+    assert_eq!(challenges[0].scheme, AuthScheme::Digest);
+    assert_eq!(challenges[0].algorithm.as_deref(), Some("SHA-256"));
+}
+
+#[test]
+fn test_parse_ntlm_challenge() {
+    let challenges = AuthChallenge::from_www_authenticate("NTLM");
+
+    assert_eq!(challenges.len(), 1);
+    assert_eq!(challenges[0].scheme, AuthScheme::Ntlm);
+}
+
+#[test]
+fn test_parse_bearer_challenge() {
+    let challenges = AuthChallenge::from_www_authenticate(
+        r#"Bearer realm="api", scope="read write""#
+    );
+
+    assert_eq!(challenges.len(), 1);
+    assert_eq!(challenges[0].scheme, AuthScheme::Bearer);
+    assert_eq!(challenges[0].realm.as_deref(), Some("api"));
+}
