@@ -251,3 +251,64 @@ fn test_serialize_post_request_with_body() {
     assert!(text.contains("Content-Length: 2\r\n"));
     assert!(text.ends_with("\r\n\r\n{}"));
 }
+
+#[test]
+fn test_serialize_head_request() {
+    let mut req = HttpRequest::new(
+        HttpMethod::Head,
+        "/resource".to_string(),
+        "example.com".to_string(),
+    );
+    req.header("Host", "example.com");
+
+    let bytes = req.serialize().unwrap();
+    let text = String::from_utf8(bytes).unwrap();
+
+    assert!(text.starts_with("HEAD /resource HTTP/1.1\r\n"));
+}
+
+#[test]
+fn test_serialize_http10_request() {
+    let mut req = HttpRequest::new(
+        HttpMethod::Get,
+        "/".to_string(),
+        "example.com".to_string(),
+    );
+    req.version = HttpVersion::Http10;
+    req.header("Host", "example.com");
+
+    let bytes = req.serialize().unwrap();
+    let text = String::from_utf8(bytes).unwrap();
+
+    assert!(text.starts_with("GET / HTTP/1.0\r\n"));
+}
+
+#[test]
+fn test_serialize_request_with_query() {
+    let mut req = HttpRequest::new(
+        HttpMethod::Get,
+        "/search?q=rust&lang=en".to_string(),
+        "example.com".to_string(),
+    );
+    req.header("Host", "example.com");
+
+    let bytes = req.serialize().unwrap();
+    let text = String::from_utf8(bytes).unwrap();
+
+    assert!(text.starts_with("GET /search?q=rust&lang=en HTTP/1.1\r\n"));
+}
+
+#[test]
+fn test_serialize_request_with_encoded_path() {
+    let mut req = HttpRequest::new(
+        HttpMethod::Get,
+        "/path%20with%20spaces".to_string(),
+        "example.com".to_string(),
+    );
+    req.header("Host", "example.com");
+
+    let bytes = req.serialize().unwrap();
+    let text = String::from_utf8(bytes).unwrap();
+
+    assert!(text.starts_with("GET /path%20with%20spaces HTTP/1.1\r\n"));
+}
