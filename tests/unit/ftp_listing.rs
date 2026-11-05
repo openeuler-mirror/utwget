@@ -156,3 +156,63 @@ fn test_windows_listing_noon() {
     let date = entries[0].date.unwrap();
     assert_eq!(date.hour(), 12); // 12PM = 12:00
 }
+
+#[test]
+fn test_windows_listing_empty() {
+    let entries = parse_windows_listing("");
+    assert!(entries.is_empty());
+}
+
+// ========== VMS 格式列表解析测试 ==========
+
+#[test]
+fn test_vms_listing_basic() {
+    let raw = r#"FILE.TXT;1 1024 15-JAN-2025 10:30
+"#;
+    let entries = parse_vms_listing(raw);
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].name, "FILE.TXT");
+    assert!(!entries[0].is_dir);
+    assert_eq!(entries[0].size, Some(1024));
+}
+
+#[test]
+fn test_vms_listing_directory() {
+    let raw = r#"DOCS.DIR;1 512 15-JAN-2025 10:30
+"#;
+    let entries = parse_vms_listing(raw);
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].name, "DOCS");
+    assert!(entries[0].is_dir);
+}
+
+#[test]
+fn test_vms_listing_with_header() {
+    let raw = r#"Directory SYS$SYSDEVICE:[USER]
+
+FILE.TXT;1 1024 15-JAN-2025 10:30
+
+Total of 1 file.
+"#;
+    let entries = parse_vms_listing(raw);
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].name, "FILE.TXT");
+}
+
+#[test]
+fn test_vms_listing_empty() {
+    let entries = parse_vms_listing("");
+    assert!(entries.is_empty());
+}
+
+// ========== 自动格式检测测试 ==========
+
+#[test]
+fn test_auto_detect_unix() {
+    let raw = r#"-rw-r--r--  1 owner group 100 Jan 01 00:00 test.txt
+"#;
+    let entries = parse_listing(raw);
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].name, "test.txt");
+    assert!(!entries[0].is_dir);
+}
