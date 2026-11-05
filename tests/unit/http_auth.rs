@@ -234,3 +234,59 @@ fn test_auth_scheme_from_str() {
 
     assert_eq!(AuthScheme::from_str("Unknown"), None);
 }
+
+#[test]
+fn test_auth_scheme_display() {
+    assert_eq!(format!("{}", AuthScheme::Basic), "Basic");
+    assert_eq!(format!("{}", AuthScheme::Digest), "Digest");
+    assert_eq!(format!("{}", AuthScheme::Ntlm), "NTLM");
+    assert_eq!(format!("{}", AuthScheme::Bearer), "Bearer");
+}
+
+// =============================================================================
+// AuthDispatcher Tests
+// =============================================================================
+
+#[test]
+fn test_dispatcher_basic_auth() {
+    let mut dispatcher = AuthDispatcher::new();
+    let challenge = make_basic_challenge(Some("test"));
+    let creds = make_credentials("user", "pass");
+
+    let result = dispatcher.authenticate(&challenge, &creds, "GET", "/", None).unwrap();
+    assert!(result.is_some());
+    assert!(result.unwrap().starts_with("Basic "));
+}
+
+#[test]
+fn test_dispatcher_preemptive_auth() {
+    let mut dispatcher = AuthDispatcher::new();
+    let creds = make_credentials("user", "pass");
+
+    let result = dispatcher.preemptive_auth(&creds, "/");
+    assert!(result.is_some());
+    assert!(result.unwrap().starts_with("Basic "));
+}
+
+#[test]
+fn test_dispatcher_unknown_scheme() {
+    let mut dispatcher = AuthDispatcher::new();
+    let challenge = AuthChallenge {
+        scheme: AuthScheme::Bearer, // Bearer not implemented in dispatcher by default
+        realm: Some("api".to_string()),
+        nonce: None,
+        opaque: None,
+        qop: None,
+        algorithm: None,
+        charset: None,
+        userhash: None,
+        stale: None,
+        domain: None,
+        ntlm_type2_msg: None,
+    };
+    let creds = make_credentials("user", "pass");
+
+    let result = dispatcher.authenticate(&challenge, &creds, "GET", "/", None).unwrap();
+    // Bearer authenticator is not registered by default
+    assert!(result.is_none());
+}
