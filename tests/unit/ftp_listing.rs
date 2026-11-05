@@ -51,3 +51,53 @@ fn test_unix_listing_with_year() {
     assert_eq!(date.month(), 1);
     assert_eq!(date.day(), 15);
 }
+
+#[test]
+fn test_unix_listing_with_time() {
+    let raw = r#"-rw-r--r--  1 owner group     1024 Jun 17 14:30 recent.txt
+"#;
+    let entries = parse_unix_listing(raw);
+    assert_eq!(entries.len(), 1);
+    assert!(entries[0].date.is_some());
+    let date = entries[0].date.unwrap();
+    assert_eq!(date.month(), 6);
+    assert_eq!(date.day(), 17);
+}
+
+#[test]
+fn test_unix_listing_multiple_files() {
+    let raw = r#"drwxr-xr-x  2 user  group  4096 Jan 01 00:00 dir1
+drwxr-xr-x  2 user  group  4096 Jan 01 00:00 dir2
+-rw-r--r--  1 user  group   100 Jan 01 00:00 file1.txt
+-rw-r--r--  1 user  group   200 Jan 01 00:00 file2.txt
+-rw-r--r--  1 user  group   300 Jan 01 00:00 file3.txt
+"#;
+    let entries = parse_unix_listing(raw);
+    assert_eq!(entries.len(), 5);
+    assert!(entries[0].is_dir);
+    assert!(entries[1].is_dir);
+    assert!(!entries[2].is_dir);
+    assert!(!entries[3].is_dir);
+    assert!(!entries[4].is_dir);
+}
+
+#[test]
+fn test_unix_listing_with_spaces_in_name() {
+    let raw = r#"-rw-r--r--  1 owner group     1024 Jan 15 10:30 file with spaces.txt
+"#;
+    let entries = parse_unix_listing(raw);
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].name, "file with spaces.txt");
+}
+
+#[test]
+fn test_unix_listing_empty() {
+    let entries = parse_unix_listing("");
+    assert!(entries.is_empty());
+}
+
+#[test]
+fn test_unix_listing_whitespace_only() {
+    let entries = parse_unix_listing("   \n   \n   ");
+    assert!(entries.is_empty());
+}
