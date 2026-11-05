@@ -290,3 +290,71 @@ fn test_dispatcher_unknown_scheme() {
     // Bearer authenticator is not registered by default
     assert!(result.is_none());
 }
+
+// =============================================================================
+// Digest Authentication Tests (requires auth-digest feature)
+// =============================================================================
+
+#[cfg(feature = "auth-digest")]
+mod digest_tests {
+    use super::*;
+    use ut_http::auth::digest::DigestAuthenticator;
+    use ut_http::auth::AuthError;
+
+    fn make_digest_challenge(realm: &str, nonce: &str, qop: Option<&str>, algorithm: &str) -> AuthChallenge {
+        AuthChallenge {
+            scheme: AuthScheme::Digest,
+            realm: Some(realm.to_string()),
+            nonce: Some(nonce.to_string()),
+            opaque: Some("opaque-value".to_string()),
+            qop: qop.map(|s| s.to_string()),
+            algorithm: Some(algorithm.to_string()),
+            charset: None,
+            userhash: None,
+            stale: None,
+            domain: None,
+            ntlm_type2_msg: None,
+        }
+    }
+
+    #[test]
+    fn test_digest_auth_md5() {
+        let mut auth = DigestAuthenticator::new();
+        let challenge = make_digest_challenge(
+            "testrealm@host.com",
+            "dcd98b7102dd2f0e8b11d0f600bfb0c093",
+            Some("auth"),
+            "MD5",
+        );
+        let creds = make_credentials("Mufasa", "Circle Of Life");
+
+        let result = auth.authenticate(&challenge, &creds, "GET", "/dir/index.html", None).unwrap();
+        assert!(result.is_some());
+
+        let header = result.unwrap();
+        assert!(header.starts_with("Digest "));
+        assert!(header.contains("username=\"Mufasa\""));
+        assert!(header.contains("nonce=\"dcd98b7102dd2f0e8b11d0f600bfb0c093\""));
+        assert!(header.contains("qop=auth"));
+        assert!(header.contains("nc="));
+        assert!(header.contains("cnonce="));
+    }
+
+    #[test]
+    fn test_digest_auth_sha256() {
+        let mut auth = DigestAuthenticator::new();
+        let challenge = make_digest_challenge(
+            "api",
+            "abc123",
+            Some("auth"),
+            "SHA-256",
+        );
+        let creds = make_credentials("user", "password");
+
+        let result = auth.authenticate(&challenge, &creds, "GET", "/resource", None).unwrap();
+        assert!(result.is_some());
+
+        let header = result.unwrap();
+        assert!(header.starts_with("Digest "));
+        assert!(header.contains("algorithm=SHA-256"));
+    }
