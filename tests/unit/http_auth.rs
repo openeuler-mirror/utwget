@@ -167,3 +167,70 @@ fn test_parse_bearer_challenge() {
     assert_eq!(challenges[0].scheme, AuthScheme::Bearer);
     assert_eq!(challenges[0].realm.as_deref(), Some("api"));
 }
+
+#[test]
+fn test_parse_multiple_challenges() {
+    let header = r#"Basic realm="foo", Digest realm="bar", nonce="abc""#;
+    let challenges = AuthChallenge::from_www_authenticate(header);
+
+    assert_eq!(challenges.len(), 2);
+    assert_eq!(challenges[0].scheme, AuthScheme::Basic);
+    assert_eq!(challenges[0].realm.as_deref(), Some("foo"));
+    assert_eq!(challenges[1].scheme, AuthScheme::Digest);
+    assert_eq!(challenges[1].realm.as_deref(), Some("bar"));
+}
+
+#[test]
+fn test_parse_multiple_schemes_on_separate_headers() {
+    use ut_http::auth::parse_www_authenticate;
+
+    let headers = [
+        r#"Basic realm="simple""#,
+        r#"Digest realm="secure", nonce="xyz123""#,
+    ];
+    let challenges = parse_www_authenticate(&headers);
+
+    assert_eq!(challenges.len(), 2);
+    assert_eq!(challenges[0].scheme, AuthScheme::Basic);
+    assert_eq!(challenges[1].scheme, AuthScheme::Digest);
+}
+
+#[test]
+fn test_parse_challenge_with_stale() {
+    let header = r#"Digest realm="test", nonce="abc", stale=true"#;
+    let challenges = AuthChallenge::from_www_authenticate(header);
+
+    assert_eq!(challenges.len(), 1);
+    assert_eq!(challenges[0].stale, Some(true));
+}
+
+#[test]
+fn test_parse_challenge_with_charset() {
+    let header = r#"Digest realm="test", nonce="abc", charset=UTF-8"#;
+    let challenges = AuthChallenge::from_www_authenticate(header);
+
+    assert_eq!(challenges.len(), 1);
+    assert_eq!(challenges[0].charset.as_deref(), Some("UTF-8"));
+}
+
+// =============================================================================
+// AuthScheme Tests
+// =============================================================================
+
+#[test]
+fn test_auth_scheme_from_str() {
+    assert_eq!(AuthScheme::from_str("Basic"), Some(AuthScheme::Basic));
+    assert_eq!(AuthScheme::from_str("basic"), Some(AuthScheme::Basic));
+    assert_eq!(AuthScheme::from_str("BASIC"), Some(AuthScheme::Basic));
+
+    assert_eq!(AuthScheme::from_str("Digest"), Some(AuthScheme::Digest));
+    assert_eq!(AuthScheme::from_str("digest"), Some(AuthScheme::Digest));
+
+    assert_eq!(AuthScheme::from_str("NTLM"), Some(AuthScheme::Ntlm));
+    assert_eq!(AuthScheme::from_str("ntlm"), Some(AuthScheme::Ntlm));
+
+    assert_eq!(AuthScheme::from_str("Bearer"), Some(AuthScheme::Bearer));
+    assert_eq!(AuthScheme::from_str("bearer"), Some(AuthScheme::Bearer));
+
+    assert_eq!(AuthScheme::from_str("Unknown"), None);
+}
