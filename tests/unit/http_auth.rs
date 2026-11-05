@@ -408,3 +408,95 @@ mod digest_tests {
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), AuthError::AlgorithmUnsupported(_)));
     }
+
+    #[test]
+    fn test_digest_nonce_count_increments() {
+        let mut auth = DigestAuthenticator::new();
+        let challenge = make_digest_challenge("r", "n", Some("auth"), "MD5");
+        let creds = make_credentials("user", "pass");
+
+        // First authentication
+        auth.authenticate(&challenge, &creds, "GET", "/", None).unwrap();
+        // Second authentication - nc should increment
+        let result = auth.authenticate(&challenge, &creds, "GET", "/", None).unwrap();
+
+        let header = result.unwrap();
+        // nc should be 00000002 for second request
+        assert!(header.contains("nc=00000002"));
+    }
+
+    #[test]
+    fn test_digest_not_preemptive() {
+        let auth = DigestAuthenticator::new();
+        assert!(!auth.supports_preemptive());
+    }
+
+    #[test]
+    fn test_digest_scheme() {
+        let auth = DigestAuthenticator::new();
+        assert_eq!(auth.scheme(), AuthScheme::Digest);
+    }
+}
+
+// =============================================================================
+// NTLM Authentication Tests (requires auth-ntlm feature)
+// =============================================================================
+
+#[cfg(feature = "auth-ntlm")]
+mod ntlm_tests {
+    use super::*;
+    use ut_http::auth::ntlm::NtlmAuthenticator;
+    use base64::Engine;
+    use base64::engine::general_purpose::STANDARD;
+
+    #[test]
+    fn test_ntlm_type1_message() {
+        let mut auth = NtlmAuthenticator::new();
+        let challenge = AuthChallenge {
+            scheme: AuthScheme::Ntlm,
+            realm: None,
+            nonce: None, // No Type 2 message yet
+            opaque: None,
+            qop: None,
+            algorithm: None,
+            charset: None,
+            userhash: None,
+            stale: None,
+            domain: None,
+            ntlm_type2_msg: None,
+        };
+        let creds = make_credentials("user", "pass");
+
+        let result = auth.authenticate(&challenge, &creds, "GET", "/", None).unwrap();
+        assert!(result.is_some());
+
+        let header = result.unwrap();
+        assert!(header.starts_with("NTLM "));
+
+        // Decode and verify it's a Type 1 message
+        let msg_b64 = header.strip_prefix("NTLM ").unwrap();
+        let msg = STANDARD.decode(msg_b64).unwrap();
+        assert!(msg.starts_with(b"NTLMSSP\x00"));
+        // Message type should be 1
+        let msg_type = u32::from_le_bytes([msg[8], msg[9], msg[10], msg[11]]);
+        assert_eq!(msg_type, 1);
+    }
+
+    #[test]
+    fn test_ntlm_not_preemptive() {
+        let auth = NtlmAuthenticator::new();
+        assert!(!auth.supports_preemptive());
+    }
+
+    #[test]
+    fn test_ntlm_scheme() {
+        let auth = NtlmAuthenticator::new();
+        assert_eq!(auth.scheme(), AuthScheme::Ntlm);
+    }
+
+    #[test]
+    fn test_ntlm_v1_mode() {
+        let auth = NtlmAuthenticator::new().with_ntlm_v1();
+        // Should still work, just using NTLMv1 instead of NTLMv2
+        assert_eq!(auth.scheme(), AuthScheme::Ntlm);
+    }
