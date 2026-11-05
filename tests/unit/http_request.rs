@@ -66,3 +66,69 @@ fn test_http_request_new_get() {
     assert!(req.headers.is_empty());
     assert!(req.body.is_none());
 }
+
+#[test]
+fn test_http_request_new_post() {
+    let req = HttpRequest::new(
+        HttpMethod::Post,
+        "/api/users".to_string(),
+        "api.example.com".to_string(),
+    );
+
+    assert_eq!(req.method, HttpMethod::Post);
+    assert_eq!(req.path, "/api/users");
+    assert_eq!(req.host, "api.example.com");
+}
+
+#[test]
+fn test_http_request_new_head() {
+    let req = HttpRequest::new(
+        HttpMethod::Head,
+        "/resource".to_string(),
+        "example.com".to_string(),
+    );
+
+    assert_eq!(req.method, HttpMethod::Head);
+}
+
+#[test]
+fn test_http_request_new_with_query() {
+    let req = HttpRequest::new(
+        HttpMethod::Get,
+        "/search?q=rust&lang=en".to_string(),
+        "example.com".to_string(),
+    );
+
+    assert_eq!(req.path, "/search?q=rust&lang=en");
+}
+
+#[test]
+fn test_http_request_new_with_port() {
+    let req = HttpRequest::new(
+        HttpMethod::Get,
+        "/".to_string(),
+        "example.com:8080".to_string(),
+    );
+
+    assert_eq!(req.host, "example.com:8080");
+}
+
+// =============================================================================
+// Header Manipulation Tests
+// =============================================================================
+
+#[test]
+fn test_http_request_header_add() {
+    let mut req = HttpRequest::new(
+        HttpMethod::Get,
+        "/".to_string(),
+        "example.com".to_string(),
+    );
+
+    req.header("Host", "example.com");
+    req.header("Accept", "*/*");
+
+    assert_eq!(req.headers.len(), 2);
+    assert_eq!(req.get_header("Host"), Some("example.com"));
+    assert_eq!(req.get_header("Accept"), Some("*/*"));
+}
