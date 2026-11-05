@@ -312,3 +312,58 @@ fn test_serialize_request_with_encoded_path() {
 
     assert!(text.starts_with("GET /path%20with%20spaces HTTP/1.1\r\n"));
 }
+
+#[test]
+fn test_serialize_empty_body() {
+    let mut req = HttpRequest::new(
+        HttpMethod::Post,
+        "/api".to_string(),
+        "example.com".to_string(),
+    );
+    req.header("Content-Length", "0");
+    req.body = Some(Vec::new());
+
+    let bytes = req.serialize().unwrap();
+    let text = String::from_utf8(bytes).unwrap();
+
+    assert!(text.ends_with("\r\n\r\n"));
+}
+
+// =============================================================================
+// Content-Length Tests
+// =============================================================================
+
+#[test]
+fn test_content_length_from_header() {
+    let mut req = HttpRequest::new(
+        HttpMethod::Post,
+        "/".to_string(),
+        "example.com".to_string(),
+    );
+    req.header("Content-Length", "12345");
+
+    assert_eq!(req.content_length(), Some(12345));
+}
+
+#[test]
+fn test_content_length_missing() {
+    let req = HttpRequest::new(
+        HttpMethod::Get,
+        "/".to_string(),
+        "example.com".to_string(),
+    );
+
+    assert_eq!(req.content_length(), None);
+}
+
+#[test]
+fn test_content_length_invalid() {
+    let mut req = HttpRequest::new(
+        HttpMethod::Post,
+        "/".to_string(),
+        "example.com".to_string(),
+    );
+    req.header("Content-Length", "not-a-number");
+
+    assert_eq!(req.content_length(), None);
+}
