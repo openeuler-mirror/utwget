@@ -101,3 +101,58 @@ fn test_unix_listing_whitespace_only() {
     let entries = parse_unix_listing("   \n   \n   ");
     assert!(entries.is_empty());
 }
+
+// ========== DOS/Windows 格式列表解析测试 ==========
+
+#[test]
+fn test_windows_listing_basic() {
+    let raw = r#"01-15-2025  10:30AM       <DIR>          docs
+01-15-2025  10:31AM           123456   file.txt
+"#;
+    let entries = parse_windows_listing(raw);
+    assert_eq!(entries.len(), 2);
+
+    // 第一个条目是目录
+    assert_eq!(entries[0].name, "docs");
+    assert!(entries[0].is_dir);
+    assert!(entries[0].size.is_none());
+
+    // 第二个条目是文件
+    assert_eq!(entries[1].name, "file.txt");
+    assert!(!entries[1].is_dir);
+    assert_eq!(entries[1].size, Some(123456));
+}
+
+#[test]
+fn test_windows_listing_with_pm() {
+    let raw = r#"01-15-2025  02:30PM           1024   afternoon.txt
+"#;
+    let entries = parse_windows_listing(raw);
+    assert_eq!(entries.len(), 1);
+    assert!(entries[0].date.is_some());
+    let date = entries[0].date.unwrap();
+    assert_eq!(date.hour(), 14); // 2PM = 14:00
+    assert_eq!(date.minute(), 30);
+}
+
+#[test]
+fn test_windows_listing_midnight() {
+    let raw = r#"01-15-2025  12:00AM           512   midnight.txt
+"#;
+    let entries = parse_windows_listing(raw);
+    assert_eq!(entries.len(), 1);
+    assert!(entries[0].date.is_some());
+    let date = entries[0].date.unwrap();
+    assert_eq!(date.hour(), 0); // 12AM = 00:00
+}
+
+#[test]
+fn test_windows_listing_noon() {
+    let raw = r#"01-15-2025  12:00PM           512   noon.txt
+"#;
+    let entries = parse_windows_listing(raw);
+    assert_eq!(entries.len(), 1);
+    assert!(entries[0].date.is_some());
+    let date = entries[0].date.unwrap();
+    assert_eq!(date.hour(), 12); // 12PM = 12:00
+}
