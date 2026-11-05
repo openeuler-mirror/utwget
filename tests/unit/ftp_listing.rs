@@ -383,3 +383,55 @@ fn test_unix_permissions() {
         assert_eq!(entries[0].perms.as_deref(), Some(perms));
     }
 }
+
+// ========== 边界情况测试 ==========
+
+#[test]
+fn test_unix_listing_minimal() {
+    // 最小有效 UNIX 列表行
+    let raw = "-rw-r--r-- 1 a b 1 Jan 1 00:00 x\n";
+    let entries = parse_unix_listing(raw);
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].name, "x");
+}
+
+#[test]
+fn test_unix_listing_invalid_lines() {
+    let raw = r#"invalid line
+another bad line
+-rw-r--r--  1 owner group 100 Jan 01 00:00 valid.txt
+more garbage
+"#;
+    let entries = parse_unix_listing(raw);
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].name, "valid.txt");
+}
+
+#[test]
+fn test_windows_listing_invalid_lines() {
+    let raw = r#"invalid line
+01-15-2025  10:30AM           100   valid.txt
+more garbage
+"#;
+    let entries = parse_windows_listing(raw);
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].name, "valid.txt");
+}
+
+#[test]
+fn test_large_file_size() {
+    let raw = r#"-rw-r--r--  1 owner group 999999999999 Jan 01 00:00 bigfile.bin
+"#;
+    let entries = parse_unix_listing(raw);
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].size, Some(999999999999));
+}
+
+#[test]
+fn test_zero_file_size() {
+    let raw = r#"-rw-r--r--  1 owner group 0 Jan 01 00:00 empty.txt
+"#;
+    let entries = parse_unix_listing(raw);
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].size, Some(0));
+}
