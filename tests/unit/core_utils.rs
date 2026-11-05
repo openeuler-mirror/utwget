@@ -163,3 +163,58 @@ fn test_parse_size_string_bytes() {
     assert_eq!(parse_size_string("0"), Some(0));
     assert_eq!(parse_size_string("1"), Some(1));
 }
+
+#[test]
+fn test_parse_size_string_kilobytes() {
+    assert_eq!(parse_size_string("1K"), Some(1024));
+    assert_eq!(parse_size_string("1k"), Some(1024));
+    assert_eq!(parse_size_string("2K"), Some(2048));
+    assert_eq!(parse_size_string("10K"), Some(10240));
+}
+
+#[test]
+fn test_parse_size_string_megabytes() {
+    assert_eq!(parse_size_string("1M"), Some(1024 * 1024));
+    assert_eq!(parse_size_string("1m"), Some(1024 * 1024));
+    assert_eq!(parse_size_string("5M"), Some(5 * 1024 * 1024));
+}
+
+#[test]
+fn test_parse_size_string_gigabytes() {
+    assert_eq!(parse_size_string("1G"), Some(1024 * 1024 * 1024));
+    assert_eq!(parse_size_string("1g"), Some(1024 * 1024 * 1024));
+    assert_eq!(parse_size_string("2G"), Some(2 * 1024 * 1024 * 1024));
+}
+
+#[test]
+fn test_parse_size_string_terabytes() {
+    let tb: u64 = 1024 * 1024 * 1024 * 1024;
+    assert_eq!(parse_size_string("1T"), Some(tb));
+    assert_eq!(parse_size_string("1t"), Some(tb));
+}
+
+#[test]
+fn test_parse_size_string_decimal() {
+    assert_eq!(parse_size_string("1.5K"), Some(1536));
+    assert_eq!(parse_size_string("0.5M"), Some(512 * 1024));
+    assert_eq!(parse_size_string("2.5G"), Some((2.5 * 1024.0 * 1024.0 * 1024.0) as u64));
+}
+
+#[test]
+fn test_parse_size_string_with_whitespace() {
+    assert_eq!(parse_size_string(" 1024 "), Some(1024));
+    assert_eq!(parse_size_string(" 1K "), Some(1024));
+}
+
+#[test]
+fn test_parse_size_string_invalid() {
+    assert_eq!(parse_size_string(""), None);
+    assert_eq!(parse_size_string("abc"), None);
+    assert_eq!(parse_size_string("1X"), None); // Invalid suffix
+}
+
+#[test]
+fn test_parse_size_string_large() {
+    assert_eq!(parse_size_string("100M"), Some(100 * 1024 * 1024));
+    assert_eq!(parse_size_string("1000K"), Some(1000 * 1024));
+}
