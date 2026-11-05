@@ -219,3 +219,64 @@ fn test_header_map_content_length_invalid() {
 
     assert_eq!(hm.content_length(), None);
 }
+
+#[test]
+fn test_header_map_content_type() {
+    let mut hm = HeaderMap::new();
+    hm.insert("Content-Type", "application/json; charset=utf-8");
+
+    assert_eq!(hm.content_type(), Some("application/json; charset=utf-8"));
+}
+
+#[test]
+fn test_header_map_is_chunked() {
+    let mut hm = HeaderMap::new();
+    hm.insert("Transfer-Encoding", "chunked");
+
+    assert!(hm.is_chunked());
+}
+
+#[test]
+fn test_header_map_is_chunked_with_other_encoding() {
+    let mut hm = HeaderMap::new();
+    hm.insert("Transfer-Encoding", "gzip, chunked");
+
+    assert!(hm.is_chunked());
+}
+
+#[test]
+fn test_header_map_not_chunked() {
+    let mut hm = HeaderMap::new();
+    hm.insert("Transfer-Encoding", "gzip");
+
+    assert!(!hm.is_chunked());
+}
+
+#[test]
+fn test_header_map_is_gzip() {
+    let mut hm = HeaderMap::new();
+    hm.insert("Content-Encoding", "gzip");
+
+    assert!(hm.is_gzip());
+}
+
+#[test]
+fn test_header_map_is_deflate() {
+    let mut hm = HeaderMap::new();
+    hm.insert("Content-Encoding", "deflate");
+
+    assert!(hm.is_deflate());
+}
+
+#[test]
+fn test_header_map_accept_ranges() {
+    let mut hm = HeaderMap::new();
+    hm.insert("Accept-Ranges", "bytes");
+
+    assert!(hm.accept_ranges());
+
+    hm.remove("Accept-Ranges");
+    hm.insert("Accept-Ranges", "none");
+
+    assert!(!hm.accept_ranges());
+}
