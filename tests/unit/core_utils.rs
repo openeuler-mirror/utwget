@@ -218,3 +218,78 @@ fn test_parse_size_string_large() {
     assert_eq!(parse_size_string("100M"), Some(100 * 1024 * 1024));
     assert_eq!(parse_size_string("1000K"), Some(1000 * 1024));
 }
+
+// ============================================================================
+// format_timestamp Tests
+// ============================================================================
+
+#[test]
+fn test_format_timestamp_epoch() {
+    assert_eq!(format_timestamp(0), "1970-01-01 00:00:00");
+}
+
+#[test]
+fn test_format_timestamp_positive() {
+    // 2024-01-01 00:00:00 UTC
+    let ts = 1704067200;
+    let result = format_timestamp(ts);
+    assert!(result.contains("2024"));
+    assert!(result.contains("01"));
+}
+
+#[test]
+fn test_format_timestamp_negative() {
+    // Before epoch
+    let result = format_timestamp(-1);
+    // Should still produce a valid string representation
+    assert!(!result.is_empty());
+}
+
+#[test]
+fn test_format_timestamp_large() {
+    // Year 2100
+    let ts = 4102444800;
+    let result = format_timestamp(ts);
+    assert!(result.contains("2100"));
+}
+
+// ============================================================================
+// Edge Cases
+// ============================================================================
+
+#[test]
+fn test_safe_filename_preserves_extension() {
+    assert_eq!(safe_filename("file.tar.gz"), "file.tar.gz");
+    assert_eq!(safe_filename("archive.tar.bz2"), "archive.tar.bz2");
+}
+
+#[test]
+fn test_parse_size_string_fractional() {
+    // Test fractional values
+    let result = parse_size_string("0.25K");
+    assert_eq!(result, Some(256));
+}
+
+#[test]
+fn test_parse_size_string_very_large() {
+    // Test large values
+    let result = parse_size_string("100T");
+    assert!(result.is_some());
+    let value = result.unwrap();
+    assert!(value > 1_000_000_000_000);
+}
+
+#[test]
+fn test_format_timestamp_consistency() {
+    // Test that formatting is consistent
+    let ts1 = 1609459200; // 2021-01-01 00:00:00 UTC
+    let ts2 = 1609459200 + 86400; // One day later
+
+    let fmt1 = format_timestamp(ts1);
+    let fmt2 = format_timestamp(ts2);
+
+    // Both should be valid date strings
+    assert!(fmt1.contains("-"));
+    assert!(fmt2.contains("-"));
+    assert_ne!(fmt1, fmt2);
+}
