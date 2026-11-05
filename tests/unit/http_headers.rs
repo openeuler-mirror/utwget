@@ -162,3 +162,85 @@ fn test_parse_status_line_invalid_no_space() {
 fn test_parse_status_line_invalid_no_code() {
     assert!(parse_status_line("HTTP/1.1 OK").is_none());
 }
+
+#[test]
+fn test_parse_status_line_invalid_code() {
+    assert!(parse_status_line("HTTP/1.1 ABC OK").is_none());
+}
+
+#[test]
+fn test_parse_status_line_http2() {
+    let (version, code, reason) = parse_status_line("HTTP/2.0 200 OK\r\n").unwrap();
+    assert_eq!(version, "HTTP/2.0");
+    assert_eq!(code, 200);
+    assert_eq!(reason, "OK");
+}
+
+// =============================================================================
+// Header Formatting Tests
+// =============================================================================
+
+#[test]
+fn test_format_header_line_simple() {
+    let line = format_header_line("Host", "example.com");
+    assert_eq!(line, "Host: example.com\r\n");
+}
+
+#[test]
+fn test_format_header_line_with_spaces() {
+    let line = format_header_line("Content-Type", "text/html; charset=utf-8");
+    assert_eq!(line, "Content-Type: text/html; charset=utf-8\r\n");
+}
+
+#[test]
+fn test_format_header_line_empty_value() {
+    let line = format_header_line("X-Empty", "");
+    assert_eq!(line, "X-Empty: \r\n");
+}
+
+#[test]
+fn test_format_header_line_utf8() {
+    let line = format_header_line("X-Custom", "测试");
+    assert_eq!(line, "X-Custom: 测试\r\n");
+}
+
+// =============================================================================
+// Header Constants Tests
+// =============================================================================
+
+#[test]
+fn test_header_constants() {
+    // Verify header constants have expected values
+    assert_eq!(CONTENT_LENGTH, "Content-Length");
+    assert_eq!(CONTENT_TYPE, "Content-Type");
+    assert_eq!(TRANSFER_ENCODING, "Transfer-Encoding");
+    assert_eq!(LOCATION, "Location");
+    assert_eq!(WWW_AUTHENTICATE, "WWW-Authenticate");
+    assert_eq!(AUTHORIZATION, "Authorization");
+    assert_eq!(HOST, "Host");
+    assert_eq!(USER_AGENT, "User-Agent");
+    assert_eq!(CONNECTION, "Connection");
+    assert_eq!(ACCEPT, "Accept");
+    assert_eq!(ACCEPT_ENCODING, "Accept-Encoding");
+    assert_eq!(RANGE, "Range");
+    assert_eq!(IF_MODIFIED_SINCE, "If-Modified-Since");
+    assert_eq!(ETAG, "ETag");
+    assert_eq!(SET_COOKIE, "Set-Cookie");
+    assert_eq!(COOKIE, "Cookie");
+    assert_eq!(CONTENT_DISPOSITION, "Content-Disposition");
+    assert_eq!(LAST_MODIFIED, "Last-Modified");
+    assert_eq!(ACCEPT_RANGES, "Accept-Ranges");
+    assert_eq!(CONTENT_ENCODING, "Content-Encoding");
+    assert_eq!(CACHE_CONTROL, "Cache-Control");
+    assert_eq!(EXPIRES, "Expires");
+    assert_eq!(DATE, "Date");
+    assert_eq!(SERVER, "Server");
+    assert_eq!(RETRY_AFTER, "Retry-After");
+    assert_eq!(CONTENT_RANGE, "Content-Range");
+    assert_eq!(VARY, "Vary");
+    assert_eq!(STRICT_TRANSPORT_SECURITY, "Strict-Transport-Security");
+    assert_eq!(PROXY_AUTHENTICATE, "Proxy-Authenticate");
+    assert_eq!(PROXY_AUTHORIZATION, "Proxy-Authorization");
+    assert_eq!(REFERER, "Referer");
+    assert_eq!(KEEP_ALIVE, "Keep-Alive");
+}
