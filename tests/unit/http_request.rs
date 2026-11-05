@@ -132,3 +132,53 @@ fn test_http_request_header_add() {
     assert_eq!(req.get_header("Host"), Some("example.com"));
     assert_eq!(req.get_header("Accept"), Some("*/*"));
 }
+
+#[test]
+fn test_http_request_header_case_insensitive() {
+    let mut req = HttpRequest::new(
+        HttpMethod::Get,
+        "/".to_string(),
+        "example.com".to_string(),
+    );
+
+    req.header("Content-Type", "application/json");
+
+    assert_eq!(req.get_header("content-type"), Some("application/json"));
+    assert_eq!(req.get_header("CONTENT-TYPE"), Some("application/json"));
+    assert_eq!(req.get_header("Content-Type"), Some("application/json"));
+}
+
+#[test]
+fn test_http_request_header_duplicate() {
+    let mut req = HttpRequest::new(
+        HttpMethod::Get,
+        "/".to_string(),
+        "example.com".to_string(),
+    );
+
+    // HTTP allows duplicate headers
+    req.header("Set-Cookie", "a=1");
+    req.header("Set-Cookie", "b=2");
+
+    assert_eq!(req.headers.len(), 2);
+    // get_header returns the first one
+    assert_eq!(req.get_header("Set-Cookie"), Some("a=1"));
+}
+
+#[test]
+fn test_http_request_header_remove() {
+    let mut req = HttpRequest::new(
+        HttpMethod::Get,
+        "/".to_string(),
+        "example.com".to_string(),
+    );
+
+    req.header("Host", "example.com");
+    req.header("Accept", "*/*");
+
+    req.remove_header("Host");
+
+    assert_eq!(req.headers.len(), 1);
+    assert_eq!(req.get_header("Host"), None);
+    assert_eq!(req.get_header("Accept"), Some("*/*"));
+}
