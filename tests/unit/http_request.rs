@@ -367,3 +367,85 @@ fn test_content_length_invalid() {
 
     assert_eq!(req.content_length(), None);
 }
+
+// =============================================================================
+// Integration Tests
+// =============================================================================
+
+#[test]
+fn test_full_get_request() {
+    let mut req = HttpRequest::new(
+        HttpMethod::Get,
+        "/index.html".to_string(),
+        "www.example.com".to_string(),
+    );
+    req.header(HOST, "www.example.com");
+    req.header(USER_AGENT, "utwget/0.1.0");
+    req.header(ACCEPT, "*/*");
+    req.header(CONNECTION, "keep-alive");
+
+    let bytes = req.serialize().unwrap();
+    let text = String::from_utf8(bytes).unwrap();
+
+    assert!(text.contains("GET /index.html HTTP/1.1"));
+    assert!(text.contains("Host: www.example.com"));
+    assert!(text.contains("User-Agent: utwget/0.1.0"));
+    assert!(text.contains("Accept: */*"));
+    assert!(text.contains("Connection: keep-alive"));
+}
+
+#[test]
+fn test_full_post_request() {
+    let body = r#"{"name":"test","value":42}"#;
+    let mut req = HttpRequest::new(
+        HttpMethod::Post,
+        "/api/data".to_string(),
+        "api.example.com".to_string(),
+    );
+    req.header(HOST, "api.example.com");
+    req.header(USER_AGENT, "utwget/0.1.0");
+    req.header("Content-Type", "application/json");
+    req.header(CONTENT_LENGTH, body.len().to_string());
+    req.body = Some(body.as_bytes().to_vec());
+
+    let bytes = req.serialize().unwrap();
+    let text = String::from_utf8(bytes).unwrap();
+
+    assert!(text.contains("POST /api/data HTTP/1.1"));
+    assert!(text.contains("Content-Type: application/json"));
+    assert!(text.ends_with(body));
+}
+
+#[test]
+fn test_range_request() {
+    let mut req = HttpRequest::new(
+        HttpMethod::Get,
+        "/large-file.bin".to_string(),
+        "example.com".to_string(),
+    );
+    req.header(HOST, "example.com");
+    req.header(RANGE, "bytes=1000-1999");
+
+    let bytes = req.serialize().unwrap();
+    let text = String::from_utf8(bytes).unwrap();
+
+    assert!(text.contains("Range: bytes=1000-1999"));
+}
+
+#[test]
+fn test_conditional_request() {
+    let mut req = HttpRequest::new(
+        HttpMethod::Get,
+        "/resource".to_string(),
+        "example.com".to_string(),
+    );
+    req.header(HOST, "example.com");
+    req.header(IF_MODIFIED_SINCE, "Wed, 21 Oct 2015 07:28:00 GMT");
+    req.header("If-None-Match", "\"abc123\"");
+
+    let bytes = req.serialize().unwrap();
+    let text = String::from_utf8(bytes).unwrap();
+
+    assert!(text.contains("If-Modified-Since: Wed, 21 Oct 2015 07:28:00 GMT"));
+    assert!(text.contains("If-None-Match: \"abc123\""));
+}
