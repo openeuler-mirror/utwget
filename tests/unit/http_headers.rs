@@ -244,3 +244,58 @@ fn test_header_constants() {
     assert_eq!(REFERER, "Referer");
     assert_eq!(KEEP_ALIVE, "Keep-Alive");
 }
+
+// =============================================================================
+// Integration Tests
+// =============================================================================
+
+#[test]
+fn test_parse_and_format_roundtrip() {
+    let original = "Content-Type: application/json\r\n";
+    let (key, value) = parse_header_line(original).unwrap();
+    let formatted = format_header_line(&key, &value);
+    assert_eq!(original, formatted);
+}
+
+#[test]
+fn test_multiple_headers_parsing() {
+    let headers = [
+        "Host: example.com\r\n",
+        "Content-Type: text/html\r\n",
+        "Content-Length: 123\r\n",
+        "Connection: keep-alive\r\n",
+    ];
+
+    let parsed: Vec<_> = headers.iter()
+        .map(|h| parse_header_line(h).unwrap())
+        .collect();
+
+    assert_eq!(parsed[0], ("Host".to_string(), "example.com".to_string()));
+    assert_eq!(parsed[1], ("Content-Type".to_string(), "text/html".to_string()));
+    assert_eq!(parsed[2], ("Content-Length".to_string(), "123".to_string()));
+    assert_eq!(parsed[3], ("Connection".to_string(), "keep-alive".to_string()));
+}
+
+#[test]
+fn test_status_line_with_various_codes() {
+    let test_cases = [
+        ("HTTP/1.1 200 OK", 200),
+        ("HTTP/1.1 201 Created", 201),
+        ("HTTP/1.1 204 No Content", 204),
+        ("HTTP/1.1 301 Moved Permanently", 301),
+        ("HTTP/1.1 302 Found", 302),
+        ("HTTP/1.1 304 Not Modified", 304),
+        ("HTTP/1.1 400 Bad Request", 400),
+        ("HTTP/1.1 401 Unauthorized", 401),
+        ("HTTP/1.1 403 Forbidden", 403),
+        ("HTTP/1.1 404 Not Found", 404),
+        ("HTTP/1.1 500 Internal Server Error", 500),
+        ("HTTP/1.1 502 Bad Gateway", 502),
+        ("HTTP/1.1 503 Service Unavailable", 503),
+    ];
+
+    for (line, expected_code) in test_cases {
+        let (_, code, _) = parse_status_line(line).unwrap();
+        assert_eq!(code, expected_code);
+    }
+}
