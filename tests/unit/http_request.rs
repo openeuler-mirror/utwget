@@ -182,3 +182,72 @@ fn test_http_request_header_remove() {
     assert_eq!(req.get_header("Host"), None);
     assert_eq!(req.get_header("Accept"), Some("*/*"));
 }
+
+#[test]
+fn test_http_request_header_remove_case_insensitive() {
+    let mut req = HttpRequest::new(
+        HttpMethod::Get,
+        "/".to_string(),
+        "example.com".to_string(),
+    );
+
+    req.header("Content-Type", "text/html");
+    req.remove_header("content-type");
+
+    assert_eq!(req.get_header("Content-Type"), None);
+}
+
+#[test]
+fn test_http_request_header_not_found() {
+    let req = HttpRequest::new(
+        HttpMethod::Get,
+        "/".to_string(),
+        "example.com".to_string(),
+    );
+
+    assert_eq!(req.get_header("Nonexistent"), None);
+}
+
+// =============================================================================
+// Request Serialization Tests
+// =============================================================================
+
+#[test]
+fn test_serialize_get_request() {
+    let mut req = HttpRequest::new(
+        HttpMethod::Get,
+        "/path".to_string(),
+        "example.com".to_string(),
+    );
+    req.header("Host", "example.com");
+    req.header("Accept", "*/*");
+
+    let bytes = req.serialize().unwrap();
+    let text = String::from_utf8(bytes).unwrap();
+
+    assert!(text.starts_with("GET /path HTTP/1.1\r\n"));
+    assert!(text.contains("Host: example.com\r\n"));
+    assert!(text.contains("Accept: */*\r\n"));
+    assert!(text.ends_with("\r\n\r\n"));
+}
+
+#[test]
+fn test_serialize_post_request_with_body() {
+    let mut req = HttpRequest::new(
+        HttpMethod::Post,
+        "/api".to_string(),
+        "example.com".to_string(),
+    );
+    req.header("Host", "example.com");
+    req.header("Content-Type", "application/json");
+    req.header("Content-Length", "2");
+    req.body = Some(b"{}".to_vec());
+
+    let bytes = req.serialize().unwrap();
+    let text = String::from_utf8(bytes).unwrap();
+
+    assert!(text.starts_with("POST /api HTTP/1.1\r\n"));
+    assert!(text.contains("Content-Type: application/json\r\n"));
+    assert!(text.contains("Content-Length: 2\r\n"));
+    assert!(text.ends_with("\r\n\r\n{}"));
+}
