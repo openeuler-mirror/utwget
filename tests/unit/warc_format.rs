@@ -323,3 +323,53 @@ fn test_format_date_now() {
     assert!(formatted.starts_with("20"));
     assert!(formatted.ends_with('Z'));
 }
+
+// ========== Record ID 生成测试 ==========
+
+#[test]
+fn test_format_record_id_format() {
+    // Record ID 格式验证
+    let id = format_record_id();
+
+    // 格式: <urn:uuid:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx>
+    assert!(id.starts_with("<urn:uuid:"));
+    assert!(id.ends_with(">"));
+}
+
+#[test]
+fn test_format_record_id_length() {
+    // Record ID 长度验证
+    let id = format_record_id();
+
+    // <urn:uuid:> = 10 字符
+    // UUID = 36 字符 (8-4-4-4-12 格式)
+    // > = 1 字符
+    // 总计 = 47 字符
+    assert_eq!(id.len(), 47);
+}
+
+#[test]
+fn test_format_record_id_uuid_format() {
+    // UUID 格式验证
+    let id = format_record_id();
+
+    // 提取 UUID 部分
+    let uuid = &id[10..46]; // 跳过 "<urn:uuid:" 和 ">"
+
+    // UUID 格式: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+    assert_eq!(&uuid[8..9], "-");
+    assert_eq!(&uuid[13..14], "-");
+    assert_eq!(&uuid[18..19], "-");
+    assert_eq!(&uuid[23..24], "-");
+}
+
+#[test]
+fn test_format_record_id_unique() {
+    // 每次生成应产生不同的 ID
+    let id1 = format_record_id();
+    let id2 = format_record_id();
+
+    // 由于使用随机 UUID，两次调用应产生不同结果
+    // 注意：极小概率可能相同，但测试中可以忽略
+    assert_ne!(id1, id2);
+}
