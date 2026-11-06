@@ -430,3 +430,89 @@ fn test_url_queue_visited_count() {
     queue.mark_visited("http://example.com/page3.html");
     assert_eq!(queue.visited_count(), 3);
 }
+
+// ========== QueueEntry tests ==========
+
+#[test]
+fn test_queue_entry_clone() {
+    let entry = QueueEntry {
+        url: "http://example.com/".to_string(),
+        referer: Some("http://referer.com/".to_string()),
+        depth: 2,
+        expect_html: true,
+        expect_css: false,
+    };
+
+    let cloned = entry.clone();
+    assert_eq!(entry.url, cloned.url);
+    assert_eq!(entry.referer, cloned.referer);
+    assert_eq!(entry.depth, cloned.depth);
+    assert_eq!(entry.expect_html, cloned.expect_html);
+    assert_eq!(entry.expect_css, cloned.expect_css);
+}
+
+// ========== FIFO order tests ==========
+
+#[test]
+fn test_url_queue_fifo_order() {
+    let mut queue = UrlQueue::new(None);
+
+    // Push URLs in order
+    let urls = [
+        "http://example.com/first.html",
+        "http://example.com/second.html",
+        "http://example.com/third.html",
+    ];
+
+    for url in &urls {
+        queue.push(QueueEntry {
+            url: url.to_string(),
+            referer: None,
+            depth: 0,
+            expect_html: true,
+            expect_css: false,
+        });
+    }
+
+    // Pop should return in same order (FIFO)
+    for url in &urls {
+        let entry = queue.pop().unwrap();
+        assert_eq!(entry.url, *url);
+    }
+}
+
+// ========== Edge cases ==========
+
+#[test]
+fn test_url_queue_empty_url() {
+    let mut queue = UrlQueue::new(None);
+
+    queue.push(QueueEntry {
+        url: "".to_string(),
+        referer: None,
+        depth: 0,
+        expect_html: true,
+        expect_css: false,
+    });
+
+    // Empty URL should still be added
+    assert_eq!(queue.len(), 1);
+    assert!(queue.is_visited(""));
+}
+
+#[test]
+fn test_url_queue_fragment_only() {
+    let mut queue = UrlQueue::new(None);
+
+    queue.push(QueueEntry {
+        url: "http://example.com/page.html#".to_string(),
+        referer: None,
+        depth: 0,
+        expect_html: true,
+        expect_css: false,
+    });
+
+    // URL ending with # should be normalized
+    assert!(queue.is_visited("http://example.com/page.html"));
+    assert!(queue.is_visited("http://example.com/page.html#"));
+}
