@@ -373,3 +373,76 @@ fn test_format_record_id_unique() {
     // 注意：极小概率可能相同，但测试中可以忽略
     assert_ne!(id1, id2);
 }
+
+#[test]
+fn test_format_record_id_hex_digits() {
+    // UUID 应只包含十六进制字符
+    let id = format_record_id();
+    let uuid = &id[10..46];
+
+    // 移除连字符
+    let hex_chars: String = uuid.chars().filter(|c| *c != '-').collect();
+
+    // 验证都是十六进制字符
+    assert!(hex_chars.chars().all(|c| c.is_ascii_hexdigit()));
+    assert_eq!(hex_chars.len(), 32); // 32 个十六进制字符
+}
+
+// ========== WarcRecordType Display 测试 ==========
+
+#[test]
+fn test_warc_record_type_display() {
+    use std::fmt::Write;
+
+    let types = [
+        (format::WarcRecordType::Warcinfo, "warcinfo"),
+        (format::WarcRecordType::Response, "response"),
+        (format::WarcRecordType::Resource, "resource"),
+        (format::WarcRecordType::Request, "request"),
+        (format::WarcRecordType::Metadata, "metadata"),
+        (format::WarcRecordType::Conversion, "conversion"),
+        (format::WarcRecordType::Continuation, "continuation"),
+    ];
+
+    for (record_type, expected) in types {
+        let mut output = String::new();
+        write!(&mut output, "{}", record_type).unwrap();
+        assert_eq!(output, expected);
+    }
+}
+
+// ========== 综合测试 ==========
+
+#[test]
+fn test_warc_header_serialize_complete() {
+    // 完整头部序列化测试
+    let header = format::WarcHeader {
+        record_type: format::WarcRecordType::Response,
+        record_id: "<urn:uuid:complete-test>".to_string(),
+        date: "2025-06-17T10:30:00Z".to_string(),
+        content_length: 1234,
+        concurrent_to: vec!["<urn:uuid:related>".to_string()],
+        content_type: "application/http;msgtype=response".to_string(),
+        target_uri: "http://example.com/page.html".to_string(),
+        gzip_compressed: true,
+        truncated: Some("time".to_string()),
+        wagon: Some("test-wagon".to_string()),
+    };
+
+    let bytes = header.serialize();
+    let text = String::from_utf8(bytes).unwrap();
+
+    // 验证所有字段
+    assert!(text.contains("WARC/1.1\r\n"));
+    assert!(text.contains("WARC-Type: response\r\n"));
+    assert!(text.contains("WARC-Date: 2025-06-17T10:30:00Z\r\n"));
+    assert!(text.contains("WARC-Record-ID: <urn:uuid:complete-test>\r\n"));
+    assert!(text.contains("Content-Type: application/http;msgtype=response\r\n"));
+    assert!(text.contains("Content-Length: 1234\r\n"));
+    assert!(text.contains("WARC-Target-URI: http://example.com/page.html\r\n"));
+    assert!(text.contains("WARC-Concurrent-To: <urn:uuid:related>\r\n"));
+    assert!(text.contains("WARC-Payload-Digest: sha1:\r\n"));
+    assert!(text.contains("WARC-Truncated: time\r\n"));
+    assert!(text.contains("WARC-Wagon: test-wagon\r\n"));
+    assert!(text.ends_with("\r\n\r\n"));
+}
