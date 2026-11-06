@@ -53,3 +53,66 @@ fn test_compute_sha1_large_input() {
     assert!(hash.starts_with("sha1:"));
     assert_eq!(hash.len(), 45); // "sha1:" (5) + hex (40)
 }
+
+#[test]
+fn test_compute_sha1_different_inputs() {
+    // 不同输入应产生不同输出
+    let hash1 = digest::compute_sha1(b"input1");
+    let hash2 = digest::compute_sha1(b"input2");
+    assert_ne!(hash1, hash2);
+}
+
+// ========== WarcDigest 增量更新测试 ==========
+
+#[test]
+fn test_warc_digest_new() {
+    // 创建新的 digest 实例
+    let digest = WarcDigest::new();
+    // 新实例的 finalize 应该等于空输入的 hash
+    let result = digest.finalize();
+    assert_eq!(result, "sha1:da39a3ee5e6b4b0d3255bfef95601890afd80709");
+}
+
+#[test]
+fn test_warc_digest_update_single() {
+    // 单次 update
+    let mut digest = WarcDigest::new();
+    digest.update(b"hello world");
+    let result = digest.finalize();
+    assert_eq!(result, "sha1:2aae6c35c94fcfb415dbe95f408b9ce91ee846ed");
+}
+
+#[test]
+fn test_warc_digest_update_multiple() {
+    // 多次 update 应该等于一次 update 合并后的结果
+    let mut digest = WarcDigest::new();
+    digest.update(b"hello ");
+    digest.update(b"world");
+    let result = digest.finalize();
+    // 应该等于 SHA1("hello world")
+    assert_eq!(result, "sha1:2aae6c35c94fcfb415dbe95f408b9ce91ee846ed");
+}
+
+#[test]
+fn test_warc_digest_update_empty() {
+    // update 空数据不应该改变结果
+    let mut digest = WarcDigest::new();
+    digest.update(b"test");
+    digest.update(b"");
+    let result = digest.finalize();
+    assert_eq!(result, digest::compute_sha1(b"test"));
+}
+
+#[test]
+fn test_warc_digest_update_chunks() {
+    // 分块更新测试
+    let data = b"abcdefghijklmnopqrstuvwxyz";
+    let mut digest = WarcDigest::new();
+    // 按 5 字节分块
+    for chunk in data.chunks(5) {
+        digest.update(chunk);
+    }
+    let result = digest.finalize();
+    let expected = digest::compute_sha1(data);
+    assert_eq!(result, expected);
+}
