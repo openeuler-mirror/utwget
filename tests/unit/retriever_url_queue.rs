@@ -307,3 +307,53 @@ fn test_url_queue_is_visited_with_fragment() {
     // URL with fragment should also be considered visited
     assert!(queue.is_visited("http://example.com/page.html#section"));
 }
+
+#[test]
+fn test_url_queue_is_visited_after_pop() {
+    let mut queue = UrlQueue::new(None);
+
+    queue.push(QueueEntry {
+        url: "http://example.com/page.html".to_string(),
+        referer: None,
+        depth: 0,
+        expect_html: true,
+        expect_css: false,
+    });
+
+    queue.pop();
+
+    // URL should still be marked as visited after pop
+    assert!(queue.is_visited("http://example.com/page.html"));
+}
+
+// ========== mark_visited tests ==========
+
+#[test]
+fn test_url_queue_mark_visited() {
+    let mut queue = UrlQueue::new(None);
+
+    queue.mark_visited("http://example.com/excluded.html");
+
+    assert!(queue.is_visited("http://example.com/excluded.html"));
+    // URL should not be in queue (only in blacklist)
+    assert_eq!(queue.len(), 0);
+    assert_eq!(queue.visited_count(), 1);
+}
+
+#[test]
+fn test_url_queue_mark_visited_prevents_push() {
+    let mut queue = UrlQueue::new(None);
+
+    queue.mark_visited("http://example.com/page.html");
+
+    // Pushing the same URL should be ignored
+    queue.push(QueueEntry {
+        url: "http://example.com/page.html".to_string(),
+        referer: None,
+        depth: 0,
+        expect_html: true,
+        expect_css: false,
+    });
+
+    assert_eq!(queue.len(), 0);
+}
