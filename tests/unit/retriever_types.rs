@@ -169,3 +169,53 @@ fn test_content_type_is_css_basic() {
     assert!(content_type_is_css(Some("TEXT/CSS")));
     assert!(content_type_is_css(Some("Text/Css")));
 }
+
+#[test]
+fn test_content_type_is_css_with_charset() {
+    assert!(content_type_is_css(Some("text/css; charset=utf-8")));
+}
+
+#[test]
+fn test_content_type_is_css_not_css() {
+    assert!(!content_type_is_css(Some("text/html")));
+    assert!(!content_type_is_css(Some("application/json")));
+    assert!(!content_type_is_css(Some("text/plain")));
+}
+
+#[test]
+fn test_content_type_is_css_none() {
+    assert!(!content_type_is_css(None));
+}
+
+// ========== content_type_is_xml tests ==========
+
+#[test]
+fn test_content_type_is_xml_application_xml() {
+    assert!(content_type_is_xml(Some("application/xml")));
+    assert!(content_type_is_xml(Some("APPLICATION/XML")));
+}
+
+#[test]
+fn test_content_type_is_xml_text_xml() {
+    assert!(content_type_is_xml(Some("text/xml")));
+    assert!(content_type_is_xml(Some("TEXT/XML")));
+}
+
+#[test]
+fn test_content_type_is_xml_xhtml() {
+    assert!(content_type_is_xml(Some("application/xhtml+xml")));
+    assert!(content_type_is_xml(Some("APPLICATION/XHTML+XML")));
+}
+
+#[test]
+fn test_content_type_is_xml_with_charset() {
+    assert!(content_type_is_xml(Some("application/xml; charset=utf-8")));
+    assert!(content_type_is_xml(Some("text/xml; charset=iso-8859-1")));
+}
+
+#[test]
+fn test_content_type_is_xml_not_xml() {
+    assert!(!content_type_is_xml(Some("text/html")));
+    assert!(!content_type_is_xml(Some("application/json")));
+    assert!(!content_type_is_xml(Some("text/plain")));
+}
