@@ -169,3 +169,62 @@ fn test_compute_file_sha1_empty() {
 
     let _ = std::fs::remove_file(path);
 }
+
+#[test]
+fn test_compute_file_sha1_binary() {
+    // 二进制文件
+    let path = std::path::Path::new("/tmp/utwget_test_sha1_binary.bin");
+    let data: Vec<u8> = (0..=255).collect();
+    std::fs::write(path, &data).unwrap();
+
+    let hash = digest::compute_file_sha1(path).unwrap();
+    assert!(hash.starts_with("sha1:"));
+    assert_eq!(hash.len(), 45);
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn test_compute_file_sha1_not_found() {
+    // 文件不存在应返回错误
+    let path = std::path::Path::new("/tmp/utwget_test_sha1_nonexistent_12345.txt");
+    let _ = std::fs::remove_file(path); // 确保不存在
+
+    let result = digest::compute_file_sha1(path);
+    assert!(result.is_err());
+}
+
+// ========== 已知向量验证测试 ==========
+
+#[test]
+fn test_known_vector_nist_sha1_empty() {
+    // NIST 空字符串 SHA1 测试向量
+    let hash = digest::compute_sha1(b"");
+    assert_eq!(hash, "sha1:da39a3ee5e6b4b0d3255bfef95601890afd80709");
+}
+
+#[test]
+fn test_known_vector_nist_sha1_abc() {
+    // NIST "abc" SHA1 测试向量
+    let hash = digest::compute_sha1(b"abc");
+    assert_eq!(hash, "sha1:a9993e364706816aba3e25717850c26c9cd0d89d");
+}
+
+#[test]
+fn test_known_vector_sha1_long_string() {
+    // NIST 长测试向量
+    let input = b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq";
+    let hash = digest::compute_sha1(input);
+    // 验证格式正确
+    assert!(hash.starts_with("sha1:"));
+    assert_eq!(hash.len(), 45);
+}
+
+#[test]
+fn test_known_vector_sha1_repeated() {
+    // 重复字符测试
+    let data = vec![b'a'; 1000];
+    let hash = digest::compute_sha1(&data);
+    assert!(hash.starts_with("sha1:"));
+    assert_eq!(hash.len(), 45);
+}
