@@ -161,3 +161,97 @@ fn test_url_queue_dedup_different_fragments() {
     // Only one entry should be in queue
     assert_eq!(queue.len(), 1);
 }
+
+#[test]
+fn test_url_queue_dedup_whitespace() {
+    let mut queue = UrlQueue::new(None);
+
+    queue.push(QueueEntry {
+        url: "http://example.com/page.html".to_string(),
+        referer: None,
+        depth: 0,
+        expect_html: true,
+        expect_css: false,
+    });
+
+    // URL with leading/trailing whitespace should be considered the same
+    queue.push(QueueEntry {
+        url: "  http://example.com/page.html  ".to_string(),
+        referer: None,
+        depth: 1,
+        expect_html: true,
+        expect_css: false,
+    });
+
+    // Only one entry should be in queue
+    assert_eq!(queue.len(), 1);
+}
+
+#[test]
+fn test_url_queue_different_urls_not_deduped() {
+    let mut queue = UrlQueue::new(None);
+
+    queue.push(QueueEntry {
+        url: "http://example.com/page1.html".to_string(),
+        referer: None,
+        depth: 0,
+        expect_html: true,
+        expect_css: false,
+    });
+
+    queue.push(QueueEntry {
+        url: "http://example.com/page2.html".to_string(),
+        referer: None,
+        depth: 1,
+        expect_html: true,
+        expect_css: false,
+    });
+
+    // Both entries should be in queue
+    assert_eq!(queue.len(), 2);
+}
+
+// ========== Max depth tests ==========
+
+#[test]
+fn test_url_queue_max_depth_exceeded() {
+    let mut queue = UrlQueue::new(Some(2));
+
+    // Depth 0 - should be added
+    queue.push(QueueEntry {
+        url: "http://example.com/".to_string(),
+        referer: None,
+        depth: 0,
+        expect_html: true,
+        expect_css: false,
+    });
+
+    // Depth 1 - should be added
+    queue.push(QueueEntry {
+        url: "http://example.com/page1.html".to_string(),
+        referer: None,
+        depth: 1,
+        expect_html: true,
+        expect_css: false,
+    });
+
+    // Depth 2 - should be added (equal to max_depth)
+    queue.push(QueueEntry {
+        url: "http://example.com/page2.html".to_string(),
+        referer: None,
+        depth: 2,
+        expect_html: true,
+        expect_css: false,
+    });
+
+    // Depth 3 - should NOT be added (exceeds max_depth)
+    queue.push(QueueEntry {
+        url: "http://example.com/page3.html".to_string(),
+        referer: None,
+        depth: 3,
+        expect_html: true,
+        expect_css: false,
+    });
+
+    assert_eq!(queue.len(), 3);
+}
