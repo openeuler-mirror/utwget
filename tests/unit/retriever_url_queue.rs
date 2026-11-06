@@ -111,3 +111,53 @@ fn test_url_queue_dedup_exact_match() {
     assert_eq!(queue.len(), 1);
     assert_eq!(queue.visited_count(), 1);
 }
+
+#[test]
+fn test_url_queue_dedup_fragment() {
+    let mut queue = UrlQueue::new(None);
+
+    queue.push(QueueEntry {
+        url: "http://example.com/page.html".to_string(),
+        referer: None,
+        depth: 0,
+        expect_html: true,
+        expect_css: false,
+    });
+
+    // URL with fragment should be considered the same
+    queue.push(QueueEntry {
+        url: "http://example.com/page.html#section".to_string(),
+        referer: None,
+        depth: 1,
+        expect_html: true,
+        expect_css: false,
+    });
+
+    // Only one entry should be in queue
+    assert_eq!(queue.len(), 1);
+}
+
+#[test]
+fn test_url_queue_dedup_different_fragments() {
+    let mut queue = UrlQueue::new(None);
+
+    queue.push(QueueEntry {
+        url: "http://example.com/page.html#section1".to_string(),
+        referer: None,
+        depth: 0,
+        expect_html: true,
+        expect_css: false,
+    });
+
+    // Different fragment but same base URL
+    queue.push(QueueEntry {
+        url: "http://example.com/page.html#section2".to_string(),
+        referer: None,
+        depth: 1,
+        expect_html: true,
+        expect_css: false,
+    });
+
+    // Only one entry should be in queue
+    assert_eq!(queue.len(), 1);
+}
