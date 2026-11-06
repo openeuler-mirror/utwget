@@ -49,3 +49,58 @@ fn test_format_duration() {
     assert_eq!(format_duration(3600), "1h0m");
     assert_eq!(format_duration(3661), "1h1m");
 }
+
+#[test]
+fn test_format_speed() {
+    fn format_speed(bytes_per_sec: u64) -> String {
+        if bytes_per_sec == 0 {
+            return "0B/s".to_string();
+        }
+        let mut speed = bytes_per_sec as f64;
+        let units = ["B/s", "K/s", "M/s", "G/s"];
+        let mut unit_idx = 0;
+        while speed >= 1024.0 && unit_idx < units.len() - 1 {
+            speed /= 1024.0;
+            unit_idx += 1;
+        }
+        if unit_idx == 0 {
+            format!("{}{}", speed as u64, units[unit_idx])
+        } else {
+            format!("{:.1}{}", speed, units[unit_idx])
+        }
+    }
+
+    assert_eq!(format_speed(0), "0B/s");
+    assert_eq!(format_speed(1024), "1.0K/s");
+    assert_eq!(format_speed(1048576), "1.0M/s");
+}
+
+#[test]
+fn test_progress_percentage() {
+    fn calc_percentage(downloaded: u64, total: u64) -> u8 {
+        if total == 0 {
+            return 0;
+        }
+        ((downloaded as f64 / total as f64) * 100.0) as u8
+    }
+
+    assert_eq!(calc_percentage(0, 100), 0);
+    assert_eq!(calc_percentage(50, 100), 50);
+    assert_eq!(calc_percentage(100, 100), 100);
+    assert_eq!(calc_percentage(0, 0), 0);
+}
+
+#[test]
+fn test_eta_calculation() {
+    fn calc_eta(downloaded: u64, total: u64, speed: u64) -> u64 {
+        if speed == 0 || downloaded >= total {
+            return 0;
+        }
+        (total - downloaded) / speed
+    }
+
+    assert_eq!(calc_eta(0, 1000, 100), 10);
+    assert_eq!(calc_eta(500, 1000, 100), 5);
+    assert_eq!(calc_eta(1000, 1000, 100), 0);
+    assert_eq!(calc_eta(0, 1000, 0), 0);
+}
