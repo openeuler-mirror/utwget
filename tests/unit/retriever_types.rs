@@ -272,3 +272,90 @@ fn test_determine_document_flags_success_range() {
         assert!(flags.contains(DocumentFlags::RETRIEVAL_OK));
     }
 }
+
+#[test]
+fn test_determine_document_flags_no_content_type() {
+    let flags = determine_document_flags(None, 200);
+    assert!(flags.contains(DocumentFlags::RETRIEVAL_OK));
+    assert!(!flags.contains(DocumentFlags::TEXT_HTML));
+    assert!(!flags.contains(DocumentFlags::TEXT_CSS));
+}
+
+#[test]
+fn test_determine_document_flags_empty_flags() {
+    let flags = determine_document_flags(Some("application/json"), 404);
+    assert!(flags.is_empty());
+}
+
+// ========== DocumentFlags bitflags tests ==========
+
+#[test]
+fn test_document_flags_empty() {
+    let flags = DocumentFlags::empty();
+    assert!(flags.is_empty());
+    assert!(!flags.contains(DocumentFlags::TEXT_HTML));
+}
+
+#[test]
+fn test_document_flags_all() {
+    let flags = DocumentFlags::all();
+    assert!(flags.contains(DocumentFlags::TEXT_HTML));
+    assert!(flags.contains(DocumentFlags::RETRIEVAL_OK));
+    assert!(flags.contains(DocumentFlags::HEAD_ONLY));
+    assert!(flags.contains(DocumentFlags::NO_CACHE));
+    assert!(flags.contains(DocumentFlags::ACCEPT_RANGES));
+    assert!(flags.contains(DocumentFlags::HTML_EXT_ADDED));
+    assert!(flags.contains(DocumentFlags::TEXT_CSS));
+    assert!(flags.contains(DocumentFlags::IF_MODIFIED));
+    assert!(flags.contains(DocumentFlags::METALINK_META));
+}
+
+#[test]
+fn test_document_flags_union() {
+    let flags = DocumentFlags::TEXT_HTML | DocumentFlags::TEXT_CSS;
+    assert!(flags.contains(DocumentFlags::TEXT_HTML));
+    assert!(flags.contains(DocumentFlags::TEXT_CSS));
+    assert!(!flags.contains(DocumentFlags::RETRIEVAL_OK));
+}
+
+#[test]
+fn test_document_flags_intersection() {
+    let flags1 = DocumentFlags::TEXT_HTML | DocumentFlags::RETRIEVAL_OK;
+    let flags2 = DocumentFlags::TEXT_HTML | DocumentFlags::TEXT_CSS;
+    let intersection = flags1 & flags2;
+    assert!(intersection.contains(DocumentFlags::TEXT_HTML));
+    assert!(!intersection.contains(DocumentFlags::RETRIEVAL_OK));
+    assert!(!intersection.contains(DocumentFlags::TEXT_CSS));
+}
+
+// ========== RequestOptions tests ==========
+
+#[test]
+fn test_request_options_default() {
+    let opts = RequestOptions::default();
+    assert!(opts.use_proxy);
+    assert!(opts.headers.is_empty());
+    assert!(opts.post_data.is_none());
+    assert!(opts.body_data.is_none());
+    assert!(opts.referer.is_none());
+    assert!(opts.range_start.is_none());
+    assert!(opts.if_modified_since.is_none());
+    assert!(opts.if_none_match.is_none());
+    assert!(!opts.auth_without_challenge);
+    assert!(!opts.save_headers);
+    assert!(!opts.content_on_error);
+}
+
+// ========== ProtocolState tests ==========
+
+#[test]
+fn test_protocol_state_default() {
+    let state = ProtocolState::default();
+    assert_eq!(state.retry_count, 0);
+    assert_eq!(state.redirect_count, 0);
+    assert_eq!(state.resume_position, 0);
+    assert!(!state.head_done);
+    assert!(state.last_content_length.is_none());
+    assert!(!state.ntlm_seen);
+    assert!(!state.auth_finished);
+}
