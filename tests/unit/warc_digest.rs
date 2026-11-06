@@ -116,3 +116,56 @@ fn test_warc_digest_update_chunks() {
     let expected = digest::compute_sha1(data);
     assert_eq!(result, expected);
 }
+
+#[test]
+fn test_warc_digest_finalize_idempotent() {
+    // finalize 可以多次调用（因为内部 clone）
+    let mut digest = WarcDigest::new();
+    digest.update(b"data");
+    let result1 = digest.finalize();
+    let result2 = digest.finalize();
+    assert_eq!(result1, result2);
+}
+
+#[test]
+fn test_warc_digest_continue_after_finalize() {
+    // finalize 后可以继续 update
+    let mut digest = WarcDigest::new();
+    digest.update(b"part1");
+    let _ = digest.finalize();
+    digest.update(b"part2");
+    let result = digest.finalize();
+    // 由于 finalize 是 clone，所以这里应该是 "part1part2"
+    let expected = digest::compute_sha1(b"part1part2");
+    assert_eq!(result, expected);
+}
+
+// ========== 文件 SHA1 计算测试 ==========
+
+#[test]
+fn test_compute_file_sha1_basic() {
+    // 基本文件计算
+    let path = std::path::Path::new("/tmp/utwget_test_sha1_basic.txt");
+    std::fs::write(path, b"test content").unwrap();
+
+    let hash = digest::compute_file_sha1(path).unwrap();
+    assert!(hash.starts_with("sha1:"));
+
+    // 验证与内存计算一致
+    let expected = digest::compute_sha1(b"test content");
+    assert_eq!(hash, expected);
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn test_compute_file_sha1_empty() {
+    // 空文件
+    let path = std::path::Path::new("/tmp/utwget_test_sha1_empty.txt");
+    std::fs::write(path, b"").unwrap();
+
+    let hash = digest::compute_file_sha1(path).unwrap();
+    assert_eq!(hash, "sha1:da39a3ee5e6b4b0d3255bfef95601890afd80709");
+
+    let _ = std::fs::remove_file(path);
+}
