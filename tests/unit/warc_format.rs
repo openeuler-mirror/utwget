@@ -268,3 +268,58 @@ fn test_format_date_basic() {
 
     assert_eq!(formatted, "2025-06-17T12:30:45Z");
 }
+
+#[test]
+fn test_format_date_midnight() {
+    // 午夜时间
+    use chrono::{TimeZone, Utc};
+
+    let dt = Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).single().unwrap();
+    let formatted = format_date(dt);
+
+    assert_eq!(formatted, "2025-01-01T00:00:00Z");
+}
+
+#[test]
+fn test_format_date_end_of_day() {
+    // 一天结束时间
+    use chrono::{TimeZone, Utc};
+
+    let dt = Utc.with_ymd_and_hms(2025, 12, 31, 23, 59, 59).single().unwrap();
+    let formatted = format_date(dt);
+
+    assert_eq!(formatted, "2025-12-31T23:59:59Z");
+}
+
+#[test]
+fn test_format_date_iso8601_format() {
+    // 验证 ISO 8601 格式
+    use chrono::Utc;
+
+    let dt = Utc::now();
+    let formatted = format_date(dt);
+
+    // 格式: YYYY-MM-DDTHH:MM:SSZ
+    assert_eq!(formatted.len(), 20);
+    assert!(formatted.starts_with("20")); // 年份以 20 开头
+    assert_eq!(&formatted[4..5], "-");
+    assert_eq!(&formatted[7..8], "-");
+    assert_eq!(&formatted[10..11], "T");
+    assert_eq!(&formatted[13..14], ":");
+    assert_eq!(&formatted[16..17], ":");
+    assert!(formatted.ends_with('Z'));
+}
+
+#[test]
+fn test_format_date_now() {
+    // 当前时间格式化
+    use chrono::Utc;
+
+    let before = Utc::now();
+    let formatted = format_date(before);
+    let after = Utc::now();
+
+    // 格式化字符串应该在 before 和 after 之间
+    assert!(formatted.starts_with("20"));
+    assert!(formatted.ends_with('Z'));
+}
