@@ -219,3 +219,56 @@ fn test_content_type_is_xml_not_xml() {
     assert!(!content_type_is_xml(Some("application/json")));
     assert!(!content_type_is_xml(Some("text/plain")));
 }
+
+#[test]
+fn test_content_type_is_xml_none() {
+    assert!(!content_type_is_xml(None));
+}
+
+// ========== determine_document_flags tests ==========
+
+#[test]
+fn test_determine_document_flags_html() {
+    let flags = determine_document_flags(Some("text/html"), 200);
+    assert!(flags.contains(DocumentFlags::TEXT_HTML));
+    assert!(flags.contains(DocumentFlags::RETRIEVAL_OK));
+    assert!(!flags.contains(DocumentFlags::TEXT_CSS));
+}
+
+#[test]
+fn test_determine_document_flags_css() {
+    let flags = determine_document_flags(Some("text/css"), 200);
+    assert!(flags.contains(DocumentFlags::TEXT_CSS));
+    assert!(flags.contains(DocumentFlags::RETRIEVAL_OK));
+    assert!(!flags.contains(DocumentFlags::TEXT_HTML));
+}
+
+#[test]
+fn test_determine_document_flags_html_with_charset() {
+    let flags = determine_document_flags(Some("text/html; charset=utf-8"), 200);
+    assert!(flags.contains(DocumentFlags::TEXT_HTML));
+    assert!(flags.contains(DocumentFlags::RETRIEVAL_OK));
+}
+
+#[test]
+fn test_determine_document_flags_error_status() {
+    let flags = determine_document_flags(Some("text/html"), 404);
+    assert!(flags.contains(DocumentFlags::TEXT_HTML));
+    assert!(!flags.contains(DocumentFlags::RETRIEVAL_OK));
+}
+
+#[test]
+fn test_determine_document_flags_redirect_status() {
+    let flags = determine_document_flags(Some("text/html"), 301);
+    assert!(flags.contains(DocumentFlags::TEXT_HTML));
+    assert!(!flags.contains(DocumentFlags::RETRIEVAL_OK));
+}
+
+#[test]
+fn test_determine_document_flags_success_range() {
+    // Test all 2xx status codes
+    for status in 200..=206 {
+        let flags = determine_document_flags(None, status);
+        assert!(flags.contains(DocumentFlags::RETRIEVAL_OK));
+    }
+}
