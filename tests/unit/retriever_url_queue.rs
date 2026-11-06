@@ -51,3 +51,63 @@ fn test_url_queue_push_pop_single() {
     // visited_count should still be 1 after pop
     assert_eq!(queue.visited_count(), 1);
 }
+
+#[test]
+fn test_url_queue_push_pop_multiple() {
+    let mut queue = UrlQueue::new(None);
+
+    // Push multiple entries
+    for i in 0..5 {
+        queue.push(QueueEntry {
+            url: format!("http://example.com/page{}.html", i),
+            referer: Some("http://example.com/".to_string()),
+            depth: 1,
+            expect_html: true,
+            expect_css: false,
+        });
+    }
+
+    assert_eq!(queue.len(), 5);
+
+    // Pop all entries (FIFO order)
+    for i in 0..5 {
+        let entry = queue.pop().unwrap();
+        assert_eq!(entry.url, format!("http://example.com/page{}.html", i));
+    }
+
+    assert!(queue.is_empty());
+}
+
+#[test]
+fn test_url_queue_pop_empty() {
+    let mut queue = UrlQueue::new(None);
+    assert!(queue.pop().is_none());
+}
+
+// ========== URL deduplication tests ==========
+
+#[test]
+fn test_url_queue_dedup_exact_match() {
+    let mut queue = UrlQueue::new(None);
+
+    queue.push(QueueEntry {
+        url: "http://example.com/page.html".to_string(),
+        referer: None,
+        depth: 0,
+        expect_html: true,
+        expect_css: false,
+    });
+
+    // Push same URL again - should be ignored
+    queue.push(QueueEntry {
+        url: "http://example.com/page.html".to_string(),
+        referer: Some("http://other.com/".to_string()),
+        depth: 1,
+        expect_html: false,
+        expect_css: true,
+    });
+
+    // Only one entry should be in queue
+    assert_eq!(queue.len(), 1);
+    assert_eq!(queue.visited_count(), 1);
+}
