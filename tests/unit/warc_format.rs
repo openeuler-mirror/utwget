@@ -142,3 +142,67 @@ fn test_warc_header_serialize_truncated() {
 
     assert!(text.contains("WARC-Truncated: length\r\n"));
 }
+
+#[test]
+fn test_warc_header_serialize_wagon() {
+    // wagon 元数据
+    let header = format::WarcHeader {
+        record_type: format::WarcRecordType::Resource,
+        record_id: "<urn:uuid:wagon>".to_string(),
+        date: "2025-06-17T00:00:00Z".to_string(),
+        content_length: 500,
+        concurrent_to: vec![],
+        content_type: "text/html".to_string(),
+        target_uri: "http://example.com/".to_string(),
+        gzip_compressed: false,
+        truncated: None,
+        wagon: Some("wagon-metadata-here".to_string()),
+    };
+
+    let bytes = header.serialize();
+    let text = String::from_utf8(bytes).unwrap();
+
+    assert!(text.contains("WARC-Wagon: wagon-metadata-here\r\n"));
+}
+
+#[test]
+fn test_warc_header_serialize_terminates_with_double_crlf() {
+    // 头部应以双 CRLF 结尾
+    let header = format::WarcHeader {
+        record_type: format::WarcRecordType::Resource,
+        record_id: "<urn:uuid:end>".to_string(),
+        date: "2025-06-17T00:00:00Z".to_string(),
+        content_length: 0,
+        concurrent_to: vec![],
+        content_type: "text/plain".to_string(),
+        target_uri: String::new(),
+        gzip_compressed: false,
+        truncated: None,
+        wagon: None,
+    };
+
+    let bytes = header.serialize();
+    assert!(bytes.ends_with(b"\r\n\r\n"));
+}
+
+#[test]
+fn test_warc_header_serialize_no_target_uri_when_empty() {
+    // 空 target_uri 不应出现在输出中
+    let header = format::WarcHeader {
+        record_type: format::WarcRecordType::Warcinfo,
+        record_id: "<urn:uuid:info>".to_string(),
+        date: "2025-06-17T00:00:00Z".to_string(),
+        content_length: 100,
+        concurrent_to: vec![],
+        content_type: "application/warc-fields".to_string(),
+        target_uri: String::new(),
+        gzip_compressed: false,
+        truncated: None,
+        wagon: None,
+    };
+
+    let bytes = header.serialize();
+    let text = String::from_utf8(bytes).unwrap();
+
+    assert!(!text.contains("WARC-Target-URI:"));
+}
