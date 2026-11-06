@@ -255,3 +255,55 @@ fn test_url_queue_max_depth_exceeded() {
 
     assert_eq!(queue.len(), 3);
 }
+
+#[test]
+fn test_url_queue_no_max_depth() {
+    let mut queue = UrlQueue::new(None);
+
+    // Any depth should be allowed
+    for depth in 0..=100 {
+        queue.push(QueueEntry {
+            url: format!("http://example.com/page{}.html", depth),
+            referer: None,
+            depth,
+            expect_html: true,
+            expect_css: false,
+        });
+    }
+
+    assert_eq!(queue.len(), 101);
+}
+
+// ========== is_visited tests ==========
+
+#[test]
+fn test_url_queue_is_visited_after_push() {
+    let mut queue = UrlQueue::new(None);
+
+    queue.push(QueueEntry {
+        url: "http://example.com/page.html".to_string(),
+        referer: None,
+        depth: 0,
+        expect_html: true,
+        expect_css: false,
+    });
+
+    assert!(queue.is_visited("http://example.com/page.html"));
+    assert!(!queue.is_visited("http://example.com/other.html"));
+}
+
+#[test]
+fn test_url_queue_is_visited_with_fragment() {
+    let mut queue = UrlQueue::new(None);
+
+    queue.push(QueueEntry {
+        url: "http://example.com/page.html".to_string(),
+        referer: None,
+        depth: 0,
+        expect_html: true,
+        expect_css: false,
+    });
+
+    // URL with fragment should also be considered visited
+    assert!(queue.is_visited("http://example.com/page.html#section"));
+}
