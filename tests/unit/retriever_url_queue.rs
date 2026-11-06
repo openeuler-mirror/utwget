@@ -357,3 +357,76 @@ fn test_url_queue_mark_visited_prevents_push() {
 
     assert_eq!(queue.len(), 0);
 }
+
+// ========== clear tests ==========
+
+#[test]
+fn test_url_queue_clear() {
+    let mut queue = UrlQueue::new(None);
+
+    queue.push(QueueEntry {
+        url: "http://example.com/page1.html".to_string(),
+        referer: None,
+        depth: 0,
+        expect_html: true,
+        expect_css: false,
+    });
+
+    queue.push(QueueEntry {
+        url: "http://example.com/page2.html".to_string(),
+        referer: None,
+        depth: 1,
+        expect_html: true,
+        expect_css: false,
+    });
+
+    assert_eq!(queue.len(), 2);
+    assert_eq!(queue.visited_count(), 2);
+
+    queue.clear();
+
+    assert!(queue.is_empty());
+    assert_eq!(queue.visited_count(), 0);
+    assert!(!queue.is_visited("http://example.com/page1.html"));
+}
+
+// ========== visited_count tests ==========
+
+#[test]
+fn test_url_queue_visited_count() {
+    let mut queue = UrlQueue::new(None);
+
+    assert_eq!(queue.visited_count(), 0);
+
+    queue.push(QueueEntry {
+        url: "http://example.com/page1.html".to_string(),
+        referer: None,
+        depth: 0,
+        expect_html: true,
+        expect_css: false,
+    });
+    assert_eq!(queue.visited_count(), 1);
+
+    queue.push(QueueEntry {
+        url: "http://example.com/page2.html".to_string(),
+        referer: None,
+        depth: 1,
+        expect_html: true,
+        expect_css: false,
+    });
+    assert_eq!(queue.visited_count(), 2);
+
+    // Duplicate should not increase count
+    queue.push(QueueEntry {
+        url: "http://example.com/page1.html".to_string(),
+        referer: None,
+        depth: 2,
+        expect_html: true,
+        expect_css: false,
+    });
+    assert_eq!(queue.visited_count(), 2);
+
+    // mark_visited should increase count
+    queue.mark_visited("http://example.com/page3.html");
+    assert_eq!(queue.visited_count(), 3);
+}
