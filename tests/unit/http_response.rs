@@ -437,3 +437,53 @@ fn test_find_header_end_simple() {
     let data = b"HTTP/1.1 200 OK\r\n\r\nbody";
     assert_eq!(find_header_end(data), Some(15));
 }
+
+#[test]
+fn test_find_header_end_with_headers() {
+    let data = b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello";
+    assert!(find_header_end(data).is_some());
+}
+
+#[test]
+fn test_find_header_end_incomplete() {
+    let data = b"HTTP/1.1 200 OK\r\nincomplete";
+    assert_eq!(find_header_end(data), None);
+}
+
+#[test]
+fn test_find_header_end_empty() {
+    let data = b"";
+    assert_eq!(find_header_end(data), None);
+}
+
+// =============================================================================
+// Keep-Alive Tests
+// =============================================================================
+
+#[test]
+fn test_keep_alive_http11_default() {
+    let resp = HttpResponse::new("HTTP/1.1".into(), 200, "OK".into());
+    assert!(resp.keep_alive()); // HTTP/1.1 defaults to keep-alive
+}
+
+#[test]
+fn test_keep_alive_http10_default() {
+    let resp = HttpResponse::new("HTTP/1.0".into(), 200, "OK".into());
+    assert!(!resp.keep_alive()); // HTTP/1.0 defaults to close
+}
+
+#[test]
+fn test_keep_alive_explicit_close() {
+    let mut resp = HttpResponse::new("HTTP/1.1".into(), 200, "OK".into());
+    resp.headers.insert("Connection", "close");
+
+    assert!(!resp.keep_alive());
+}
+
+#[test]
+fn test_keep_alive_explicit_keep_alive() {
+    let mut resp = HttpResponse::new("HTTP/1.0".into(), 200, "OK".into());
+    resp.headers.insert("Connection", "keep-alive");
+
+    assert!(resp.keep_alive());
+}
