@@ -487,3 +487,73 @@ fn test_keep_alive_explicit_keep_alive() {
 
     assert!(resp.keep_alive());
 }
+
+// =============================================================================
+// Integration Tests
+// =============================================================================
+
+#[test]
+fn test_full_response_parsing() {
+    let raw = b"HTTP/1.1 200 OK\r\n\
+                 Content-Type: application/json\r\n\
+                 Content-Length: 42\r\n\
+                 Server: nginx/1.18.0\r\n\
+                 Date: Wed, 21 Oct 2015 07:28:00 GMT\r\n\
+                 ETag: \"abc123\"\r\n\
+                 Accept-Ranges: bytes\r\n\
+                 Cache-Control: max-age=3600\r\n\
+                 \r\n\
+                 {\"message\": \"Hello, World!\"}";
+
+    let resp = parse_response_head(raw).unwrap();
+
+    assert!(resp.is_success());
+    assert_eq!(resp.headers.content_type(), Some("application/json"));
+    assert_eq!(resp.headers.content_length(), Some(42));
+    assert_eq!(resp.headers.server(), Some("nginx/1.18.0"));
+    assert_eq!(resp.headers.etag(), Some("\"abc123\""));
+    assert!(resp.headers.accept_ranges());
+    assert!(resp.keep_alive());
+}
+
+#[test]
+fn test_error_response_parsing() {
+    let raw = b"HTTP/1.1 500 Internal Server Error\r\n\
+                 Content-Type: text/plain\r\n\
+                 Content-Length: 21\r\n\
+                 Retry-After: 60\r\n\
+                 \r\n\
+                 Internal Server Error";
+
+    let resp = parse_response_head(raw).unwrap();
+
+    assert!(resp.is_server_error());
+    assert_eq!(resp.headers.retry_after(), Some(60));
+}
+
+#[test]
+fn test_redirect_response_parsing() {
+    let raw = b"HTTP/1.1 302 Found\r\n\
+                 Location: https://example.com/new-location\r\n\
+                 Cache-Control: no-cache\r\n\
+                 \r\n";
+
+    let resp = parse_response_head(raw).unwrap();
+
+    assert!(resp.is_redirect());
+    assert_eq!(resp.location(), Some("https://example.com/new-location"));
+}
+
+#[test]
+fn test_not_modified_response_parsing() {
+    let raw = b"HTTP/1.1 304 Not Modified\r\n\
+                 ETag: \"abc123\"\r\n\
+                 Last-Modified: Wed, 21 Oct 2015 07:28:00 GMT\r\n\
+                 \r\n";
+
+    let resp = parse_response_head(raw).unwrap();
+
+    assert!(resp.not_modified());
+    assert!(resp.is_redirect());
+    assert_eq!(resp.headers.etag(), Some("\"abc123\""));
+}
