@@ -72,3 +72,73 @@ fn test_warc_header_serialize_all_record_types() {
         assert!(text.contains(&format!("WARC-Type: {}\r\n", expected_str)));
     }
 }
+
+#[test]
+fn test_warc_header_serialize_with_concurrent_to() {
+    // 带关联记录的头部
+    let header = format::WarcHeader {
+        record_type: format::WarcRecordType::Metadata,
+        record_id: "<urn:uuid:meta>".to_string(),
+        date: "2025-06-17T00:00:00Z".to_string(),
+        content_length: 50,
+        concurrent_to: vec![
+            "<urn:uuid:request-1>".to_string(),
+            "<urn:uuid:response-1>".to_string(),
+        ],
+        content_type: "application/warc-fields".to_string(),
+        target_uri: "http://example.com/".to_string(),
+        gzip_compressed: false,
+        truncated: None,
+        wagon: None,
+    };
+
+    let bytes = header.serialize();
+    let text = String::from_utf8(bytes).unwrap();
+
+    assert!(text.contains("WARC-Concurrent-To: <urn:uuid:request-1>\r\n"));
+    assert!(text.contains("WARC-Concurrent-To: <urn:uuid:response-1>\r\n"));
+}
+
+#[test]
+fn test_warc_header_serialize_gzip_compressed() {
+    // gzip 压缩标记
+    let header = format::WarcHeader {
+        record_type: format::WarcRecordType::Response,
+        record_id: "<urn:uuid:gz>".to_string(),
+        date: "2025-06-17T00:00:00Z".to_string(),
+        content_length: 200,
+        concurrent_to: vec![],
+        content_type: "application/gzip".to_string(),
+        target_uri: String::new(),
+        gzip_compressed: true,
+        truncated: None,
+        wagon: None,
+    };
+
+    let bytes = header.serialize();
+    let text = String::from_utf8(bytes).unwrap();
+
+    assert!(text.contains("WARC-Payload-Digest: sha1:\r\n"));
+}
+
+#[test]
+fn test_warc_header_serialize_truncated() {
+    // 截断标记
+    let header = format::WarcHeader {
+        record_type: format::WarcRecordType::Response,
+        record_id: "<urn:uuid:trunc>".to_string(),
+        date: "2025-06-17T00:00:00Z".to_string(),
+        content_length: 1000,
+        concurrent_to: vec![],
+        content_type: "application/http;msgtype=response".to_string(),
+        target_uri: "http://example.com/large".to_string(),
+        gzip_compressed: false,
+        truncated: Some("length".to_string()),
+        wagon: None,
+    };
+
+    let bytes = header.serialize();
+    let text = String::from_utf8(bytes).unwrap();
+
+    assert!(text.contains("WARC-Truncated: length\r\n"));
+}
