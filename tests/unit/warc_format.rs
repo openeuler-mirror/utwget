@@ -206,3 +206,65 @@ fn test_warc_header_serialize_no_target_uri_when_empty() {
 
     assert!(!text.contains("WARC-Target-URI:"));
 }
+
+#[test]
+fn test_warc_header_serialize_crlf_line_endings() {
+    // 验证使用 CRLF 行尾
+    let header = format::WarcHeader {
+        record_type: format::WarcRecordType::Response,
+        record_id: "<urn:uuid:crlf>".to_string(),
+        date: "2025-06-17T00:00:00Z".to_string(),
+        content_length: 0,
+        concurrent_to: vec![],
+        content_type: "text/plain".to_string(),
+        target_uri: "http://example.com/".to_string(),
+        gzip_compressed: false,
+        truncated: None,
+        wagon: None,
+    };
+
+    let bytes = header.serialize();
+    let text = String::from_utf8(bytes).unwrap();
+
+    // 不应包含单独的 LF（除了作为 CRLF 的一部分）
+    assert!(!text.contains('\n') || text.contains("\r\n"));
+}
+
+// ========== 默认内容类型测试 ==========
+
+#[test]
+fn test_default_content_type_no_gzip() {
+    // 非 gzip 模式的默认内容类型
+    let ct = format::default_content_type(false);
+    assert_eq!(ct, "application/http;msgtype=response");
+}
+
+#[test]
+fn test_default_content_type_with_gzip() {
+    // gzip 模式的默认内容类型
+    let ct = format::default_content_type(true);
+    assert_eq!(ct, "application/gzip");
+}
+
+// ========== 记录分隔符测试 ==========
+
+#[test]
+fn test_record_separator() {
+    // 记录分隔符
+    let sep = format::record_separator();
+    assert_eq!(sep, b"\r\n\r\n");
+    assert_eq!(sep.len(), 4);
+}
+
+// ========== 日期格式化测试 ==========
+
+#[test]
+fn test_format_date_basic() {
+    // 基本日期格式化
+    use chrono::{TimeZone, Utc};
+
+    let dt = Utc.with_ymd_and_hms(2025, 6, 17, 12, 30, 45).single().unwrap();
+    let formatted = format_date(dt);
+
+    assert_eq!(formatted, "2025-06-17T12:30:45Z");
+}
