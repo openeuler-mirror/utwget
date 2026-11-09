@@ -206,3 +206,78 @@ fn test_basic_auth_base64_roundtrip() {
     let decoded = base64::engine::general_purpose::STANDARD.decode(encoded).unwrap();
     assert_eq!(String::from_utf8(decoded).unwrap(), "testuser:testpass");
 }
+
+#[test]
+fn test_basic_auth_special_characters() {
+    use ut_http::auth::basic::BasicAuthenticator;
+    use ut_http::auth::Authenticator;
+    use ut_http::auth::AuthChallenge;
+    use ut_http::auth::AuthScheme;
+    use ut_core::types::Credentials;
+    let mut auth = BasicAuthenticator;
+    let challenge = AuthChallenge {
+        scheme: AuthScheme::Basic,
+        realm: None, nonce: None, opaque: None, qop: None,
+        algorithm: None, charset: None, userhash: None,
+        stale: None, domain: None, ntlm_type2_msg: None,
+    };
+    let creds = Credentials { username: "user@domain".into(), password: "p@ss:w0rd!".into() };
+    let result = auth.authenticate(&challenge, &creds, "GET", "/", None).unwrap();
+    assert!(result.is_some());
+    let header = result.unwrap();
+    let encoded = header.strip_prefix("Basic ").unwrap();
+    let decoded = base64::engine::general_purpose::STANDARD.decode(encoded).unwrap();
+    assert_eq!(String::from_utf8(decoded).unwrap(), "user@domain:p@ss:w0rd!");
+}
+
+#[test]
+fn test_basic_auth_empty_password() {
+    use ut_http::auth::basic::BasicAuthenticator;
+    use ut_http::auth::Authenticator;
+    use ut_http::auth::AuthChallenge;
+    use ut_http::auth::AuthScheme;
+    use ut_core::types::Credentials;
+    let mut auth = BasicAuthenticator;
+    let challenge = AuthChallenge {
+        scheme: AuthScheme::Basic,
+        realm: None, nonce: None, opaque: None, qop: None,
+        algorithm: None, charset: None, userhash: None,
+        stale: None, domain: None, ntlm_type2_msg: None,
+    };
+    let creds = Credentials { username: "anonymous".into(), password: "".into() };
+    let result = auth.authenticate(&challenge, &creds, "GET", "/", None).unwrap();
+    assert!(result.is_some());
+    let header = result.unwrap();
+    let encoded = header.strip_prefix("Basic ").unwrap();
+    let decoded = base64::engine::general_purpose::STANDARD.decode(encoded).unwrap();
+    assert_eq!(String::from_utf8(decoded).unwrap(), "anonymous:");
+}
+
+// ========== parse_www_authenticate 辅助函数测试 ==========
+
+#[test]
+fn test_parse_www_authenticate_multiple_headers() {
+    use ut_http::auth::parse_www_authenticate;
+    let headers = vec!["Basic realm=\"foo\"", "Digest realm=\"bar\", nonce=\"abc\""];
+    let challenges = parse_www_authenticate(&headers);
+    assert_eq!(challenges.len(), 2);
+}
+
+#[test]
+fn test_auth_scheme_from_str() {
+    use ut_http::auth::AuthScheme;
+    assert_eq!(AuthScheme::from_str("basic"), Some(AuthScheme::Basic));
+    assert_eq!(AuthScheme::from_str("Digest"), Some(AuthScheme::Digest));
+    assert_eq!(AuthScheme::from_str("NTLM"), Some(AuthScheme::Ntlm));
+    assert_eq!(AuthScheme::from_str("Bearer"), Some(AuthScheme::Bearer));
+    assert_eq!(AuthScheme::from_str("unknown"), None);
+}
+
+#[test]
+fn test_auth_scheme_display() {
+    use ut_http::auth::AuthScheme;
+    assert_eq!(format!("{}", AuthScheme::Basic), "Basic");
+    assert_eq!(format!("{}", AuthScheme::Digest), "Digest");
+    assert_eq!(format!("{}", AuthScheme::Ntlm), "NTLM");
+    assert_eq!(format!("{}", AuthScheme::Bearer), "Bearer");
+}
