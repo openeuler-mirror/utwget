@@ -550,3 +550,54 @@ fn test_safe_filename_control_chars() {
     let result = safe_filename("file\x01name.txt");
     assert!(!result.contains("\x01"));
 }
+
+#[test]
+fn test_parse_size_string_basic() {
+    use ut_core::utils::parse_size_string;
+    assert_eq!(parse_size_string("1024"), Some(1024));
+    assert_eq!(parse_size_string("1K"), Some(1024));
+    assert_eq!(parse_size_string("1M"), Some(1024 * 1024));
+    assert_eq!(parse_size_string("1G"), Some(1024 * 1024 * 1024));
+    assert_eq!(parse_size_string("1T"), Some(1024 * 1024 * 1024 * 1024));
+}
+
+#[test]
+fn test_parse_size_string_float() {
+    use ut_core::utils::parse_size_string;
+    assert_eq!(parse_size_string("1.5K"), Some(1536));
+    assert_eq!(parse_size_string("2.5M"), Some(2621440));
+}
+
+#[test]
+fn test_parse_size_string_edge_cases() {
+    use ut_core::utils::parse_size_string;
+    assert_eq!(parse_size_string(""), None);
+    assert_eq!(parse_size_string("0"), Some(0));
+    assert_eq!(parse_size_string("  512  "), Some(512));
+}
+
+#[test]
+fn test_format_timestamp() {
+    use ut_core::utils::format_timestamp;
+    assert_eq!(format_timestamp(0), "1970-01-01 00:00:00");
+}
+
+// ========== HtmlExtractor 测试 ==========
+
+#[test]
+fn test_html_extractor_simple_links() {
+    use ut_html::{HtmlExtractor, ContentExtractor};
+    use ut_html::ExtractOptions;
+    let html = r#"<html><body>
+<a href="http://example.com/page1">Link1</a>
+<img src="/images/logo.png">
+<script src="app.js"></script>
+</body></html>"#;
+    let extractor = HtmlExtractor;
+    let opts = ExtractOptions::default();
+    let mut cursor = Cursor::new(html.as_bytes());
+    let results = extractor.extract_urls(&mut cursor, "http://example.com/", &opts).unwrap();
+    assert!(results.len() >= 3);
+    assert!(results.iter().any(|p| p.url == "http://example.com/page1"));
+    assert!(results.iter().any(|p| p.url == "/images/logo.png" && p.inline));
+}
