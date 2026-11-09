@@ -158,3 +158,101 @@ fn test_download_registry_register_and_query() {
     assert!(registry.is_downloaded("http://example.com/page.html"));
     assert_eq!(registry.get_local("http://example.com/page.html"), Some(&local));
 }
+
+#[test]
+fn test_download_registry_redirect() {
+    use ut_retriever::DownloadRegistry;
+    use std::path::Path;
+    let mut registry = DownloadRegistry::new();
+    registry.register_download("http://example.com/final", Path::new("/tmp/final.html"));
+    registry.register_redirection("http://example.com/old", "http://example.com/final");
+    assert!(registry.is_visited("http://example.com/old"));
+    let local = registry.get_local("http://example.com/old");
+    assert!(local.is_some());
+}
+
+#[test]
+fn test_download_registry_resolve_redirect_chain() {
+    use ut_retriever::DownloadRegistry;
+    use std::path::Path;
+    let mut registry = DownloadRegistry::new();
+    registry.register_download("http://example.com/dest", Path::new("/tmp/dest.html"));
+    registry.register_redirection("http://example.com/a", "http://example.com/b");
+    registry.register_redirection("http://example.com/b", "http://example.com/dest");
+    let resolved = registry.resolve_redirect("http://example.com/a");
+    assert_eq!(resolved, Some("http://example.com/dest".to_string()));
+}
+
+#[test]
+fn test_download_registry_not_downloaded() {
+    use ut_retriever::DownloadRegistry;
+    let registry = DownloadRegistry::new();
+    assert!(!registry.is_downloaded("http://example.com/unknown"));
+    assert!(registry.get_local("http://example.com/unknown").is_none());
+}
+
+#[test]
+fn test_download_registry_url_to_local_map() {
+    use ut_retriever::DownloadRegistry;
+    use std::path::Path;
+    let mut registry = DownloadRegistry::new();
+    registry.register_download("http://example.com/a", Path::new("/tmp/a.html"));
+    registry.register_download("http://example.com/b", Path::new("/tmp/b.html"));
+    let map = registry.url_to_local_map();
+    assert_eq!(map.len(), 2);
+}
+
+// ========== RecursiveRetriever 配置组装测试 ==========
+
+#[test]
+fn test_recursive_config_defaults() {
+    use ut_core::Config;
+    let config = Config::default();
+    assert!(!config.recursive.enabled);
+    assert_eq!(config.recursive.max_level, Some(5));
+    assert!(!config.recursive.span_hosts);
+    assert!(!config.recursive.no_parent);
+    assert!(!config.recursive.relative_only);
+    assert!(!config.recursive.spider);
+    assert!(config.recursive.use_robots);
+    assert!(!config.recursive.follow_tags.is_empty());
+    assert!(config.recursive.ignore_tags.is_empty());
+    assert!(config.recursive.accept_patterns.is_empty());
+    assert!(config.recursive.reject_patterns.is_empty());
+}
+
+#[test]
+fn test_recursive_mirror_sets_flags() {
+    use clap::Parser;
+    use utwget_cli::args::Args;
+    use utwget_cli::app::build_config;
+    let args = Args::try_parse_from(["utwget", "-m", "http://example.com/"]).unwrap();
+    let config = build_config(&args);
+    assert!(config.recursive.enabled);
+    assert!(config.timestamping);
+    assert!(config.convert_links);
+    assert!(config.page_requisites);
+    assert!(config.continue_download);
+    assert_eq!(config.recursive.max_level, Some(0));
+    assert!(!config.recursive.use_robots);
+}
+
+// ========== ContentExtractor trait 接口一致性 ==========
+
+#[test]
+fn test_content_extractor_trait_objects() {
+    use ut_html::{HtmlExtractor, CssExtractor, ContentExtractor};
+    use ut_html::ExtractOptions;
+    use std::io::Cursor;
+    let opts = ExtractOptions::default();
+
+    let html_extractor: Box<dyn ContentExtractor> = Box::new(HtmlExtractor);
+    let mut html_cursor = Cursor::new(b"<a href='/'>link</a>".as_slice());
+    let _ = html_extractor.extract_urls(&mut html_cursor, "", &opts).unwrap();
+    assert!(matches!(html_extractor.content_kind(), ut_html::ContentKind::Html));
+
+    let css_extractor: Box<dyn ContentExtractor> = Box::new(CssExtractor);
+    let mut css_cursor = Cursor::new(b"a { url(/bg.png); }".as_slice());
+    let _ = css_extractor.extract_urls(&mut css_cursor, "", &opts).unwrap();
+    assert!(matches!(css_extractor.content_kind(), ut_html::ContentKind::Css));
+}
