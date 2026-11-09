@@ -878,3 +878,62 @@ fn test_digest_auth_md5_known_vector() {
     assert!(header.contains("username=\"Mufasa\""));
     assert!(header.contains("response=\""));
 }
+
+#[test]
+fn test_digest_auth_sha256() {
+    use ut_http::auth::digest::DigestAuthenticator;
+    use ut_http::auth::{Authenticator, AuthChallenge, AuthScheme};
+    use ut_core::types::Credentials;
+    let mut auth = DigestAuthenticator::new();
+    let challenge = AuthChallenge {
+        scheme: AuthScheme::Digest,
+        realm: Some("test".into()),
+        nonce: Some("nonce123".into()),
+        opaque: None,
+        qop: Some("auth".into()),
+        algorithm: Some("SHA-256".into()),
+        charset: None, userhash: None, stale: None,
+        domain: None, ntlm_type2_msg: None,
+    };
+    let creds = Credentials { username: "user".into(), password: "pass".into() };
+    let result = auth.authenticate(&challenge, &creds, "GET", "/", None).unwrap();
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_digest_auth_missing_nonce_error() {
+    use ut_http::auth::digest::DigestAuthenticator;
+    use ut_http::auth::{Authenticator, AuthChallenge, AuthScheme};
+    use ut_core::types::Credentials;
+    let mut auth = DigestAuthenticator::new();
+    let challenge = AuthChallenge {
+        scheme: AuthScheme::Digest,
+        realm: None, nonce: None, opaque: None, qop: None,
+        algorithm: None, charset: None, userhash: None,
+        stale: None, domain: None, ntlm_type2_msg: None,
+    };
+    let creds = Credentials { username: "u".into(), password: "p".into() };
+    let result = auth.authenticate(&challenge, &creds, "GET", "/", None);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_digest_nonce_count_increments() {
+    use ut_http::auth::digest::DigestAuthenticator;
+    use ut_http::auth::{Authenticator, AuthChallenge, AuthScheme};
+    use ut_core::types::Credentials;
+    let mut auth = DigestAuthenticator::new();
+    let challenge = AuthChallenge {
+        scheme: AuthScheme::Digest,
+        realm: Some("r".into()),
+        nonce: Some("n".into()),
+        opaque: None,
+        qop: Some("auth".into()),
+        algorithm: Some("MD5".into()),
+        charset: None, userhash: None, stale: None,
+        domain: None, ntlm_type2_msg: None,
+    };
+    let creds = Credentials { username: "u".into(), password: "p".into() };
+    auth.authenticate(&challenge, &creds, "GET", "/", None).unwrap();
+    auth.authenticate(&challenge, &creds, "GET", "/", None).unwrap();
+}
