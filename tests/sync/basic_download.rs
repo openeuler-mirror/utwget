@@ -706,3 +706,54 @@ fn test_css_extractor_skip_data_urls() {
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].url, "http://example.com/img.png");
 }
+
+#[test]
+fn test_css_extractor_content_kind() {
+    use ut_html::{CssExtractor, ContentExtractor};
+    let extractor = CssExtractor;
+    assert!(matches!(extractor.content_kind(), ut_html::types::ContentKind::Css));
+}
+
+// ========== ContentExtractor trait 接口一致性 ==========
+
+#[test]
+fn test_extractors_implement_content_extractor() {
+    use ut_html::{ContentExtractor, HtmlExtractor, CssExtractor};
+    use ut_html::ExtractOptions;
+    let html = b"<html><body><a href='/'>home</a></body></html>";
+    let opts = ExtractOptions::default();
+    let mut html_cursor = Cursor::new(html.as_slice());
+    let _ = HtmlExtractor.extract_urls(&mut html_cursor, "", &opts).unwrap();
+    let mut css_cursor = Cursor::new(b"body { background: url(/bg.png); }".as_slice());
+    let _ = CssExtractor.extract_urls(&mut css_cursor, "", &opts).unwrap();
+}
+
+// ========== HttpRequest 序列化测试 ==========
+
+#[test]
+fn test_http_request_serialize_get() {
+    use ut_core::types::HttpMethod;
+    use ut_http::HttpRequest;
+    let mut req = HttpRequest::new(HttpMethod::Get, "/path".into(), "example.com".into());
+    req.header("Host", "example.com");
+    req.header("Accept", "*/*");
+    let bytes = req.serialize().unwrap();
+    let text = String::from_utf8(bytes).unwrap();
+    assert!(text.starts_with("GET /path HTTP/1.1\r\n"));
+    assert!(text.contains("Host: example.com\r\n"));
+    assert!(text.ends_with("\r\n\r\n"));
+}
+
+#[test]
+fn test_http_request_serialize_post_with_body() {
+    use ut_core::types::HttpMethod;
+    use ut_http::HttpRequest;
+    let mut req = HttpRequest::new(HttpMethod::Post, "/api".into(), "example.com".into());
+    req.header("Content-Type", "application/json");
+    req.body = Some(b"{}".to_vec());
+    req.header("Content-Length", "2");
+    let bytes = req.serialize().unwrap();
+    let text = String::from_utf8(bytes).unwrap();
+    assert!(text.contains("POST /api HTTP/1.1\r\n"));
+    assert!(text.ends_with("\r\n\r\n{}"));
+}
