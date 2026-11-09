@@ -267,3 +267,54 @@ fn test_cookie_jar_path_match() {
     let cookies = jar.match_request("example.com", "/admin/dashboard", Scheme::Http);
     assert_eq!(cookies.len(), 1);
 }
+
+#[test]
+fn test_cookie_jar_load_from_netscape_format() {
+    use ut_core::CookieJar;
+    let data = "# Netscape HTTP Cookie File\n.example.com\tTRUE\t/\tFALSE\t9999999999\tname\tvalue\n";
+    let mut jar = CookieJar::new();
+    jar.load_from_reader(data.as_bytes()).unwrap();
+    assert_eq!(jar.len(), 1);
+}
+
+#[test]
+fn test_cookie_jar_save_to_writer() {
+    use ut_core::CookieJar;
+    let mut jar = CookieJar::new();
+    jar.parse_set_cookie(
+        "name=value; Domain=example.com; Path=/; Expires=Wed, 09 Jun 2100 00:00:00 GMT",
+        "example.com",
+        "/",
+    );
+    let mut output = Vec::new();
+    jar.save_to_writer(&mut output).unwrap();
+    let text = String::from_utf8(output).unwrap();
+    assert!(text.contains("# Netscape HTTP Cookie File"));
+    assert!(text.contains("name"));
+}
+
+#[test]
+fn test_cookie_jar_remove_expired() {
+    use ut_core::CookieJar;
+    let mut jar = CookieJar::new();
+    jar.parse_set_cookie("old=1; Max-Age=0; Domain=example.com", "example.com", "/");
+    jar.remove_expired();
+    assert_eq!(jar.len(), 0);
+}
+
+// ========== RobotParser 测试 ==========
+
+#[test]
+fn test_robot_parser_basic() {
+    use ut_core::RobotParser;
+    let content = r#"
+User-agent: *
+Disallow: /private/
+Allow: /private/public/
+"#;
+    let mut parser = RobotParser::new("utwget");
+    parser.load("example.com", content);
+    assert_eq!(parser.is_allowed("example.com", "http://example.com/page"), Some(true));
+    assert_eq!(parser.is_allowed("example.com", "http://example.com/private/secret"), Some(false));
+    assert_eq!(parser.is_allowed("example.com", "http://example.com/private/public/ok"), Some(true));
+}
