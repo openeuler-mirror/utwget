@@ -656,3 +656,53 @@ fn test_html_extractor_content_kind() {
     let extractor = HtmlExtractor;
     assert!(matches!(extractor.content_kind(), ut_html::types::ContentKind::Html));
 }
+
+// ========== CssExtractor 测试 ==========
+
+#[test]
+fn test_css_extractor_url_tokens() {
+    use ut_html::{CssExtractor, ContentExtractor};
+    use ut_html::ExtractOptions;
+    let css = r#"
+body { background: url(http://example.com/bg.png); }
+.logo { content: url('/images/logo.svg'); }
+"#;
+    let extractor = CssExtractor;
+    let opts = ExtractOptions::default();
+    let mut cursor = Cursor::new(css.as_bytes());
+    let results = extractor.extract_urls(&mut cursor, "http://example.com/", &opts).unwrap();
+    assert!(results.iter().any(|p| p.url == "http://example.com/bg.png"));
+    assert!(results.iter().any(|p| p.url == "/images/logo.svg"));
+}
+
+#[test]
+fn test_css_extractor_import() {
+    use ut_html::{CssExtractor, ContentExtractor};
+    use ut_html::ExtractOptions;
+    let css = r#"
+@import url("http://example.com/styles/reset.css");
+body { background: url(/bg.png); }
+"#;
+    let extractor = CssExtractor;
+    let opts = ExtractOptions::default();
+    let mut cursor = Cursor::new(css.as_bytes());
+    let results = extractor.extract_urls(&mut cursor, "http://example.com/", &opts).unwrap();
+    let imports: Vec<_> = results.iter().filter(|p| matches!(p.link_type, ut_html::url_position::LinkType::CssImport)).collect();
+    assert_eq!(imports.len(), 1);
+}
+
+#[test]
+fn test_css_extractor_skip_data_urls() {
+    use ut_html::{CssExtractor, ContentExtractor};
+    use ut_html::ExtractOptions;
+    let css = r#"
+.icon { background: url(data:image/png;base64,ABC); }
+.link { background: url(http://example.com/img.png); }
+"#;
+    let extractor = CssExtractor;
+    let opts = ExtractOptions::default();
+    let mut cursor = Cursor::new(css.as_bytes());
+    let results = extractor.extract_urls(&mut cursor, "http://example.com/", &opts).unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].url, "http://example.com/img.png");
+}
