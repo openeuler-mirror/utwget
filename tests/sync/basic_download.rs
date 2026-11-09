@@ -1161,3 +1161,66 @@ fn test_warc_header_serialize() {
     assert!(text.contains("Content-Length: 100\r\n"));
     assert!(text.ends_with("\r\n\r\n"));
 }
+
+#[test]
+fn test_warc_record_type_display() {
+    use ut_warc::format::WarcRecordType;
+    assert_eq!(format!("{}", WarcRecordType::Warcinfo), "warcinfo");
+    assert_eq!(format!("{}", WarcRecordType::Response), "response");
+    assert_eq!(format!("{}", WarcRecordType::Resource), "resource");
+    assert_eq!(format!("{}", WarcRecordType::Request), "request");
+    assert_eq!(format!("{}", WarcRecordType::Metadata), "metadata");
+}
+
+// ========== CDX 索引行格式测试 ==========
+
+#[test]
+fn test_warc_cdx_entries() {
+    use ut_warc::WarcWriterImpl;
+    use ut_warc::WarcWriter;
+    
+    let dir = std::env::temp_dir().join("wget_test_warc_cdx");
+    std::fs::create_dir_all(&dir).ok();
+    let path = dir.join("test_cdx.warc");
+    {
+        let mut writer = WarcWriterImpl::new(path.clone(), false, false, None, true).unwrap();
+        let now = chrono::Utc::now();
+        writer.write_resource("http://example.com/index.html", "text/html", b"<html></html>", now).unwrap();
+    }
+    let cdx_path = dir.join("test_cdx.warc.cdx");
+    assert!(cdx_path.exists());
+    let cdx_content = std::fs::read_to_string(&cdx_path).unwrap();
+    let lines: Vec<&str> = cdx_content.lines().collect();
+    assert!(!lines.is_empty());
+    // First line is warcinfo (URL is "-"), second line is the resource
+    let resource_line = lines.iter().find(|l| l.starts_with("http://")).expect("should have resource entry");
+    let fields: Vec<&str> = resource_line.split(' ').collect();
+    assert!(fields.len() >= 10);
+    assert_eq!(fields[0], "http://example.com/index.html");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ========== MetalinkParser 测试 ==========
+
+#[test]
+fn test_metalink_parser_basic() {
+    use ut_metalink::MetalinkParser;
+    let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<metalink version="3.0">
+  <file name="package.zip">
+    <size>1234567</size>
+    <hash type="sha256">abc123</hash>
+    <resources>
+      <url type="http" preference="1">http://mirror1.example.com/package.zip</url>
+      <url type="ftp">ftp://mirror2.example.com/package.zip</url>
+    </resources>
+  </file>
+</metalink>"#;
+    let mut cursor = std::io::Cursor::new(xml.as_bytes());
+    let files = MetalinkParser::parse(&mut cursor).unwrap();
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].name, "package.zip");
+    assert_eq!(files[0].size, Some(1234567));
+    assert_eq!(files[0].resources.len(), 2);
+    assert_eq!(files[0].resources[0].url, "http://mirror1.example.com/package.zip");
+}
