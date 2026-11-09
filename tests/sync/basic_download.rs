@@ -160,3 +160,57 @@ fn test_parsed_url_to_filename_no_host() {
     let path = url.to_filename(true);
     assert_eq!(path.to_string_lossy(), "file.html");
 }
+
+#[test]
+fn test_parsed_url_to_filename_with_host() {
+    use ut_core::ParsedUrl;
+    let url = ParsedUrl::parse("http://example.com/dir/file.html").unwrap();
+    // Default wget behavior: just use the filename, not the full path
+    let path = url.to_filename(false);
+    assert_eq!(path.to_string_lossy(), "file.html");
+}
+
+#[test]
+fn test_parsed_url_parse_error_no_scheme() {
+    use ut_core::ParsedUrl;
+    let result = ParsedUrl::parse("example.com/path");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parsed_url_ipv6() {
+    use ut_core::ParsedUrl;
+    let url = ParsedUrl::parse("http://[::1]:8080/path").unwrap();
+    assert_eq!(url.host, "::1");
+    assert_eq!(url.port, 8080);
+}
+
+// ========== Config 默认值测试 ==========
+
+#[test]
+fn test_config_default_values() {
+    use ut_core::Config;
+    let config = Config::default();
+    assert_eq!(config.tries, 20);
+    assert!(!config.quiet);
+    assert!(!config.background);
+    assert!(!config.recursive.enabled);
+    assert!(!config.noclobber);
+    assert!(!config.continue_download);
+    assert!(!config.timestamping);
+    assert_eq!(config.max_redirect, 20);
+    assert!(config.cookie.enabled);
+    assert!(config.proxy.use_proxy);
+    assert!(!config.http.https_only);
+    assert!(config.ftp.passive);
+}
+
+#[test]
+fn test_config_http_defaults() {
+    use ut_core::Config;
+    let config = Config::default();
+    assert!(config.http.keep_alive);
+    assert_eq!(config.http.default_page, "index.html");
+    assert!(config.http.method.is_none());
+    assert!(config.http.post_data.is_none());
+}
