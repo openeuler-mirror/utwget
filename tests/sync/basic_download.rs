@@ -318,3 +318,57 @@ Allow: /private/public/
     assert_eq!(parser.is_allowed("example.com", "http://example.com/private/secret"), Some(false));
     assert_eq!(parser.is_allowed("example.com", "http://example.com/private/public/ok"), Some(true));
 }
+
+#[test]
+fn test_robot_parser_specific_agent() {
+    use ut_core::RobotParser;
+    let content = r#"
+User-agent: *
+Disallow: /
+
+User-agent: Googlebot
+Disallow: /
+Allow: /search/
+"#;
+    let mut parser = RobotParser::new("Googlebot");
+    parser.load("example.com", content);
+    // /search/ path is allowed, /search?q=test has path /search which doesn't match /search/
+    // Use a path that starts with /search/ instead
+    assert_eq!(parser.is_allowed("example.com", "http://example.com/search/results?q=test"), Some(true));
+    assert_eq!(parser.is_allowed("example.com", "http://example.com/other"), Some(false));
+}
+
+#[test]
+fn test_robot_parser_crawl_delay() {
+    use ut_core::RobotParser;
+    let content = r#"
+User-agent: utwget
+Crawl-delay: 5
+"#;
+    let mut parser = RobotParser::new("utwget");
+    parser.load("example.com", content);
+    assert_eq!(parser.crawl_delay("example.com"), Some(5.0));
+}
+
+#[test]
+fn test_robot_parser_sitemap() {
+    use ut_core::RobotParser;
+    let content = r#"
+User-agent: *
+Sitemap: https://example.com/sitemap.xml
+"#;
+    let mut parser = RobotParser::new("utwget");
+    parser.load("example.com", content);
+    let sitemaps = parser.sitemaps("example.com");
+    assert_eq!(sitemaps.len(), 1);
+    assert_eq!(sitemaps[0], "https://example.com/sitemap.xml");
+}
+
+#[test]
+fn test_robot_parser_empty_disallow_allows_all() {
+    use ut_core::RobotParser;
+    let content = "User-agent: *\nDisallow:\n";
+    let mut parser = RobotParser::new("utwget");
+    parser.load("example.com", content);
+    assert_eq!(parser.is_allowed("example.com", "http://example.com/anything"), Some(true));
+}
