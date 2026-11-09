@@ -1047,3 +1047,55 @@ lrwxrwxrwx  1 owner group          0 Jan 15 10:32 link.html -> index.html
     assert_eq!(entries[1].size, Some(123456));
     assert_eq!(entries[2].name, "link.html -> index.html");
 }
+
+#[test]
+fn test_ftp_listing_parse_windows() {
+    use ut_ftp::listing::parse_windows_listing;
+    let raw = r#"
+01-15-2025  10:30AM       <DIR>          docs
+01-15-2025  10:31AM           123456   file.txt
+"#;
+    let entries = parse_windows_listing(raw);
+    assert_eq!(entries.len(), 2);
+    let dir_entry = &entries[0];
+    assert!(dir_entry.is_dir);
+    let file_entry = &entries[1];
+    assert!(!file_entry.is_dir);
+}
+
+#[test]
+fn test_ftp_listing_auto_detect() {
+    use ut_ftp::listing::parse_listing;
+    let raw = "-rw-r--r--  1 owner group 100 Jan 01 00:00 test.txt\n";
+    let entries = parse_listing(raw);
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].name, "test.txt");
+}
+
+#[test]
+fn test_ftp_listing_empty() {
+    use ut_ftp::listing::parse_listing;
+    let entries = parse_listing("");
+    assert!(entries.is_empty());
+}
+
+// ========== WarcWriterImpl 测试 ==========
+
+#[test]
+fn test_warc_writer_create_and_close() {
+    use ut_warc::WarcWriterImpl;
+    use ut_warc::WarcWriter;
+    
+    let dir = std::env::temp_dir().join("wget_test_warc");
+    std::fs::create_dir_all(&dir).ok();
+    let path = dir.join("test.warc");
+    {
+        let writer = WarcWriterImpl::new(path.clone(), false, false, None, false).unwrap();
+        assert!(!writer.uuid().is_empty());
+        assert!(!writer.timestamp().is_empty());
+    }
+    let content = std::fs::read_to_string(&path).unwrap();
+    assert!(content.contains("WARC/1.1"));
+    assert!(content.contains("warcinfo"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
