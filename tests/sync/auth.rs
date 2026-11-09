@@ -103,3 +103,56 @@ fn test_digest_md5_hash_known_vector_empty() {
     assert!(header.contains("algorithm=MD5"));
     assert!(header.contains("response=\""));
 }
+
+#[test]
+fn test_digest_sha256_hash_known_vector_empty() {
+    use ut_http::auth::digest::DigestAuthenticator;
+    use ut_http::auth::Authenticator;
+    use ut_http::auth::AuthChallenge;
+    use ut_http::auth::AuthScheme;
+    use ut_core::types::Credentials;
+    let mut auth = DigestAuthenticator::new();
+    let challenge = AuthChallenge {
+        scheme: AuthScheme::Digest,
+        realm: Some("test".into()),
+        nonce: Some("nonce".into()),
+        opaque: None,
+        qop: None,
+        algorithm: Some("SHA-256".into()),
+        charset: None, userhash: None, stale: None,
+        domain: None, ntlm_type2_msg: None,
+    };
+    let creds = Credentials { username: "".into(), password: "".into() };
+    let result = auth.authenticate(&challenge, &creds, "GET", "/", None).unwrap();
+    assert!(result.is_some());
+    let header = result.unwrap();
+    assert!(header.contains("algorithm=SHA-256"));
+}
+
+#[test]
+fn test_digest_response_with_qop_auth() {
+    use ut_http::auth::digest::DigestAuthenticator;
+    use ut_http::auth::Authenticator;
+    use ut_http::auth::AuthChallenge;
+    use ut_http::auth::AuthScheme;
+    use ut_core::types::Credentials;
+    let mut auth = DigestAuthenticator::new();
+    let challenge = AuthChallenge {
+        scheme: AuthScheme::Digest,
+        realm: Some("realm".into()),
+        nonce: Some("nonce123".into()),
+        opaque: Some("opaque456".into()),
+        qop: Some("auth".into()),
+        algorithm: Some("MD5".into()),
+        charset: None, userhash: None, stale: None,
+        domain: None, ntlm_type2_msg: None,
+    };
+    let creds = Credentials { username: "alice".into(), password: "secret".into() };
+    let result = auth.authenticate(&challenge, &creds, "POST", "/api/data", Some(b"{}")).unwrap();
+    assert!(result.is_some());
+    let header = result.unwrap();
+    assert!(header.contains("qop=auth"));
+    assert!(header.contains("nc="));
+    assert!(header.contains("cnonce="));
+    assert!(header.contains("opaque=\"opaque456\""));
+}
