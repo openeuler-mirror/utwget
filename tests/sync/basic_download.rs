@@ -372,3 +372,61 @@ fn test_robot_parser_empty_disallow_allows_all() {
     parser.load("example.com", content);
     assert_eq!(parser.is_allowed("example.com", "http://example.com/anything"), Some(true));
 }
+
+// ========== UrlFilter 测试 ==========
+
+#[test]
+fn test_composite_filter_all_must_pass() {
+    use ut_core::regex_filter::{CompositeFilter, PatternAcceptFilter, UrlFilter};
+    let mut composite = CompositeFilter::new();
+    composite.add(PatternAcceptFilter::new(vec!["*.html".into()]));
+    composite.add(PatternAcceptFilter::new(vec!["*".into()]));
+    assert!(composite.is_accepted("", "page.html"));
+    assert!(!composite.is_accepted("", "image.png"));
+}
+
+#[test]
+fn test_domain_filter_includes_subdomains() {
+    use ut_core::regex_filter::{DomainFilter, UrlFilter};
+    let filter = DomainFilter::new(vec!["example.com".into()], vec![]);
+    assert!(filter.is_accepted("http://sub.example.com/page", ""));
+    assert!(!filter.is_accepted("http://other.org/page", ""));
+}
+
+#[test]
+fn test_domain_filter_exclude() {
+    use ut_core::regex_filter::{DomainFilter, UrlFilter};
+    let filter = DomainFilter::new(vec!["example.com".into()], vec!["bad.example.com".into()]);
+    assert!(filter.is_accepted("http://example.com/", ""));
+    assert!(!filter.is_accepted("http://bad.example.com/", ""));
+    assert!(filter.is_accepted("http://good.example.com/", ""));
+}
+
+#[test]
+fn test_blacklist_filter_dedup() {
+    use ut_core::regex_filter::{BlacklistFilter, UrlFilter};
+    let mut filter = BlacklistFilter::new();
+    assert!(filter.is_accepted("http://example.com/a", ""));
+    filter.insert("http://example.com/a");
+    assert!(!filter.is_accepted("http://example.com/a", ""));
+    assert!(filter.is_accepted("http://example.com/b", ""));
+}
+
+#[test]
+fn test_parent_filter_allows_child_paths() {
+    use ut_core::regex_filter::{ParentFilter, UrlFilter};
+    let filter = ParentFilter::new(true, "http://example.com/dir/");
+    assert!(filter.is_accepted("http://example.com/dir/page.html", ""));
+    assert!(filter.is_accepted("http://example.com/dir/sub/page.html", ""));
+}
+
+// ========== HstsStore 测试 ==========
+
+#[test]
+fn test_hsts_store_basic() {
+    use ut_core::HstsStore;
+    let mut store = HstsStore::new();
+    store.add("example.com", true, 31536000);
+    assert_eq!(store.len(), 1);
+    assert!(store.lookup("example.com").is_some());
+}
