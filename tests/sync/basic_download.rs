@@ -495,3 +495,58 @@ password mypass
     assert_eq!(creds.username, "myuser");
     assert_eq!(creds.password, "mypass");
 }
+
+#[test]
+fn test_netrc_default_fallback() {
+    use ut_core::NetrcDb;
+    let mut db = NetrcDb::new();
+    db.load_from_str(r#"
+default
+login anonymous
+password user@example.com
+"#);
+    let creds = db.lookup("unknown.host").unwrap();
+    assert_eq!(creds.username, "anonymous");
+}
+
+#[test]
+fn test_netrc_empty_db() {
+    use ut_core::NetrcDb;
+    let db = NetrcDb::new();
+    assert!(db.is_empty());
+    assert!(db.lookup("any.host").is_none());
+}
+
+#[test]
+fn test_netrc_multiple_machines() {
+    use ut_core::NetrcDb;
+    let mut db = NetrcDb::new();
+    db.load_from_str(r#"
+machine host1.com
+login user1
+password pass1
+machine host2.com
+login user2
+password pass2
+"#);
+    let c1 = db.lookup("host1.com").unwrap();
+    assert_eq!(c1.username, "user1");
+    let c2 = db.lookup("host2.com").unwrap();
+    assert_eq!(c2.username, "user2");
+}
+
+// ========== utils 测试 ==========
+
+#[test]
+fn test_safe_filename_basic() {
+    use ut_core::utils::safe_filename;
+    assert_eq!(safe_filename("file.txt"), "file.txt");
+    assert_eq!(safe_filename("path/to/file"), "path_to_file");
+}
+
+#[test]
+fn test_safe_filename_control_chars() {
+    use ut_core::utils::safe_filename;
+    let result = safe_filename("file\x01name.txt");
+    assert!(!result.contains("\x01"));
+}
