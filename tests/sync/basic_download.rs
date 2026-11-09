@@ -430,3 +430,68 @@ fn test_hsts_store_basic() {
     assert_eq!(store.len(), 1);
     assert!(store.lookup("example.com").is_some());
 }
+
+#[test]
+fn test_hsts_should_upgrade_http_to_https() {
+    use ut_core::{HstsStore, Scheme};
+    let mut store = HstsStore::new();
+    store.add("secure.example.com", true, 31536000);
+    let upgraded = store.should_upgrade("secure.example.com", Scheme::Http);
+    assert_eq!(upgraded, Scheme::Https);
+}
+
+#[test]
+fn test_hsts_should_not_upgrade_if_not_in_store() {
+    use ut_core::{HstsStore, Scheme};
+    let store = HstsStore::new();
+    let scheme = store.should_upgrade("unknown.com", Scheme::Http);
+    assert_eq!(scheme, Scheme::Http);
+}
+
+#[test]
+fn test_hsts_max_age_zero_removes() {
+    use ut_core::HstsStore;
+    let mut store = HstsStore::new();
+    store.add("example.com", true, 31536000);
+    assert_eq!(store.len(), 1);
+    store.add("example.com", true, 0);
+    assert_eq!(store.len(), 0);
+}
+
+#[test]
+fn test_hsts_include_subdomains() {
+    use ut_core::HstsStore;
+    let mut store = HstsStore::new();
+    store.add("example.com", true, 31536000);
+    assert!(store.lookup("sub.example.com").is_some());
+}
+
+#[test]
+fn test_hsts_save_and_load() {
+    use ut_core::HstsStore;
+    use std::path::PathBuf;
+    let path = PathBuf::from("/tmp/wget_test_hsts.json");
+    let mut store = HstsStore::new();
+    store.add("example.com", true, 31536000);
+    store.save_to_file(&path).unwrap();
+    let mut loaded = HstsStore::new();
+    loaded.load_from_file(&path).unwrap();
+    assert!(loaded.lookup("example.com").is_some());
+    let _ = std::fs::remove_file(&path);
+}
+
+// ========== NetrcDb 测试 ==========
+
+#[test]
+fn test_netrc_lookup_specific_host() {
+    use ut_core::NetrcDb;
+    let mut db = NetrcDb::new();
+    db.load_from_str(r#"
+machine ftp.example.com
+login myuser
+password mypass
+"#);
+    let creds = db.lookup("ftp.example.com").unwrap();
+    assert_eq!(creds.username, "myuser");
+    assert_eq!(creds.password, "mypass");
+}
