@@ -815,3 +815,66 @@ fn test_header_map_set_cookies_multiple() {
     let all = hm.set_cookies();
     assert_eq!(all.len(), 2);
 }
+
+#[test]
+fn test_header_map_is_chunked() {
+    use ut_http::HeaderMap;
+    let mut hm = HeaderMap::new();
+    hm.insert("Transfer-Encoding", "chunked");
+    assert!(hm.is_chunked());
+}
+
+// ========== BasicAuthenticator 测试 ==========
+
+#[test]
+fn test_basic_auth_encode() {
+    use ut_http::auth::basic::BasicAuthenticator;
+    use ut_http::auth::{Authenticator, AuthChallenge, AuthScheme};
+    use ut_core::types::Credentials;
+    let mut auth = BasicAuthenticator;
+    let challenge = AuthChallenge {
+        scheme: AuthScheme::Basic,
+        realm: None, nonce: None, opaque: None, qop: None,
+        algorithm: None, charset: None, userhash: None,
+        stale: None, domain: None, ntlm_type2_msg: None,
+    };
+    let creds = Credentials { username: "alice".into(), password: "secret".into() };
+    let result = auth.authenticate(&challenge, &creds, "GET", "/", None).unwrap();
+    let header = result.unwrap();
+    assert!(header.starts_with("Basic "));
+}
+
+#[test]
+fn test_basic_auth_supports_preemptive() {
+    use ut_http::auth::basic::BasicAuthenticator;
+    use ut_http::auth::Authenticator;
+    let auth = BasicAuthenticator;
+    assert!(auth.supports_preemptive());
+}
+
+// ========== DigestAuthenticator 测试 ==========
+
+#[test]
+fn test_digest_auth_md5_known_vector() {
+    use ut_http::auth::digest::DigestAuthenticator;
+    use ut_http::auth::{Authenticator, AuthChallenge, AuthScheme};
+    use ut_core::types::Credentials;
+    let mut auth = DigestAuthenticator::new();
+    let challenge = AuthChallenge {
+        scheme: AuthScheme::Digest,
+        realm: Some("testrealm@host.com".into()),
+        nonce: Some("dcd98b7102dd2f0e8b11d0f600bfb0c093".into()),
+        opaque: Some("5ccc069c403ebaf9f0171e9517a40e".into()),
+        qop: Some("auth".into()),
+        algorithm: Some("MD5".into()),
+        charset: None, userhash: None, stale: None,
+        domain: None, ntlm_type2_msg: None,
+    };
+    let creds = Credentials { username: "Mufasa".into(), password: "Circle Of Life".into() };
+    let result = auth.authenticate(&challenge, &creds, "GET", "/dir/index.html", None).unwrap();
+    assert!(result.is_some());
+    let header = result.unwrap();
+    assert!(header.starts_with("Digest "));
+    assert!(header.contains("username=\"Mufasa\""));
+    assert!(header.contains("response=\""));
+}
