@@ -937,3 +937,54 @@ fn test_digest_nonce_count_increments() {
     auth.authenticate(&challenge, &creds, "GET", "/", None).unwrap();
     auth.authenticate(&challenge, &creds, "GET", "/", None).unwrap();
 }
+
+// ========== ChunkedReader 测试 ==========
+
+#[test]
+fn test_chunked_reader_single_chunk() {
+    use ut_http::chunked::ChunkedReader;
+    use std::io::Cursor;
+    let data = b"5\r\nhello\r\n0\r\n\r\n";
+    let mut cursor = Cursor::new(&data[..]);
+    let mut reader = ChunkedReader::new(&mut cursor);
+    let chunk = reader.read_next_chunk().unwrap();
+    assert_eq!(chunk, Some(b"hello".to_vec()));
+    assert_eq!(reader.read_next_chunk().unwrap(), None);
+}
+
+#[test]
+fn test_chunked_reader_multiple_chunks() {
+    use ut_http::chunked::ChunkedReader;
+    use std::io::Cursor;
+    let data = b"3\r\nhel\r\n4\r\nlo w\r\n5\r\norld!\r\n0\r\n\r\n";
+    let mut cursor = Cursor::new(&data[..]);
+    let mut reader = ChunkedReader::new(&mut cursor);
+    let mut result = Vec::new();
+    while let Some(chunk) = reader.read_next_chunk().unwrap() {
+        result.extend_from_slice(&chunk);
+    }
+    assert_eq!(String::from_utf8(result).unwrap(), "hello world!");
+}
+
+#[test]
+fn test_chunked_reader_empty_body() {
+    use ut_http::chunked::ChunkedReader;
+    use std::io::Cursor;
+    let data = b"0\r\n\r\n";
+    let mut cursor = Cursor::new(&data[..]);
+    let mut reader = ChunkedReader::new(&mut cursor);
+    assert_eq!(reader.read_next_chunk().unwrap(), None);
+}
+
+#[test]
+fn test_chunked_reader_read_to_end() {
+    use ut_http::chunked::ChunkedReader;
+    use std::io::Cursor;
+    let data = b"3\r\nfoo\r\n3\r\nbar\r\n0\r\n\r\n";
+    let mut cursor = Cursor::new(&data[..]);
+    let mut reader = ChunkedReader::new(&mut cursor);
+    let mut output = Vec::new();
+    let total = reader.read_to_end(&mut output).unwrap();
+    assert_eq!(total, 6);
+    assert_eq!(output, b"foobar");
+}
