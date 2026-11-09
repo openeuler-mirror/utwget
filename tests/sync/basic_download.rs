@@ -601,3 +601,58 @@ fn test_html_extractor_simple_links() {
     assert!(results.iter().any(|p| p.url == "http://example.com/page1"));
     assert!(results.iter().any(|p| p.url == "/images/logo.png" && p.inline));
 }
+
+#[test]
+fn test_html_extractor_skip_javascript_data() {
+    use ut_html::{HtmlExtractor, ContentExtractor};
+    use ut_html::ExtractOptions;
+    let html = r#"<html><body>
+<a href="javascript:void(0)">JS</a>
+<a href="data:text/html,test">Data</a>
+<a href="http://example.com/real">Real</a>
+</body></html>"#;
+    let extractor = HtmlExtractor;
+    let opts = ExtractOptions::default();
+    let mut cursor = Cursor::new(html.as_bytes());
+    let results = extractor.extract_urls(&mut cursor, "http://example.com/", &opts).unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].url, "http://example.com/real");
+}
+
+#[test]
+fn test_html_extractor_meta_refresh() {
+    use ut_html::{HtmlExtractor, ContentExtractor};
+    use ut_html::ExtractOptions;
+    let html = r#"<html><head>
+<meta http-equiv="refresh" content="5;url=http://example.com/redirect">
+</head></html>"#;
+    let extractor = HtmlExtractor;
+    let opts = ExtractOptions::default();
+    let mut cursor = Cursor::new(html.as_bytes());
+    let results = extractor.extract_urls(&mut cursor, "http://example.com/", &opts).unwrap();
+    assert!(results.iter().any(|p| matches!(p.link_type, ut_html::url_position::LinkType::RefreshRedirect)));
+}
+
+#[test]
+fn test_html_extractor_ignore_tags() {
+    use ut_html::{HtmlExtractor, ContentExtractor};
+    use ut_html::ExtractOptions;
+    let html = r#"<html><body>
+<a href="http://example.com/a">Link</a>
+<img src="http://example.com/img.png">
+</body></html>"#;
+    let mut opts = ExtractOptions::default();
+    opts.ignore_tags = vec!["a".to_string()];
+    let extractor = HtmlExtractor;
+    let mut cursor = Cursor::new(html.as_bytes());
+    let results = extractor.extract_urls(&mut cursor, "http://example.com/", &opts).unwrap();
+    assert!(results.iter().any(|p| p.attr_name.as_deref() == Some("src")));
+    assert!(!results.iter().any(|p| p.attr_name.as_deref() == Some("href")));
+}
+
+#[test]
+fn test_html_extractor_content_kind() {
+    use ut_html::{HtmlExtractor, ContentExtractor};
+    let extractor = HtmlExtractor;
+    assert!(matches!(extractor.content_kind(), ut_html::types::ContentKind::Html));
+}
