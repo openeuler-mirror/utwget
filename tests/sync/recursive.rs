@@ -50,3 +50,54 @@ fn test_url_queue_dedup() {
     });
     assert_eq!(queue.len(), 1);
 }
+
+#[test]
+fn test_url_queue_dedup_ignores_fragment() {
+    use ut_retriever::UrlQueue;
+    use ut_retriever::QueueEntry;
+    let mut queue = UrlQueue::new(Some(5));
+    queue.push(QueueEntry {
+        url: "http://example.com/page#section1".into(),
+        referer: None,
+        depth: 0,
+        expect_html: true,
+        expect_css: false,
+    });
+    queue.push(QueueEntry {
+        url: "http://example.com/page#section2".into(),
+        referer: None,
+        depth: 1,
+        expect_html: true,
+        expect_css: false,
+    });
+    assert_eq!(queue.len(), 1);
+}
+
+#[test]
+fn test_url_queue_max_depth_filter() {
+    use ut_retriever::UrlQueue;
+    use ut_retriever::QueueEntry;
+    let mut queue = UrlQueue::new(Some(1));
+    queue.push(QueueEntry {
+        url: "http://example.com/a".into(),
+        referer: None,
+        depth: 0,
+        expect_html: true,
+        expect_css: false,
+    });
+    queue.push(QueueEntry {
+        url: "http://example.com/b".into(),
+        referer: None,
+        depth: 1,
+        expect_html: true,
+        expect_css: false,
+    });
+    queue.push(QueueEntry {
+        url: "http://example.com/c".into(),
+        referer: None,
+        depth: 2,
+        expect_html: true,
+        expect_css: false,
+    });
+    assert_eq!(queue.len(), 2);
+}
