@@ -101,3 +101,60 @@ fn test_url_queue_max_depth_filter() {
     });
     assert_eq!(queue.len(), 2);
 }
+
+#[test]
+fn test_url_queue_visited_tracking() {
+    use ut_retriever::UrlQueue;
+    use ut_retriever::QueueEntry;
+    let mut queue = UrlQueue::new(None);
+    queue.push(QueueEntry {
+        url: "http://example.com/a".into(),
+        referer: None,
+        depth: 0,
+        expect_html: true,
+        expect_css: false,
+    });
+    let _ = queue.pop();
+    assert!(queue.is_visited("http://example.com/a"));
+    assert!(!queue.is_visited("http://example.com/b"));
+}
+
+#[test]
+fn test_url_queue_mark_visited() {
+    use ut_retriever::UrlQueue;
+    let mut queue = UrlQueue::new(None);
+    queue.mark_visited("http://example.com/seen");
+    assert!(queue.is_visited("http://example.com/seen"));
+    assert_eq!(queue.visited_count(), 1);
+}
+
+#[test]
+fn test_url_queue_clear() {
+    use ut_retriever::UrlQueue;
+    use ut_retriever::QueueEntry;
+    let mut queue = UrlQueue::new(None);
+    queue.push(QueueEntry {
+        url: "http://example.com/a".into(),
+        referer: None,
+        depth: 0,
+        expect_html: true,
+        expect_css: false,
+    });
+    assert_eq!(queue.len(), 1);
+    queue.clear();
+    assert!(queue.is_empty());
+    assert_eq!(queue.visited_count(), 0);
+}
+
+// ========== DownloadRegistry 测试 ==========
+
+#[test]
+fn test_download_registry_register_and_query() {
+    use ut_retriever::DownloadRegistry;
+    use std::path::PathBuf;
+    let mut registry = DownloadRegistry::new();
+    let local = PathBuf::from("/tmp/page.html");
+    registry.register_download("http://example.com/page.html", &local);
+    assert!(registry.is_downloaded("http://example.com/page.html"));
+    assert_eq!(registry.get_local("http://example.com/page.html"), Some(&local));
+}
