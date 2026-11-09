@@ -103,3 +103,60 @@ fn test_parsed_url_ftp() {
     assert_eq!(url.scheme.as_str(), "ftp");
     assert_eq!(url.port, 21);
 }
+
+#[test]
+fn test_parsed_url_with_credentials() {
+    use ut_core::ParsedUrl;
+    let url = ParsedUrl::parse("https://user:pass@example.com/secret").unwrap();
+    assert_eq!(url.user.as_deref(), Some("user"));
+    assert_eq!(url.password.as_deref(), Some("pass"));
+}
+
+#[test]
+fn test_parsed_url_with_query_and_fragment() {
+    use ut_core::ParsedUrl;
+    let url = ParsedUrl::parse("http://host/page?key=val#section").unwrap();
+    assert_eq!(url.query.as_deref(), Some("key=val"));
+    assert_eq!(url.fragment.as_deref(), Some("section"));
+}
+
+#[test]
+fn test_parsed_url_display_omits_default_port() {
+    use ut_core::ParsedUrl;
+    let url = ParsedUrl::parse("http://example.com:80/path").unwrap();
+    let display = url.to_string();
+    assert!(!display.contains(":80"));
+}
+
+#[test]
+fn test_parsed_url_display_includes_nondefault_port() {
+    use ut_core::ParsedUrl;
+    let url = ParsedUrl::parse("http://example.com:8080/path").unwrap();
+    let display = url.to_string();
+    assert!(display.contains(":8080"));
+}
+
+#[test]
+fn test_parsed_url_merge_relative() {
+    use ut_core::ParsedUrl;
+    let base = ParsedUrl::parse("http://example.com/dir/page.html").unwrap();
+    let merged = base.merge("sub.html").unwrap();
+    assert_eq!(merged.path, "/dir/sub.html");
+    assert_eq!(merged.host, "example.com");
+}
+
+#[test]
+fn test_parsed_url_merge_absolute_path() {
+    use ut_core::ParsedUrl;
+    let base = ParsedUrl::parse("http://example.com/dir/page.html").unwrap();
+    let merged = base.merge("/other").unwrap();
+    assert_eq!(merged.path, "/other");
+}
+
+#[test]
+fn test_parsed_url_to_filename_no_host() {
+    use ut_core::ParsedUrl;
+    let url = ParsedUrl::parse("http://example.com/dir/file.html").unwrap();
+    let path = url.to_filename(true);
+    assert_eq!(path.to_string_lossy(), "file.html");
+}
