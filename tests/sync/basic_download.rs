@@ -757,3 +757,61 @@ fn test_http_request_serialize_post_with_body() {
     assert!(text.contains("POST /api HTTP/1.1\r\n"));
     assert!(text.ends_with("\r\n\r\n{}"));
 }
+
+#[test]
+fn test_http_request_header_case_insensitive() {
+    use ut_core::types::HttpMethod;
+    use ut_http::HttpRequest;
+    let mut req = HttpRequest::new(HttpMethod::Get, "/".into(), "host".into());
+    req.header("X-Custom", "value");
+    assert_eq!(req.get_header("x-custom"), Some("value"));
+    req.remove_header("X-Custom");
+    assert_eq!(req.get_header("x-custom"), None);
+}
+
+// ========== HttpResponse 解析测试 ==========
+
+#[test]
+fn test_http_response_parse_head() {
+    use ut_http::response::parse_response_head;
+    let raw = b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 5\r\n\r\nhello";
+    let resp = parse_response_head(raw).unwrap();
+    assert_eq!(resp.status_code, 200);
+    assert_eq!(resp.headers.get("Content-Type"), Some("text/html"));
+    assert_eq!(resp.headers.content_length(), Some(5));
+}
+
+#[test]
+fn test_http_response_classification() {
+    use ut_http::HttpResponse;
+    assert!(HttpResponse::new("HTTP/1.1".into(), 200, "OK".into()).is_success());
+    assert!(HttpResponse::new("HTTP/1.1".into(), 301, "Moved".into()).is_redirect());
+    assert!(HttpResponse::new("HTTP/1.1".into(), 404, "Not Found".into()).is_client_error());
+    assert!(HttpResponse::new("HTTP/1.1".into(), 500, "Error".into()).is_server_error());
+    assert!(HttpResponse::new("HTTP/1.1".into(), 304, "Not Modified".into()).not_modified());
+}
+
+// ========== HeaderMap 测试 ==========
+
+#[test]
+fn test_header_map_basic_operations() {
+    use ut_http::HeaderMap;
+    let mut hm = HeaderMap::new();
+    hm.insert("Content-Type", "text/html");
+    hm.insert("Content-Length", "42");
+    assert_eq!(hm.get("content-type"), Some("text/html"));
+    assert!(hm.contains("CONTENT-LENGTH"));
+    assert_eq!(hm.content_length(), Some(42));
+    hm.remove("Content-Length");
+    assert_eq!(hm.content_length(), None);
+}
+
+#[test]
+fn test_header_map_set_cookies_multiple() {
+    use ut_http::HeaderMap;
+    let mut hm = HeaderMap::new();
+    hm.insert("Set-Cookie", "a=1");
+    hm.insert("Set-Cookie", "b=2");
+    let all = hm.set_cookies();
+    assert_eq!(all.len(), 2);
+}
