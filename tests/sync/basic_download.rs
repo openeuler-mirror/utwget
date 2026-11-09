@@ -988,3 +988,62 @@ fn test_chunked_reader_read_to_end() {
     assert_eq!(total, 6);
     assert_eq!(output, b"foobar");
 }
+
+// ========== Decompressor (gzip) 测试 ==========
+
+#[test]
+fn test_decompressor_gzip_roundtrip() {
+    use ut_http::compression::Decompressor;
+    use std::io::{Cursor, Read, Write};
+    use flate2::{Compression, write::GzEncoder};
+    let original = b"hello world, this is a gzip compression test";
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::fast());
+    encoder.write_all(original).unwrap();
+    let compressed = encoder.finish().unwrap();
+    let cursor = Cursor::new(compressed);
+    let mut decomp = Decompressor::from_encoding(cursor, Some("gzip")).unwrap();
+    let mut output = Vec::new();
+    decomp.read_to_end(&mut output).unwrap();
+    assert_eq!(output, original);
+}
+
+#[test]
+fn test_decompressor_identity() {
+    use ut_http::compression::Decompressor;
+    use std::io::{Cursor, Read};
+    let data = b"hello world";
+    let cursor = Cursor::new(&data[..]);
+    let mut decomp = Decompressor::from_encoding(cursor, None).unwrap();
+    let mut output = Vec::new();
+    decomp.read_to_end(&mut output).unwrap();
+    assert_eq!(output, data);
+}
+
+#[test]
+fn test_decompressor_unsupported_encoding() {
+    use ut_http::compression::Decompressor;
+    use std::io::Cursor;
+    let cursor = Cursor::new(&b"hello"[..]);
+    let result = Decompressor::from_encoding(cursor, Some("br"));
+    assert!(result.is_err());
+}
+
+// ========== FtpResponse 解析测试 ==========
+
+#[test]
+fn test_ftp_listing_parse_unix() {
+    use ut_ftp::listing::parse_unix_listing;
+    let raw = r#"
+drwxr-xr-x  2 owner group       4096 Jan 15 10:30 docs
+-rw-r--r--  1 owner group     123456 Jan 15 10:31 file.txt
+lrwxrwxrwx  1 owner group          0 Jan 15 10:32 link.html -> index.html
+"#;
+    let entries = parse_unix_listing(raw);
+    assert_eq!(entries.len(), 3);
+    assert_eq!(entries[0].name, "docs");
+    assert!(entries[0].is_dir);
+    assert_eq!(entries[1].name, "file.txt");
+    assert!(!entries[1].is_dir);
+    assert_eq!(entries[1].size, Some(123456));
+    assert_eq!(entries[2].name, "link.html -> index.html");
+}
