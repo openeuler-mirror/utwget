@@ -1099,3 +1099,65 @@ fn test_warc_writer_create_and_close() {
     assert!(content.contains("warcinfo"));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn test_warc_writer_write_resource() {
+    use ut_warc::WarcWriterImpl;
+    use ut_warc::WarcWriter;
+    
+    let dir = std::env::temp_dir().join("wget_test_warc_res");
+    std::fs::create_dir_all(&dir).ok();
+    let path = dir.join("resource.warc");
+    {
+        let mut writer = WarcWriterImpl::new(path.clone(), false, false, None, false).unwrap();
+        let now = chrono::Utc::now();
+        writer.write_resource("http://example.com/index.html", "text/html", b"<html></html>", now).unwrap();
+    }
+    let content = std::fs::read_to_string(&path).unwrap();
+    assert!(content.contains("WARC-Target-URI: http://example.com/index.html"));
+    assert!(content.contains("resource"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ========== SHA1 digest 测试 ==========
+
+#[test]
+fn test_warc_sha1_known_vector() {
+    use ut_warc::digest::compute_sha1;
+    let hash = compute_sha1(b"");
+    assert_eq!(hash, "sha1:da39a3ee5e6b4b0d3255bfef95601890afd80709");
+}
+
+#[test]
+fn test_warc_sha1_nonempty() {
+    use ut_warc::digest::compute_sha1;
+    let hash = compute_sha1(b"abc");
+    assert!(hash.starts_with("sha1:"));
+    assert_eq!(hash.len(), 45);
+}
+
+// ========== WARC 格式序列化测试 ==========
+
+#[test]
+fn test_warc_header_serialize() {
+    use ut_warc::format::{WarcHeader, WarcRecordType};
+    let header = WarcHeader {
+        record_type: WarcRecordType::Response,
+        record_id: "<urn:uuid:test-id>".into(),
+        date: "2025-01-01T00:00:00Z".into(),
+        content_length: 100,
+        concurrent_to: Vec::new(),
+        content_type: "application/http;msgtype=response".into(),
+        target_uri: "http://example.com/".into(),
+        gzip_compressed: false,
+        truncated: None,
+        wagon: None,
+    };
+    let bytes = header.serialize();
+    let text = String::from_utf8(bytes).unwrap();
+    assert!(text.starts_with("WARC/1.1\r\n"));
+    assert!(text.contains("WARC-Type: response\r\n"));
+    assert!(text.contains("WARC-Target-URI: http://example.com/\r\n"));
+    assert!(text.contains("Content-Length: 100\r\n"));
+    assert!(text.ends_with("\r\n\r\n"));
+}
