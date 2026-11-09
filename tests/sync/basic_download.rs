@@ -214,3 +214,56 @@ fn test_config_http_defaults() {
     assert!(config.http.method.is_none());
     assert!(config.http.post_data.is_none());
 }
+
+// ========== CookieJar 测试 ==========
+
+#[test]
+fn test_cookie_jar_parse_set_cookie_basic() {
+    use ut_core::CookieJar;
+    let mut jar = CookieJar::new();
+    jar.parse_set_cookie("session=abc123; Path=/; Domain=example.com", "example.com", "/page");
+    assert_eq!(jar.len(), 1);
+}
+
+#[test]
+fn test_cookie_jar_match_request() {
+    use ut_core::{CookieJar, Scheme};
+    let mut jar = CookieJar::new();
+    jar.parse_set_cookie("lang=zh; Path=/; Domain=example.com", "example.com", "/");
+    let cookies = jar.match_request("example.com", "/index.html", Scheme::Http);
+    assert_eq!(cookies.len(), 1);
+    assert_eq!(cookies[0].name, "lang");
+}
+
+#[test]
+fn test_cookie_jar_secure_only_matches_https() {
+    use ut_core::{CookieJar, Scheme};
+    let mut jar = CookieJar::new();
+    jar.parse_set_cookie("token=secret; Secure; Path=/", "example.com", "/");
+    let http_cookies = jar.match_request("example.com", "/", Scheme::Http);
+    assert_eq!(http_cookies.len(), 0);
+    let https_cookies = jar.match_request("example.com", "/", Scheme::Https);
+    assert_eq!(https_cookies.len(), 1);
+}
+
+#[test]
+fn test_cookie_jar_serialize_for_header() {
+    use ut_core::{CookieJar, Scheme};
+    let mut jar = CookieJar::new();
+    jar.parse_set_cookie("a=1; Path=/", "example.com", "/");
+    jar.parse_set_cookie("b=2; Path=/", "example.com", "/");
+    let header = jar.serialize_for_header("example.com", "/", Scheme::Http);
+    assert!(header.is_some());
+    let val = header.unwrap();
+    assert!(val.contains("a=1"));
+    assert!(val.contains("b=2"));
+}
+
+#[test]
+fn test_cookie_jar_path_match() {
+    use ut_core::{CookieJar, Scheme};
+    let mut jar = CookieJar::new();
+    jar.parse_set_cookie("sid=xyz; Path=/admin", "example.com", "/admin");
+    let cookies = jar.match_request("example.com", "/admin/dashboard", Scheme::Http);
+    assert_eq!(cookies.len(), 1);
+}
