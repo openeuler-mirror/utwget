@@ -1224,3 +1224,99 @@ fn test_metalink_parser_basic() {
     assert_eq!(files[0].resources.len(), 2);
     assert_eq!(files[0].resources[0].url, "http://mirror1.example.com/package.zip");
 }
+
+#[test]
+fn test_metalink_parser_multiple_files() {
+    use ut_metalink::MetalinkParser;
+    let xml = r#"<?xml version="1.0"?>
+<metalink version="3.0" xmlns="http://www.metalinker.org/">
+  <file name="a.bin"><size>100</size><resources><url>http://host/a.bin</url></resources></file>
+  <file name="b.bin"><size>200</size><resources><url>http://host/b.bin</url></resources></file>
+</metalink>"#;
+    let mut cursor = std::io::Cursor::new(xml.as_bytes());
+    let files = MetalinkParser::parse(&mut cursor).unwrap();
+    assert_eq!(files.len(), 2);
+}
+
+#[test]
+fn test_metalink_parser_empty_error() {
+    use ut_metalink::MetalinkParser;
+    let xml = r#"<?xml version="1.0"?><metalink></metalink>"#;
+    let mut cursor = std::io::Cursor::new(xml.as_bytes());
+    let result = MetalinkParser::parse(&mut cursor);
+    assert!(result.is_err());
+}
+
+// ========== retrieve 辅助函数测试 ==========
+
+#[test]
+fn test_parse_http_date_various_formats() {
+    use ut_retriever::types::parse_http_date;
+    assert!(parse_http_date("Tue, 15 Nov 1994 08:12:31 GMT").is_some());
+    assert!(parse_http_date("2025-01-01T00:00:00Z").is_some());
+    assert!(parse_http_date("2025-01-01 00:00:00").is_some());
+    assert!(parse_http_date("invalid").is_none());
+}
+
+#[test]
+fn test_parse_content_disposition_filename() {
+    use ut_retriever::types::parse_content_disposition;
+    assert_eq!(
+        parse_content_disposition("attachment; filename=\"report.pdf\""),
+        Some("report.pdf".to_string())
+    );
+    assert_eq!(
+        parse_content_disposition("attachment; filename=file.txt"),
+        Some("file.txt".to_string())
+    );
+}
+
+#[test]
+fn test_content_type_checks() {
+    use ut_retriever::types::{content_type_is_html, content_type_is_css, content_type_is_xml};
+    assert!(content_type_is_html(Some("text/html")));
+    assert!(content_type_is_html(Some("text/html; charset=utf-8")));
+    assert!(!content_type_is_html(Some("application/json")));
+    assert!(content_type_is_css(Some("text/css")));
+    assert!(content_type_is_xml(Some("application/xhtml+xml")));
+    assert!(content_type_is_xml(Some("application/xml")));
+}
+
+#[test]
+fn test_determine_document_flags() {
+    use ut_retriever::types::{determine_document_flags, DocumentFlags};
+    let flags = determine_document_flags(Some("text/html"), 200);
+    assert!(flags.contains(DocumentFlags::TEXT_HTML));
+    assert!(flags.contains(DocumentFlags::RETRIEVAL_OK));
+    let flags = determine_document_flags(Some("text/css"), 200);
+    assert!(flags.contains(DocumentFlags::TEXT_CSS));
+    let flags = determine_document_flags(Some("text/html"), 404);
+    assert!(!flags.contains(DocumentFlags::RETRIEVAL_OK));
+}
+
+// ========== AuthChallenge 解析测试 ==========
+
+#[test]
+fn test_parse_www_authenticate_basic() {
+    use ut_http::auth::{AuthChallenge, AuthScheme};
+    let challenges = AuthChallenge::from_www_authenticate(r#"Basic realm="WallyWorld""#);
+    assert_eq!(challenges.len(), 1);
+    assert!(matches!(challenges[0].scheme, AuthScheme::Basic));
+    assert_eq!(challenges[0].realm.as_deref(), Some("WallyWorld"));
+}
+
+#[test]
+fn test_parse_www_authenticate_digest() {
+    use ut_http::auth::{AuthChallenge, AuthScheme};
+    let header = r#"Digest realm="testrealm@host.com", nonce="abc123", qop="auth", algorithm=MD5"#;
+    let challenges = AuthChallenge::from_www_authenticate(header);
+    assert_eq!(challenges.len(), 1);
+    assert!(matches!(challenges[0].scheme, AuthScheme::Digest));
+}
+
+#[test]
+fn test_parse_www_authenticate_multiple() {
+    use ut_http::auth::AuthChallenge;
+    let challenges = AuthChallenge::from_www_authenticate(r#"Basic realm="foo", Digest realm="bar", nonce="x""#);
+    assert_eq!(challenges.len(), 2);
+}
