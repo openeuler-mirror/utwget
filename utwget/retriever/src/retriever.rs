@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use chrono::Utc;
+use chrono::{Local, Utc};
 use log::{debug, info, warn};
 use rand::Rng;
 use ut_core::url::ParsedUrl;
@@ -372,7 +372,7 @@ impl Retriever {
 
         // Always show timestamp and URL (like wget does)
         if !self.config.quiet {
-            let now = Utc::now();
+            let now = Local::now();
             let display_url = url.display().trim_end_matches('#').to_string();
             eprintln!("--{}--  {}", now.format("%Y-%m-%d %H:%M:%S"), display_url);
         }
@@ -447,10 +447,6 @@ impl Retriever {
             r
         };
 
-        // Print protocol version in verbose mode
-        if (self.config.verbose >= 1 || self.config.debug) && !self.config.quiet {
-            eprintln!("{}", response.version);
-        }
         if self.config.debug {
             eprintln!("---响应头---");
             eprintln!("{} {} {}", response.version, response.status_code, response.reason);
@@ -474,6 +470,15 @@ impl Retriever {
             }
         }
 
+        // Only show full HTTP headers if --server-response is enabled
+        if self.config.server_response && !self.config.quiet {
+            eprintln!("{} {} {}", response.version, response.status_code, response.reason);
+            for (key, value) in response.headers.iter() {
+                eprintln!("  {}: {}", key, value);
+            }
+            eprintln!();
+        }
+
         // Always show content length
         if !self.config.quiet {
             if let Some(len) = response.content_length() {
@@ -484,15 +489,6 @@ impl Retriever {
 
             // Always show saving to
             eprintln!("正在保存至: \"{}\"", output_path.file_name().unwrap_or_default().to_string_lossy());
-        }
-
-        // Only show full HTTP headers if --server-response is enabled
-        if self.config.server_response && !self.config.quiet {
-            eprintln!("{} {} {}", response.version, response.status_code, response.reason);
-            for (key, value) in response.headers.iter() {
-                eprintln!("  {}: {}", key, value);
-            }
-            eprintln!();
         }
 
         self.process_cookies(&url, &response.headers);
