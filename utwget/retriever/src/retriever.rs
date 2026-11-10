@@ -366,49 +366,36 @@ impl Retriever {
 
         debug!("HTTP request: {} {}", req.method, req.path);
 
-        // Try HTTP/2 if enabled and applicable
+        // Try HTTP/2 if enabled and applicable. On success the real response
+        // (status/headers/body) flows into the same handling as HTTP/1.1 below
+        // (server-response, cookies, redirects, auth, file writing). Any failure
+        // falls back to HTTP/1.1.
         #[cfg(feature = "http2")]
-        {
+        let mut response: HttpResponse = {
+            let mut h2_response: Option<HttpResponse> = None;
             if crate::h2_integration::should_use_http2(url, &self.config) {
                 debug!("attempting HTTP/2 for {}", url.display());
                 match crate::h2_integration::H2Retriever::connect(url, &self.config) {
-                    Ok(mut h2_retriever) => {
-                        match h2_retriever.send_request(&req) {
-                            Ok(body) => {
-                                info!("HTTP/2 download successful for {}", url.display());
-                                // Convert HTTP/2 body to a response
-                                let mut response = HttpResponse::new("HTTP/2".to_string(), 200, "OK".to_string());
-                                response.body = Some(body);
-                                // Fall through to handle the response normally
-                                // For now, return a simple success result
-                                let elapsed = start.elapsed();
-                                let bytes_read = response.body.as_ref().map(|b| b.len() as u64).unwrap_or(0);
-                                self.total_downloaded += bytes_read;
-                                self.progress.finish(ut_progress::FinishStatus::Success {
-                                    downloaded: bytes_read,
-                                    elapsed,
-                                });
-                                let result = BodyResult {
-                                    bytes_read,
-                                    elapsed,
-                                    local_file: Some(output_path.to_path_buf()),
-                                };
-                                return Ok(RetrieveOutcome::Success(result));
-                            }
-                            Err(e) => {
-                                debug!("HTTP/2 failed, falling back to HTTP/1.1: {}", e);
-                                // Fall through to HTTP/1.1
-                            }
+                    Ok(mut h2_retriever) => match h2_retriever.send_request(&req) {
+                        Ok(r) => {
+                            info!("HTTP/2 response {} for {}", r.status_code, url.display());
+                            h2_response = Some(r);
                         }
-                    }
+                        Err(e) => {
+                            debug!("HTTP/2 failed, falling back to HTTP/1.1: {}", e);
+                        }
+                    },
                     Err(e) => {
                         debug!("HTTP/2 connection failed, falling back to HTTP/1.1: {}", e);
-                        // Fall through to HTTP/1.1
                     }
                 }
             }
-        }
-
+            match h2_response {
+                Some(r) => r,
+                None => self.do_http_request(&req, url)?,
+            }
+        };
+        #[cfg(not(feature = "http2"))]
         let mut response = self.do_http_request(&req, url)?;
 
         // Print protocol version in verbose mode

@@ -74,7 +74,7 @@ impl RustlsConnector {
     /// # Returns
     ///
     /// An `Arc<ClientConfig>` on success, or a `TlsError` on failure.
-    fn build_config(config: &TlsConfig) -> Result<Arc<ClientConfig>, TlsError> {
+    pub fn build_config(config: &TlsConfig) -> Result<ClientConfig, TlsError> {
         // Build root certificate store
         let mut root_store = RootCertStore::empty();
         let should_verify = config.check_certificate != CheckCertMode::Off;
@@ -122,7 +122,7 @@ impl RustlsConnector {
             }
         };
 
-        Ok(Arc::new(client_config))
+        Ok(client_config)
     }
 
     /// Builds a `ClientConfig` with specific protocol versions.
@@ -207,7 +207,7 @@ impl TlsConnector for RustlsConnector {
             .take_stream()
             .map_err(TlsError::Io)?;
 
-        let client_config = Self::build_config(config)?;
+        let client_config = Arc::new(Self::build_config(config)?);
 
         let server_name = ServerName::try_from(host)
             .map_err(|e| TlsError::HandshakeFailed(format!("invalid server name '{}': {}", host, e)))?
