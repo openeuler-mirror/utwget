@@ -49,6 +49,28 @@ use args::Args;
 fn rearrange_args() -> Vec<String> {
     let original_args: Vec<String> = std::env::args().collect();
 
+    // Expand compound short options to long forms
+    // e.g., -nc -> --no-clobber, -nd -> --no-directories, etc.
+    let compound_short_opts: std::collections::HashMap<&str, &str> = [
+        ("nc", "no-clobber"),
+        ("nd", "no-directories"),
+        ("nH", "no-host-directories"),
+        ("np", "no-parent"),
+        ("x", "force-directories"),
+    ].iter().copied().collect();
+
+    let mut args: Vec<String> = Vec::new();
+    for arg in &original_args {
+        if arg.starts_with('-') && !arg.starts_with("--") && arg.len() > 1 {
+            let short = &arg[1..];
+            if let Some(long_opt) = compound_short_opts.get(short) {
+                args.push(format!("--{}", long_opt));
+                continue;
+            }
+        }
+        args.push(arg.clone());
+    }
+
     // Known short options that take a value
     let short_opts_with_value = [
         'e', 'o', 'a', 'i', 'B', 'l', 'O', 'P', 'Q', 'w', 't', 'T',
@@ -80,8 +102,8 @@ fn rearrange_args() -> Vec<String> {
     let mut urls: Vec<String> = Vec::new();
     let mut i = 1; // Skip program name
 
-    while i < original_args.len() {
-        let arg = &original_args[i];
+    while i < args.len() {
+        let arg = &args[i];
 
         if arg.starts_with("--") {
             // Long option
@@ -89,9 +111,9 @@ fn rearrange_args() -> Vec<String> {
             options.push(arg.clone());
 
             // Check if this option takes a value and wasn't provided with =
-            if !arg.contains('=') && long_opts_with_value.contains(&opt_name) && i + 1 < original_args.len() {
+            if !arg.contains('=') && long_opts_with_value.contains(&opt_name) && i + 1 < args.len() {
                 i += 1;
-                options.push(original_args[i].clone());
+                options.push(args[i].clone());
             }
         } else if arg.starts_with('-') && arg.len() > 1 {
             // Short option
@@ -99,9 +121,9 @@ fn rearrange_args() -> Vec<String> {
             options.push(arg.clone());
 
             // Check if this option takes a value
-            if short_opts_with_value.contains(&opt_char) && i + 1 < original_args.len() && !original_args[i + 1].starts_with('-') {
+            if short_opts_with_value.contains(&opt_char) && i + 1 < args.len() && !args[i + 1].starts_with('-') {
                 i += 1;
-                options.push(original_args[i].clone());
+                options.push(args[i].clone());
             }
         } else {
             // URL
@@ -112,7 +134,7 @@ fn rearrange_args() -> Vec<String> {
     }
 
     // Combine: program name, then options, then URLs
-    let mut result = vec![original_args[0].clone()];
+    let mut result = vec![args[0].clone()];
     result.extend(options);
     result.extend(urls);
     result
