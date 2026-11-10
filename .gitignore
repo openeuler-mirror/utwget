@@ -1,0 +1,12 @@
+# Rust build output
+/target/
+
+# Backup files
+*.orig
+*.rej
+*~
+
+# Editor/IDE
+.idea/
+.vscode/
+*.swp
