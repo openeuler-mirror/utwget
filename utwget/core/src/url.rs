@@ -360,25 +360,40 @@ pub fn encode_iri(url: &str) -> String {
 /// let decoded = decode_iri("https://example.com/%E6%96%87%E6%A1%A3");
 /// ```
 pub fn decode_iri(url: &str) -> String {
-    let mut result = String::with_capacity(url.len());
+    let mut result: Vec<u8> = Vec::with_capacity(url.len());
     let mut chars = url.chars().peekable();
 
     while let Some(ch) = chars.next() {
         if ch == '%' {
-            let hex: String = chars.by_ref().take(2).collect();
-            if let Ok(byte) = u8::from_str_radix(&hex, 16) {
-                result.push(byte as char);
+            let mut hex = String::with_capacity(2);
+            // Collect up to 2 hex digits; stop early if non-hex or end of string
+            while hex.len() < 2 {
+                match chars.peek() {
+                    Some(c) if c.is_ascii_hexdigit() => {
+                        hex.push(*c);
+                        chars.next();
+                    }
+                    _ => break,
+                }
+            }
+            if hex.len() == 2 {
+                if let Ok(byte) = u8::from_str_radix(&hex, 16) {
+                    result.push(byte);
+                } else {
+                    result.push(b'%');
+                    result.extend_from_slice(hex.as_bytes());
+                }
             } else {
-                result.push('%');
-                result.push_str(&hex);
+                // Not enough hex digits after %, output literally
+                result.push(b'%');
+                result.extend_from_slice(hex.as_bytes());
             }
         } else {
-            result.push(ch);
+            result.extend_from_slice(ch.encode_utf8(&mut [0u8; 4]).as_bytes());
         }
     }
 
-    // Try to decode as UTF-8
-    String::from_utf8_lossy(result.as_bytes()).to_string()
+    String::from_utf8_lossy(&result).to_string()
 }
 
 fn find_unescaped_slash(s: &str) -> usize {
@@ -407,6 +422,9 @@ fn parse_authority(authority: &str) -> Result<(Option<String>, Option<String>, S
 
     let ui = &authority[..at_idx];
     let hp = &authority[at_idx + 1..];
+    if ui.is_empty() {
+        return Ok((None, None, hp.to_string()));
+    }
     let (user, pass) = match ui.find(':') {
         Some(ci) => (Some(ui[..ci].to_string()), Some(ui[ci + 1..].to_string())),
         None => (Some(ui.to_string()), None),
