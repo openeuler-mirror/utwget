@@ -180,3 +180,81 @@ fn test_warc_digest_incremental() {
     let result = digest.finalize();
     assert!(result.starts_with("sha1:"));
 }
+
+#[test]
+fn test_warc_compute_file_sha1() {
+    use ut_warc::digest::compute_file_sha1;
+    let path = std::path::Path::new("/tmp/wget_sha1_test.txt");
+    std::fs::write(path, b"test content").unwrap();
+    let hash = compute_file_sha1(path).unwrap();
+    assert!(hash.starts_with("sha1:"));
+    let _ = std::fs::remove_file(path);
+}
+
+// ========== CDX 索引行格式测试 ==========
+
+#[test]
+fn test_warc_format_date() {
+    use ut_warc::format_date;
+    use chrono::{TimeZone, Utc};
+    let dt = Utc.with_ymd_and_hms(2025, 6, 9, 12, 0, 0).single().unwrap();
+    assert_eq!(format_date(dt), "2025-06-09T12:00:00Z");
+}
+
+#[test]
+fn test_warc_format_record_id() {
+    use ut_warc::format_record_id;
+    let id = format_record_id();
+    assert!(id.starts_with("<urn:uuid:"));
+    assert!(id.ends_with(">"));
+    // UUID format: <urn:uuid:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx>
+    // Length: 2 (angle brackets) + 9 (urn:uuid:) + 36 (UUID) = 47
+    assert_eq!(id.len(), 47);
+}
+
+#[test]
+fn test_warc_cdx_line_field_count() {
+    use ut_warc::WarcWriterImpl;
+    use ut_warc::WarcWriter;
+    
+    let dir = std::env::temp_dir().join("wget_test_cdx_fields");
+    std::fs::create_dir_all(&dir).ok();
+    let path = dir.join("test_fields.warc");
+    {
+        let mut writer = WarcWriterImpl::new(path.clone(), false, false, None, true).unwrap();
+        let now = chrono::Utc::now();
+        writer.write_resource("http://a.com/index.html", "text/html", b"<html></html>", now).unwrap();
+        writer.write_resource("http://b.com/style.css", "text/css", b"body {}", now).unwrap();
+    }
+    let cdx_path = dir.join("test_fields.warc.cdx");
+    let cdx_content = std::fs::read_to_string(&cdx_path).unwrap();
+    let lines: Vec<&str> = cdx_content.lines().filter(|l| !l.is_empty()).collect();
+    assert_eq!(lines.len(), 3);
+    for line in &lines[1..] {
+        let fields: Vec<&str> = line.split(' ').collect();
+        // CDX line has 12 fields based on the format in add_cdx_entry
+        assert_eq!(fields.len(), 12);
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_warc_cdx_url_field() {
+    use ut_warc::WarcWriterImpl;
+    use ut_warc::WarcWriter;
+    
+    let dir = std::env::temp_dir().join("wget_test_cdx_url");
+    std::fs::create_dir_all(&dir).ok();
+    let path = dir.join("url.warc");
+    {
+        let mut writer = WarcWriterImpl::new(path.clone(), false, false, None, true).unwrap();
+        let now = chrono::Utc::now();
+        writer.write_resource("http://example.com/page.html", "text/html", b"data", now).unwrap();
+    }
+    let cdx_path = dir.join("url.warc.cdx");
+    let cdx_content = std::fs::read_to_string(&cdx_path).unwrap();
+    let data_lines: Vec<&str> = cdx_content.lines().filter(|l| !l.is_empty() && l.contains("example.com")).collect();
+    assert_eq!(data_lines.len(), 1);
+    assert!(data_lines[0].starts_with("http://example.com/page.html"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
