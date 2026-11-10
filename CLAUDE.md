@@ -457,6 +457,10 @@ utwget 实现了原 wget 没有的额外功能：
 | 2026-06-15 | 完善 FTPS 数据传输功能，添加 retr 和 mdtm 方法 |
 | 2026-06-15 | 验证 --netrc 凭据支持功能 |
 | 2026-06-15 | 完善 --ciphers TLS 密码套件配置支持 |
+| 2026-06-25 | 修复 TLS read 提前返回 EOF 导致响应头/体增量读取被截断 |
+| 2026-06-25 | 修复 TLS 握手完成后仍阻塞读取 NewSessionTicket 导致所有 HTTPS 下载挂起（complete_handshake 仅在 is_handshaking 期间读取） |
+| 2026-06-25 | 重写 HTTP 响应读取为二进制安全+长度感知（read_full_response），修复 keep-alive 连接挂起与二进制 body 解析失败；do_http_request 四个分支统一改用 |
+| 2026-06-25 | 修复 HTTP/2 路径：TLS 配置复用应用设置(--no-check-certificate/CA/客户端证书)、头转换(小写/移除 connection-specific/Host)、真实响应映射、代理判定与 ALPN h2+http/1.1 平滑回退 |
 
 ## 开发指南
 
