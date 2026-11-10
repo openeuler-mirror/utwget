@@ -32,7 +32,7 @@ use crate::types::{
 };
 use crate::utils::{
     adjust_file_extension, apply_file_timestamp, build_proxy_request, is_retryable, is_url_proxied,
-    parse_content_disposition, parse_raw_response, resolve_proxy, rotate_backups, serialize_headers,
+    parse_content_disposition, resolve_proxy, rotate_backups, serialize_headers,
 };
 
 #[cfg(feature = "warc")]
@@ -1161,10 +1161,8 @@ impl Retriever {
                 debug!("HTTPS request over proxy tunnel:\n{}", String::from_utf8_lossy(&serialized));
                 tls_stream.write(&serialized).map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("write error: {}", e))))?;
 
-                let response_data = read_all_from_transport(&mut tls_stream)?;
-
-                let response = parse_raw_response(&response_data)
-                    .ok_or_else(|| RetrieveError::Protocol(WgetError::Other("failed to parse HTTPS response".into())))?;
+                let mut reader = TransportRead::new(&mut tls_stream);
+                let response = read_full_response(&mut reader)?;
                 Ok(response)
             } else {
                 // Plain HTTP over proxy
@@ -1173,12 +1171,9 @@ impl Retriever {
                 stream.write_all(&serialized).map_err(RetrieveError::Io)?;
                 stream.flush().map_err(RetrieveError::Io)?;
 
-                let mut response_data = Vec::new();
-                std::io::copy(&mut stream, &mut response_data).map_err(RetrieveError::Io)?;
+                let response = read_full_response(&mut stream)?;
 
                 // Return connection to pool if keep-alive
-                let response = parse_raw_response(&response_data)
-                    .ok_or_else(|| RetrieveError::Protocol(WgetError::Other("failed to parse proxy response".into())))?;
                 if response.keep_alive() {
                     self.connection_pool.put_tcp(&proxy_host, proxy_port, stream);
                 }
@@ -1203,10 +1198,8 @@ impl Retriever {
                 debug!("HTTPS request:\n{}", String::from_utf8_lossy(&serialized));
                 tls_stream.write(&serialized).map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("write error: {}", e))))?;
 
-                let response_data = read_all_from_transport(&mut tls_stream)?;
-
-                let response = parse_raw_response(&response_data)
-                    .ok_or_else(|| RetrieveError::Protocol(WgetError::Other("failed to parse HTTPS response".into())))?;
+                let mut reader = TransportRead::new(&mut tls_stream);
+                let response = read_full_response(&mut reader)?;
                 Ok(response)
             } else {
                 let serialized = request.serialize().map_err(RetrieveError::Io)?;
@@ -1214,12 +1207,7 @@ impl Retriever {
                 stream.write_all(&serialized).map_err(RetrieveError::Io)?;
                 stream.flush().map_err(RetrieveError::Io)?;
 
-                let mut response_data = Vec::new();
-                std::io::copy(&mut stream, &mut response_data).map_err(RetrieveError::Io)?;
-
-                debug!("HTTP response:\n{}", String::from_utf8_lossy(&response_data));
-                let response = parse_raw_response(&response_data)
-                    .ok_or_else(|| RetrieveError::Protocol(WgetError::Other("failed to parse HTTP response".into())))?;
+                let response = read_full_response(&mut stream)?;
 
                 // Return connection to pool if keep-alive
                 if response.keep_alive() {
@@ -1308,17 +1296,152 @@ impl Retriever {
 /// # Errors
 ///
 /// Returns `RetrieveError` if a read operation fails.
-fn read_all_from_transport(transport: &mut Box<dyn ut_net::Transport<Error = ut_core::error::TlsError>>) -> Result<Vec<u8>, RetrieveError> {
-    let mut data = Vec::new();
-    let mut buf = [0u8; 8192];
-    loop {
-        match transport.read(&mut buf) {
-            Ok(0) => break, // EOF
-            Ok(n) => data.extend_from_slice(&buf[..n]),
-            Err(e) => return Err(RetrieveError::Protocol(WgetError::Other(format!("read error: {}", e)))),
-        }
+/// Adapter that exposes a `ut_net::Transport` (TLS transport) as a blocking
+/// `std::io::Read`, mapping its error type into an `io::Error`.
+///
+/// This lets the binary-safe response reader (`read_full_response`) work
+/// uniformly over both plain `TcpStream` and TLS transports.
+struct TransportRead<'a> {
+    inner: &'a mut Box<dyn ut_net::Transport<Error = ut_core::error::TlsError>>,
+}
+
+impl<'a> TransportRead<'a> {
+    fn new(inner: &'a mut Box<dyn ut_net::Transport<Error = ut_core::error::TlsError>>) -> Self {
+        TransportRead { inner }
     }
-    Ok(data)
+}
+
+impl<'a> Read for TransportRead<'a> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.inner
+            .read(buf)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))
+    }
+}
+
+/// Reads a complete HTTP/1.x response (status line + headers + body) from `reader`
+/// in a binary-safe, length-aware way.
+///
+/// This replaces the previous "read everything until EOF then UTF-8-parse" approach,
+/// which broke on keep-alive connections (no EOF ever arrives → hang) and on binary
+/// bodies (UTF-8 parse of the whole response fails → "failed to parse HTTP response").
+///
+/// Steps:
+/// 1. Read incrementally until the header terminator `\r\n\r\n`, **retaining** any
+///    body bytes that were read together with the headers (the old codec discarded them).
+/// 2. Parse the header block only (ASCII), leaving the body untouched.
+/// 3. Read exactly the body using `Content-Length`, chunked transfer, or until the
+///    connection closes — depending on the response headers.
+///
+/// For responses that carry no body by spec (1xx, 204, 304), no body is read.
+fn read_full_response<R: Read>(reader: &mut R) -> Result<HttpResponse, RetrieveError> {
+    // 1. Read until the end of the header section.
+    let mut buf: Vec<u8> = Vec::with_capacity(8192);
+    let mut tmp = [0u8; 8192];
+    let header_end = loop {
+        if let Some(end) = ut_http::response::find_header_end(&buf) {
+            break end;
+        }
+        if buf.len() > 64 * 1024 {
+            return Err(RetrieveError::Protocol(WgetError::Other(
+                "HTTP response headers too large (>64KB)".into(),
+            )));
+        }
+        let n = reader
+            .read(&mut tmp)
+            .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("read response head: {}", e))))?;
+        if n == 0 {
+            return Err(RetrieveError::Protocol(WgetError::Other(
+                "connection closed before response headers received".into(),
+            )));
+        }
+        buf.extend_from_slice(&tmp[..n]);
+    };
+
+    // 2. Parse the header block only (body bytes beyond it are left untouched).
+    let response = ut_http::response::parse_response_head(&buf[..header_end + 4])
+        .ok_or_else(|| RetrieveError::Protocol(WgetError::Other("failed to parse HTTP response".into())))?;
+
+    // Leftover body bytes that arrived in the same read(s) as the headers.
+    let leftover: Vec<u8> = buf[header_end + 4..].to_vec();
+
+    // 3. Read the body (if any).
+    let no_body = response.status_code < 200
+        || response.status_code == 204
+        || response.status_code == 304;
+
+    let body = if no_body {
+        leftover // should be empty; ignored
+    } else {
+        // Chain leftover bytes ahead of the live reader so the body decoder sees a
+        // single contiguous stream regardless of how much the header read over-read.
+        let mut chained = io::Cursor::new(leftover).chain(reader);
+        read_response_body(&mut chained, &response)?
+    };
+
+    let mut response = response;
+    response.body = Some(body);
+    Ok(response)
+}
+
+/// Reads the response body according to the transfer framing declared in the headers.
+fn read_response_body<R: Read>(reader: &mut R, response: &HttpResponse) -> Result<Vec<u8>, RetrieveError> {
+    if response.is_chunked() {
+        let mut body = Vec::new();
+        let mut chunked = ut_http::chunked::ChunkedReader::new(reader);
+        chunked
+            .read_to_end(&mut body)
+            .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("chunked body read error: {}", e))))?;
+        Ok(body)
+    } else if let Some(len) = response.content_length() {
+        read_fixed_body(reader, len)
+    } else {
+        // No Content-Length and not chunked: read until the server closes the
+        // connection (HTTP/1.0 style, or Connection: close).
+        read_until_close(reader)
+    }
+}
+
+/// Reads exactly `len` bytes from the reader.
+fn read_fixed_body<R: Read>(reader: &mut R, len: u64) -> Result<Vec<u8>, RetrieveError> {
+    let mut body: Vec<u8> = Vec::new();
+    let mut got = 0u64;
+    let mut tmp = [0u8; 8192];
+    while got < len {
+        let want = ((len - got) as usize).min(tmp.len());
+        let n = reader
+            .read(&mut tmp[..want])
+            .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("body read error: {}", e))))?;
+        if n == 0 {
+            // Truncated body — return what we have rather than hanging; the caller
+            // can detect the short read via content_length mismatch downstream.
+            debug!(
+                "response body truncated: got {} of {} bytes",
+                got,
+                len
+            );
+            break;
+        }
+        body.extend_from_slice(&tmp[..n]);
+        got += n as u64;
+    }
+    Ok(body)
+}
+
+/// Reads until the reader reports end-of-stream.
+fn read_until_close<R: Read>(reader: &mut R) -> Result<Vec<u8>, RetrieveError> {
+    let mut body = Vec::new();
+    let mut tmp = [0u8; 8192];
+    loop {
+        let n = reader
+            .read(&mut tmp)
+            .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("body read error: {}", e))))?;
+        if n == 0 {
+            break;
+        }
+        body.extend_from_slice(&tmp[..n]);
+    }
+    Ok(body)
 }
 
 impl Retriever {
