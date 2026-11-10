@@ -262,12 +262,23 @@ impl TlsTransport {
         })?;
 
         loop {
+            // Always flush any pending TLS records rustls wants to write (this
+            // covers the ClientHello up front and the client Finished once the
+            // server flight has been processed).
             if conn.wants_write() {
                 let _ = conn.write_tls(&mut *stream).map_err(TlsError::Io)?;
                 continue;
             }
 
-            if conn.wants_read() {
+            // Only read while the handshake is still in progress. Once rustls
+            // reports `is_handshaking() == false` the handshake is complete; at
+            // that point `wants_read()` may still be true (e.g. a TLS 1.3
+            // NewSessionTicket or application data is pending on the socket),
+            // but blocking here to drain it would deadlock — the server is now
+            // waiting for our HTTP request, not sending more handshake data.
+            // Any such leftover bytes are left for `TlsTransport::read` to
+            // consume on demand.
+            if conn.is_handshaking() && conn.wants_read() {
                 match conn.read_tls(&mut *stream) {
                     Ok(0) => {
                         return Err(TlsError::HandshakeFailed(
@@ -328,10 +339,23 @@ impl Transport for TlsTransport {
         })?;
 
         loop {
-            // Deliver any already-decrypted application data.
+            // Deliver any already-decrypted application data. rustls reports
+            // "no plaintext currently buffered, connection still open" either as
+            // `Ok(0)` or as an `UnexpectedEof`/`WouldBlock` error depending on
+            // version — neither is a real EOF here, so we treat both as "need to
+            // pull more TLS records" and only propagate genuine I/O errors.
             let n = {
                 let mut reader = conn.reader();
-                reader.read(buf).map_err(TlsError::Io)?
+                match reader.read(buf) {
+                    Ok(n) => n,
+                    Err(e)
+                        if e.kind() == io::ErrorKind::UnexpectedEof
+                            || e.kind() == io::ErrorKind::WouldBlock =>
+                    {
+                        0
+                    }
+                    Err(e) => return Err(TlsError::Io(e)),
+                }
             };
             if n > 0 {
                 return Ok(n);
