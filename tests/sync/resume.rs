@@ -54,3 +54,53 @@ fn test_request_options_default() {
     assert!(!opts.save_headers);
     assert!(!opts.content_on_error);
 }
+
+#[test]
+fn test_request_options_resume_from_position() {
+    use ut_retriever::types::RequestOptions;
+    let mut opts = RequestOptions::default();
+    opts.range_start = Some(2048);
+    assert_eq!(opts.range_start, Some(2048));
+}
+
+#[test]
+fn test_request_options_with_headers() {
+    use ut_retriever::types::RequestOptions;
+    let mut opts = RequestOptions::default();
+    opts.headers.push(("Accept".into(), "application/json".into()));
+    opts.headers.push(("X-Custom".into(), "value".into()));
+    assert_eq!(opts.headers.len(), 2);
+}
+
+#[test]
+fn test_request_options_post_method() {
+    use ut_retriever::types::RequestOptions;
+    let mut opts = RequestOptions::default();
+    opts.method = ut_core::types::HttpMethod::Post;
+    opts.post_data = Some(b"key=value".to_vec());
+    assert!(matches!(opts.method, ut_core::types::HttpMethod::Post));
+    assert!(opts.post_data.is_some());
+}
+
+#[test]
+fn test_request_options_conditional_get() {
+    use ut_retriever::types::RequestOptions;
+    use chrono::Utc;
+    let mut opts = RequestOptions::default();
+    let now = Utc::now();
+    opts.if_modified_since = Some(now);
+    opts.if_none_match = Some("\"etag-value\"".into());
+    assert!(opts.if_modified_since.is_some());
+    assert_eq!(opts.if_none_match.as_deref(), Some("\"etag-value\""));
+}
+
+// ========== DocumentFlags bitflags 操作测试 ==========
+
+#[test]
+fn test_document_flags_empty() {
+    use ut_retriever::types::DocumentFlags;
+    let flags = DocumentFlags::empty();
+    assert!(!flags.contains(DocumentFlags::TEXT_HTML));
+    assert!(!flags.contains(DocumentFlags::RETRIEVAL_OK));
+    assert!(flags.is_empty());
+}
