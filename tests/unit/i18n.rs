@@ -38,7 +38,13 @@ mod tests {
     fn test_translate_with_args() {
         let result = i18n::translate_with_args(
             "utwget.status_saved",
-            &[("size", "1234".to_string())],
+            &[
+                ("url", "test".to_string()),
+                ("downloaded", "1234".to_string()),
+                ("total", "1234".to_string()),
+                ("duration", "1s".to_string()),
+                ("speed", "1KB/s".to_string()),
+            ],
         );
         assert!(result.contains("1234"));
     }
@@ -86,12 +92,13 @@ mod tests {
             "utwget.status_saved",
             &[
                 ("url", "http://example.com".to_string()),
-                ("size", "1024".to_string()),
+                ("downloaded", "1024".to_string()),
+                ("total", "2048".to_string()),
                 ("duration", "1s".to_string()),
                 ("speed", "1KB/s".to_string()),
             ],
         );
         assert!(result.contains("1024"));
-        assert!(result.contains("1s"));
+        assert!(result.contains("2048"));
     }
 }

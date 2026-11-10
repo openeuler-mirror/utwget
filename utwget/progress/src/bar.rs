@@ -20,6 +20,7 @@ use std::time::{Duration, Instant};
 /// ```
 pub struct BarProgress {
     url: String,
+    filename: String,
     total_size: Option<u64>,
     downloaded: u64,
     resume_from: u64,
@@ -46,6 +47,7 @@ impl BarProgress {
     pub fn new(force_noscroll: bool) -> Self {
         BarProgress {
             url: String::new(),
+            filename: String::new(),
             total_size: None,
             downloaded: 0,
             resume_from: 0,
@@ -85,26 +87,16 @@ impl BarProgress {
     fn render_known_size(&self) -> String {
         let total = self.total_size.unwrap_or(self.downloaded);
         let pct = if total > 0 {
-            (self.downloaded * 100) / total
+            if self.downloaded >= total { 100 } else { (self.downloaded * 100) / total }
         } else {
             100
         };
 
         let elapsed = self.start_time.elapsed();
-        let speed = if elapsed.as_secs() > 0 {
-            self.downloaded as f64 / elapsed.as_secs_f64()
-        } else {
-            0.0
-        };
+        let secs = elapsed.as_secs_f64().max(1e-6);
+        let speed = self.downloaded as f64 / secs;
 
-        let eta = if speed > 0.0 {
-            let remaining = total.saturating_sub(self.downloaded) as f64;
-            Duration::from_secs_f64(remaining / speed)
-        } else {
-            Duration::ZERO
-        };
-
-        let bar_width = self.terminal_width.saturating_sub(50).min(60);
+        let bar_width = 20;
         let filled = if total > 0 {
             ((self.downloaded as f64 / total as f64) * bar_width as f64).round() as usize
         } else {
@@ -113,23 +105,44 @@ impl BarProgress {
         let filled = filled.min(bar_width);
         let empty = bar_width - filled;
 
+        let mut bar = String::with_capacity(bar_width + 2);
+        bar.push('[');
+        for i in 0..filled {
+            if i == filled - 1 && empty > 0 {
+                bar.push('>');
+            } else {
+                bar.push('=');
+            }
+        }
+        for _ in 0..empty {
+            bar.push(' ');
+        }
+        bar.push(']');
+
         let speed_str = if self.report_speed_bytes {
             format!("{:.0}B/s", speed)
+        } else if speed >= 1024.0 * 1024.0 * 1024.0 {
+            format!("{:.2}GB/s", speed / (1024.0 * 1024.0 * 1024.0))
+        } else if speed >= 1024.0 * 1024.0 {
+            format!("{:.2}MB/s", speed / (1024.0 * 1024.0))
+        } else if speed >= 1024.0 {
+            format!("{:.2}KB/s", speed / 1024.0)
         } else {
-            format_speed(speed)
+            format!("{:.0}B/s", speed)
         };
 
-        let bar = format!("{:pad$}{:>pad2$}", "#".repeat(filled), "".to_string(), pad = bar_width, pad2 = 0);
-        let bar_visual = format!("{}{}", bar, " ".repeat(empty));
+        let time_str = format!("用时 {}s", elapsed.as_secs());
 
         format!(
-            "\r{:>3}% [{}] {:>10}/{:<10} {:>10} eta {:>6}",
+            "\r{} {} {:>3}% {}  {}  {}  [{}/{}]",
+            self.filename,
+            bar,
             pct,
-            bar_visual,
-            format_size(self.downloaded + self.resume_from),
             format_size(total),
             speed_str,
-            format_duration(eta),
+            time_str,
+            self.downloaded,
+            total,
         )
     }
 
@@ -142,16 +155,19 @@ impl BarProgress {
     /// A formatted string showing downloaded size and speed.
     fn render_unknown_size(&self) -> String {
         let elapsed = self.start_time.elapsed();
-        let speed = if elapsed.as_secs() > 0 {
-            self.downloaded as f64 / elapsed.as_secs_f64()
-        } else {
-            0.0
-        };
+        let secs = elapsed.as_secs_f64().max(1e-6);
+        let speed = self.downloaded as f64 / secs;
 
         let speed_str = if self.report_speed_bytes {
             format!("{:.0}B/s", speed)
+        } else if speed >= 1024.0 * 1024.0 * 1024.0 {
+            format!("{:.2}GB/s", speed / (1024.0 * 1024.0 * 1024.0))
+        } else if speed >= 1024.0 * 1024.0 {
+            format!("{:.2}MB/s", speed / (1024.0 * 1024.0))
+        } else if speed >= 1024.0 {
+            format!("{:.2}KB/s", speed / 1024.0)
         } else {
-            format_speed(speed)
+            format!("{:.0}B/s", speed)
         };
 
         format!(
@@ -183,6 +199,8 @@ impl ProgressDisplay for BarProgress {
     /// * `resume_from` - Resume offset if continuing a partial download.
     fn begin(&mut self, url: &str, total_size: Option<u64>, resume_from: Option<u64>) {
         self.url = url.to_string();
+        self.filename = url.rsplit('/').next().unwrap_or(url)
+            .trim_end_matches('#').to_string();
         self.total_size = total_size;
         self.resume_from = resume_from.unwrap_or(0);
         self.downloaded = 0;
@@ -191,7 +209,6 @@ impl ProgressDisplay for BarProgress {
         self.tick_count = 0;
         self.finished = false;
 
-        eprintln!("{}", url);
         self.flush_line();
     }
 
@@ -255,23 +272,55 @@ impl ProgressDisplay for BarProgress {
                     0.0
                 };
 
+                // Update to show 100% before clearing
+                self.downloaded = downloaded;
+                if self.total_size.is_some() {
+                    let line = self.render_known_size();
+                    eprint!("{}\r", line);
+                    self.flush_line();
+                }
+
                 if self.force_noscroll {
                     eprint!("\r{:>50}  \n", "");
                 } else {
                     eprintln!();
                 }
 
-                let speed_str = if self.report_speed_bytes {
-                    format!("{:.0}B/s", speed)
-                } else {
-                    format_speed(speed)
-                };
+        let speed_str = if self.report_speed_bytes {
+            format!("{:.0}B/s", speed)
+        } else if speed >= 1024.0 * 1024.0 * 1024.0 {
+            format!("{:.2}GB/s", speed / (1024.0 * 1024.0 * 1024.0))
+        } else if speed >= 1024.0 * 1024.0 {
+            format!("{:.2}MB/s", speed / (1024.0 * 1024.0))
+        } else if speed >= 1024.0 {
+            format!("{:.2}KB/s", speed / 1024.0)
+        } else {
+            format!("{:.0}B/s", speed)
+        };
+
+                // Format timestamp like wget: YYYY-MM-DD HH:MM:SS
+                let now = std::time::SystemTime::now();
+                let timestamp = now.duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| {
+                        let secs = d.as_secs();
+                        let days = secs / 86400;
+                        let time_of_day = secs % 86400;
+                        let hours = time_of_day / 3600;
+                        let minutes = (time_of_day % 3600) / 60;
+                        let seconds = time_of_day % 60;
+                        // Calculate year, month, day from days since epoch
+                        let (year, month, day) = days_to_ymd(days);
+                        format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", year, month, day, hours, minutes, seconds)
+                    })
+                    .unwrap_or_default();
 
                 eprintln!("{}", ut_core::i18n::translate_with_args("utwget.status_saved", &[
-                    ("url", self.url.clone()),
-                    ("size", downloaded.to_string()),
+                    ("url", self.filename.clone()),
+                    ("downloaded", downloaded.to_string()),
+                    ("total", self.total_size.map_or(downloaded, |t| t).to_string()),
                     ("duration", format_duration(elapsed)),
                     ("speed", speed_str),
+                    ("timestamp", timestamp),
                 ]));
             }
             FinishStatus::Error(ref err) => {
@@ -312,6 +361,7 @@ impl ProgressDisplay for BarProgress {
     /// progress bar for a new download operation.
     fn reset(&mut self) {
         self.url = String::new();
+        self.filename = String::new();
         self.total_size = None;
         self.downloaded = 0;
         self.resume_from = 0;
@@ -345,4 +395,37 @@ fn detect_terminal_width() -> usize {
     terminal_size::terminal_size()
         .map(|(w, _)| w.0 as usize)
         .unwrap_or(80)
+}
+
+/// Converts days since Unix epoch to (year, month, day).
+fn days_to_ymd(days: u64) -> (u32, u32, u32) {
+    let mut y = 1970u32;
+    let mut remaining = days;
+    loop {
+        let days_in_year = if is_leap_year(y) { 366 } else { 365 };
+        if remaining < days_in_year as u64 {
+            break;
+        }
+        remaining -= days_in_year as u64;
+        y += 1;
+    }
+    let month_days = [
+        (31, false), (28, is_leap_year(y)), (31, false),
+        (30, false), (31, false), (30, false),
+        (31, false), (31, false), (30, false),
+        (31, false), (30, false), (31, false),
+    ];
+    let mut m = 1u32;
+    for (days, _) in &month_days {
+        if remaining < *days as u64 {
+            break;
+        }
+        remaining -= *days as u64;
+        m += 1;
+    }
+    (y, m, remaining as u32 + 1)
+}
+
+fn is_leap_year(year: u32) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
 }
