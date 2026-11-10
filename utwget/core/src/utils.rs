@@ -261,3 +261,4 @@ impl RateLimiter {
         self.bucket = (self.bucket + refill_amount).min(self.max_bucket);
     }
 }
+

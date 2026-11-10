@@ -500,3 +500,4 @@ mod ntlm_tests {
         // Should still work, just using NTLMv1 instead of NTLMv2
         assert_eq!(auth.scheme(), AuthScheme::Ntlm);
     }
+}

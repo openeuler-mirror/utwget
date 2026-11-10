@@ -201,3 +201,6 @@ impl From<TlsError> for TlsTransportError {
 impl From<std::io::Error> for TlsTransportError {
     fn from(e: std::io::Error) -> Self { TlsTransportError::Io(e) }
 }
+
+#[cfg(feature = "tls-rustls")]
+pub use rustls_impl::RustlsConnector;

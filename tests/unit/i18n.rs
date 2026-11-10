@@ -94,3 +94,4 @@ mod tests {
         assert!(result.contains("1024"));
         assert!(result.contains("1s"));
     }
+}

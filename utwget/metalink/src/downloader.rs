@@ -342,3 +342,4 @@ impl MetalinkDownloader {
         Ok(all_ok)
     }
 }
+

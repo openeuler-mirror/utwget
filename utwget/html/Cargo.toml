@@ -1,0 +1,15 @@
+[package]
+name = "ut-html"
+version = "0.1.0"
+edition = "2021"
+description = "HTML/CSS streaming parser with URL extraction and link conversion for utwget"
+license = "LGPL-3.0-or-later"
+
+[features]
+default = []
+
+[dependencies]
+ut-core = { path = "../core" }
+lol_html = "=2.0.0"
+cssparser = "0.34"
+thiserror = "2"

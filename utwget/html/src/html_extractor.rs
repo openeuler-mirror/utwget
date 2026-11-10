@@ -369,3 +369,4 @@ impl ContentExtractor for HtmlExtractor {
         false
     }
 }
+

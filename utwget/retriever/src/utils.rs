@@ -267,3 +267,74 @@ fn parse_rfc5987_value(value: &str) -> Option<String> {
     }
     Some(url_decode(encoded))
 }
+
+/// Simple URL decoding.
+///
+/// Replaces percent-encoded sequences (`%XX`) with their corresponding characters.
+pub(crate) fn url_decode(s: &str) -> String {
+    let mut result = String::new();
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '%' {
+            let hex: String = chars.by_ref().take(2).collect();
+            if let Ok(byte) = u8::from_str_radix(&hex, 16) {
+                result.push(byte as char);
+            } else {
+                result.push('%');
+                result.push_str(&hex);
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
+/// Parse raw HTTP response data into an HttpResponse.
+pub(crate) fn parse_raw_response(data: &[u8]) -> Option<HttpResponse> {
+    let data_str = std::str::from_utf8(data).ok()?;
+    let mut lines = data_str.split("\r\n");
+
+    let status_line = lines.next()?;
+    let mut parts = status_line.splitn(3, ' ');
+    let _version = parts.next()?;
+    let status_code: u16 = parts.next()?.parse().ok()?;
+    let reason = parts.next().unwrap_or("").to_string();
+
+    let mut headers = HeaderMap::new();
+    for line in lines {
+        if line.is_empty() {
+            break;
+        }
+        if let Some((key, value)) = line.split_once(':') {
+            headers.insert(key.trim().to_string(), value.trim().to_string());
+        }
+    }
+
+    let body_start = data_str.find("\r\n\r\n").map(|i| i + 4).unwrap_or(data.len());
+    let body = data[body_start..].to_vec();
+
+    Some(HttpResponse {
+        version: "1.1".to_string(),
+        status_code,
+        reason,
+        headers,
+        body: Some(body),
+    })
+}
+
+/// Serialize a HeaderMap into raw HTTP header bytes.
+pub(crate) fn serialize_headers(header_map: &HeaderMap) -> Vec<u8> {
+    let mut result = Vec::new();
+    for (key, value) in header_map.iter() {
+        result.extend_from_slice(format!("{}: {}\r\n", key, value).as_bytes());
+    }
+    result
+}
+
+/// Build a proxy request by rewriting the request line to use an absolute URL.
+pub(crate) fn build_proxy_request(request: &HttpRequest, target_host: &str, target_port: u16) -> HttpRequest {
+    let mut proxy_req = request.clone();
+    proxy_req.path = format!("http://{}:{}{}", target_host, target_port, request.path);
+    proxy_req
+}

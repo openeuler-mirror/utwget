@@ -1,0 +1,39 @@
+[package]
+name = "ut-retriever"
+version = "0.1.0"
+edition = "2021"
+description = "Download retrieval engine for utwget: HTTP/FTP protocols, recursive crawling, and spider mode"
+license = "GPL-3.0-or-later"
+
+[features]
+default = ["warc", "metalink", "compression", "async", "http2"]
+warc = ["dep:ut-warc"]
+metalink = ["dep:ut-metalink"]
+compression = ["dep:flate2"]
+async = ["dep:tokio", "dep:futures"]
+http2 = ["ut-http/http2", "dep:tokio-rustls", "dep:rustls", "dep:webpki-roots"]
+
+[dependencies]
+ut-core = { path = "../core" }
+ut-net = { path = "../net" }
+ut-http = { path = "../http" }
+ut-ftp = { path = "../ftp" }
+ut-html = { path = "../html" }
+ut-progress = { path = "../progress" }
+ut-warc = { path = "../warc", optional = true }
+ut-metalink = { path = "../metalink", optional = true }
+chrono = "0.4"
+bitflags = "2"
+log = "0.4"
+thiserror = "2"
+rand = "0.8"
+filetime = "0.2"
+flate2 = { version = "1", optional = true }
+libc = "0.2"
+tokio = { version = "1", features = ["rt", "net", "io-util", "time", "sync", "macros"], optional = true }
+tokio-rustls = { version = "0.26", optional = true }
+rustls = { version = "0.23", optional = true }
+webpki-roots = { version = "0.26", optional = true }
+futures = { version = "0.3", optional = true }
+bytes = "1"
+http = "1"

@@ -1,0 +1,13 @@
+{
+  "args": {}, 
+  "headers": {
+    "Accept": "*/*", 
+    "Accept-Encoding": "gzip, deflate", 
+    "Host": "httpbin.org", 
+    "Range": "bytes=0-", 
+    "User-Agent": "wget-rs/0.1.0", 
+    "X-Amzn-Trace-Id": "Root=1-6a28f619-6acbd5725cdd83e03d8cdd37"
+  }, 
+  "origin": "1.85.7.34", 
+  "url": "http://httpbin.org/get"
+}

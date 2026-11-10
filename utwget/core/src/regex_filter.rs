@@ -557,3 +557,4 @@ fn glob_match(text: &str, pattern: &str) -> bool {
 
     pi == p.len()
 }
+

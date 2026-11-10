@@ -85,3 +85,4 @@ impl Authenticator for BasicAuthenticator {
         AuthScheme::Basic
     }
 }
+

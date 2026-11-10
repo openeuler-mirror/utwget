@@ -153,3 +153,5 @@ impl TlsConnectionPool {
         pools.values().map(|pool| pool.len()).sum()
     }
 }
+
+use log::debug;

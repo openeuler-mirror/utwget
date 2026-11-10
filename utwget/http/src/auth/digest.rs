@@ -428,3 +428,4 @@ impl Authenticator for DigestAuthenticator {
         AuthScheme::Digest
     }
 }
+
