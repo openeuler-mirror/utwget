@@ -104,3 +104,78 @@ fn test_document_flags_empty() {
     assert!(!flags.contains(DocumentFlags::RETRIEVAL_OK));
     assert!(flags.is_empty());
 }
+
+#[test]
+fn test_document_flags_set_and_check() {
+    use ut_retriever::types::DocumentFlags;
+    let mut flags = DocumentFlags::empty();
+    flags.insert(DocumentFlags::TEXT_HTML);
+    flags.insert(DocumentFlags::RETRIEVAL_OK);
+    assert!(flags.contains(DocumentFlags::TEXT_HTML));
+    assert!(flags.contains(DocumentFlags::RETRIEVAL_OK));
+    assert!(!flags.contains(DocumentFlags::HEAD_ONLY));
+}
+
+#[test]
+fn test_document_flags_combine() {
+    use ut_retriever::types::DocumentFlags;
+    let flags = DocumentFlags::TEXT_HTML | DocumentFlags::RETRIEVAL_OK | DocumentFlags::ACCEPT_RANGES;
+    assert!(flags.contains(DocumentFlags::TEXT_HTML));
+    assert!(flags.contains(DocumentFlags::RETRIEVAL_OK));
+    assert!(flags.contains(DocumentFlags::ACCEPT_RANGES));
+    assert!(!flags.contains(DocumentFlags::HEAD_ONLY));
+}
+
+#[test]
+fn test_document_flags_toggle() {
+    use ut_retriever::types::DocumentFlags;
+    let mut flags = DocumentFlags::TEXT_HTML;
+    flags.toggle(DocumentFlags::RETRIEVAL_OK);
+    assert!(flags.contains(DocumentFlags::RETRIEVAL_OK));
+    flags.toggle(DocumentFlags::RETRIEVAL_OK);
+    assert!(!flags.contains(DocumentFlags::RETRIEVAL_OK));
+}
+
+#[test]
+fn test_document_flags_bits_values() {
+    use ut_retriever::types::DocumentFlags;
+    assert_eq!(DocumentFlags::TEXT_HTML.bits(), 0x0001);
+    assert_eq!(DocumentFlags::RETRIEVAL_OK.bits(), 0x0002);
+    assert_eq!(DocumentFlags::HEAD_ONLY.bits(), 0x0004);
+    assert_eq!(DocumentFlags::ACCEPT_RANGES.bits(), 0x0010);
+    assert_eq!(DocumentFlags::TEXT_CSS.bits(), 0x0040);
+}
+
+#[test]
+fn test_document_flags_intersects() {
+    use ut_retriever::types::DocumentFlags;
+    let a = DocumentFlags::TEXT_HTML | DocumentFlags::RETRIEVAL_OK;
+    let b = DocumentFlags::TEXT_HTML | DocumentFlags::HEAD_ONLY;
+    assert!(a.intersects(b));
+    let c = DocumentFlags::TEXT_CSS | DocumentFlags::HEAD_ONLY;
+    assert!(!a.intersects(c));
+}
+
+#[test]
+fn test_document_flags_remove() {
+    use ut_retriever::types::DocumentFlags;
+    let mut flags = DocumentFlags::TEXT_HTML | DocumentFlags::RETRIEVAL_OK;
+    flags.remove(DocumentFlags::RETRIEVAL_OK);
+    assert!(flags.contains(DocumentFlags::TEXT_HTML));
+    assert!(!flags.contains(DocumentFlags::RETRIEVAL_OK));
+}
+
+#[test]
+fn test_document_flags_from_status_code() {
+    use ut_retriever::types::{determine_document_flags, DocumentFlags};
+    let flags = determine_document_flags(Some("text/html"), 200);
+    assert!(flags.contains(DocumentFlags::TEXT_HTML));
+    assert!(flags.contains(DocumentFlags::RETRIEVAL_OK));
+
+    let flags = determine_document_flags(Some("text/html"), 304);
+    assert!(flags.contains(DocumentFlags::TEXT_HTML));
+    assert!(!flags.contains(DocumentFlags::RETRIEVAL_OK));
+
+    let flags = determine_document_flags(Some("text/css"), 200);
+    assert!(flags.contains(DocumentFlags::TEXT_CSS));
+}
