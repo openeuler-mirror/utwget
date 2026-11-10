@@ -292,11 +292,18 @@ impl TlsTransport {
 impl Transport for TlsTransport {
     type Error = TlsError;
 
-    /// Reads data from the TLS connection.
+    /// Reads decrypted application data from the TLS connection.
     ///
-    /// If there's data in the peek buffer, it's returned first.
-    /// Otherwise, TLS records are read from the underlying stream
-    /// and decrypted.
+    /// If there's data in the peek buffer, it's returned first. Otherwise the
+    /// implementation loops over `read_tls` / `process_new_packets` until either
+    /// decrypted application data is available to return, or the underlying TCP
+    /// connection reaches a clean end (returning `Ok(0)` only in that case).
+    ///
+    /// This is required because a single TLS record may carry non-application
+    /// data (handshake/ alert fragments) and `ClientConnection::reader()` yields
+    /// `0` when no plaintext is currently buffered *without* meaning EOF. Returning
+    /// `0` prematurely would be misread by callers as end-of-stream, truncating
+    /// responses. The loop guarantees we only report `0` on a real TCP close.
     ///
     /// # Arguments
     ///
@@ -320,13 +327,28 @@ impl Transport for TlsTransport {
             TlsError::HandshakeFailed("connection not available".into())
         })?;
 
-        conn.read_tls(&mut *stream).map_err(TlsError::Io)?;
-        conn.process_new_packets()
-            .map_err(|e| TlsError::HandshakeFailed(e.to_string()))?;
+        loop {
+            // Deliver any already-decrypted application data.
+            let n = {
+                let mut reader = conn.reader();
+                reader.read(buf).map_err(TlsError::Io)?
+            };
+            if n > 0 {
+                return Ok(n);
+            }
 
-        let mut reader = conn.reader();
-        let n = reader.read(buf).map_err(TlsError::Io)?;
-        Ok(n)
+            // No plaintext ready: pull more TLS records off the wire. A return of
+            // 0 here means the TCP side is closed, which is the only legitimate
+            // EOF condition (covers clean close_notify as well, since rustls
+            // surfaces that as 0 from the reader only after draining).
+            match conn.read_tls(&mut *stream) {
+                Ok(0) => return Ok(0),
+                Ok(_) => {}
+                Err(e) => return Err(TlsError::Io(e)),
+            }
+            conn.process_new_packets()
+                .map_err(|e| TlsError::HandshakeFailed(e.to_string()))?;
+        }
     }
 
     /// Writes data to the TLS connection.
