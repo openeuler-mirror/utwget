@@ -3,7 +3,7 @@
 //! This module provides a visual progress bar for download operations,
 //! displaying download progress with percentage, speed, and ETA information.
 
-use crate::{format_duration, format_size, format_speed, FinishStatus, ProgressDisplay};
+use crate::{format_duration, format_size, FinishStatus, ProgressDisplay};
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
 
@@ -26,7 +26,6 @@ pub struct BarProgress {
     resume_from: u64,
     start_time: Instant,
     last_update: Instant,
-    terminal_width: usize,
     tick_count: usize,
     force_noscroll: bool,
     report_speed_bytes: bool,
@@ -53,7 +52,6 @@ impl BarProgress {
             resume_from: 0,
             start_time: Instant::now(),
             last_update: Instant::now(),
-            terminal_width: detect_terminal_width(),
             tick_count: 0,
             force_noscroll,
             report_speed_bytes: false,
@@ -409,19 +407,8 @@ impl ProgressDisplay for BarProgress {
     }
 }
 
-/// Detects the current terminal width.
-///
-/// Attempts to determine the width of the terminal window for proper
-/// progress bar formatting. Falls back to a default width of 80 columns
-/// if the terminal size cannot be determined.
-///
-/// # Returns
-///
-/// The terminal width in columns, or 80 if detection fails.
-fn detect_terminal_width() -> usize {
-    terminal_size::terminal_size()
-        .map(|(w, _)| w.0 as usize)
-        .unwrap_or(80)
+fn is_leap_year(year: u32) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
 }
 
 /// Converts days since Unix epoch to (year, month, day).
@@ -451,8 +438,4 @@ fn days_to_ymd(days: u64) -> (u32, u32, u32) {
         m += 1;
     }
     (y, m, remaining as u32 + 1)
-}
-
-fn is_leap_year(year: u32) -> bool {
-    (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
 }
