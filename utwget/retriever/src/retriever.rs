@@ -371,12 +371,25 @@ impl Retriever {
         debug!("HTTP request: {} {}", req.method, req.path);
 
         // Always show timestamp and URL (like wget does)
-        let now = Utc::now();
-        let display_url = url.display().trim_end_matches('#').to_string();
-        eprintln!("--{}--  {}", now.format("%Y-%m-%d %H:%M:%S"), display_url);
+        if !self.config.quiet {
+            let now = Utc::now();
+            let display_url = url.display().trim_end_matches('#').to_string();
+            eprintln!("--{}--  {}", now.format("%Y-%m-%d %H:%M:%S"), display_url);
+        }
+
+        // Debug: show request headers
+        if self.config.debug {
+            eprintln!("---请求头---");
+            eprintln!("{} {} HTTP/1.1", req.method, req.path);
+            eprintln!("Host: {}", url.host);
+            for (key, value) in req.headers.iter() {
+                eprintln!("{}: {}", key, value);
+            }
+            eprintln!("---请求头结束---");
+        }
 
         // Always show DNS resolution and connection info
-        {
+        if !self.config.quiet {
             let host = &url.host;
             let port = url.port;
             eprint!("正在解析主机 {} ({})... ", host, host);
@@ -435,25 +448,46 @@ impl Retriever {
         };
 
         // Print protocol version in verbose mode
-        if self.config.verbose >= 1 {
-            debug!("Using HTTP/{}", response.version);
+        if (self.config.verbose >= 1 || self.config.debug) && !self.config.quiet {
+            eprintln!("{}", response.version);
+        }
+        if self.config.debug {
+            eprintln!("---响应头---");
+            eprintln!("{} {} {}", response.version, response.status_code, response.reason);
+            for (key, value) in response.headers.iter() {
+                eprintln!("{}: {}", key, value);
+            }
+            eprintln!("---响应头结束---");
         }
 
-        // Always show HTTP response status line
-        eprintln!("已发出 HTTP 请求，正在等待回应... {} {}", response.status_code, response.reason);
+        // Spider mode: if response is successful, report file exists and return
+        // without downloading the body (matches wget --spider behavior).
+        if self.config.recursive.spider {
+            if response.status_code >= 200 && response.status_code < 300 {
+                eprintln!("存在远程文件。");
+                return Ok(RetrieveOutcome::SpiderOnly);
+            } else {
+                return Err(RetrieveError::Response(WgetError::Http {
+                    status: response.status_code,
+                    message: response.reason.clone(),
+                }));
+            }
+        }
 
         // Always show content length
-        if let Some(len) = response.content_length() {
-            let human = ut_progress::format_size(len);
-            let ct = response.headers.content_type().unwrap_or("unknown");
-            eprintln!("长度：{} ({}) [{}]", len, human, ct);
+        if !self.config.quiet {
+            if let Some(len) = response.content_length() {
+                let human = ut_progress::format_size(len);
+                let ct = response.headers.content_type().unwrap_or("unknown");
+                eprintln!("长度：{} ({}) [{}]", len, human, ct);
+            }
+
+            // Always show saving to
+            eprintln!("正在保存至: \"{}\"", output_path.file_name().unwrap_or_default().to_string_lossy());
         }
 
-        // Always show saving to
-        eprintln!("正在保存至: \"{}\"", output_path.file_name().unwrap_or_default().to_string_lossy());
-
         // Only show full HTTP headers if --server-response is enabled
-        if self.config.server_response {
+        if self.config.server_response && !self.config.quiet {
             eprintln!("{} {} {}", response.version, response.status_code, response.reason);
             for (key, value) in response.headers.iter() {
                 eprintln!("  {}: {}", key, value);
