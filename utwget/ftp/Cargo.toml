@@ -1,0 +1,22 @@
+[package]
+name = "ut-ftp"
+version = "0.1.0"
+edition = "2021"
+description = "FTP/FTPS protocol implementation for utwget"
+license = "GPL-3.0-or-later"
+
+[features]
+default = ["ftps"]
+ftp-opie = []
+ftps = ["dep:rustls", "dep:webpki-roots", "dep:rustls-pki-types", "dep:rustls-pemfile"]
+
+[dependencies]
+ut-core = { path = "../core" }
+ut-net = { path = "../net" }
+chrono = "0.4"
+thiserror = "2"
+log = "0.4"
+rustls = { version = "0.23", optional = true }
+webpki-roots = { version = "0.26", optional = true }
+rustls-pki-types = { version = "1", optional = true }
+rustls-pemfile = { version = "2", optional = true }

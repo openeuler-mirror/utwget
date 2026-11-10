@@ -193,3 +193,4 @@ pub fn parse_status_line(line: &str) -> Option<(String, u16, String)> {
 pub fn format_header_line(key: &str, value: &str) -> String {
     format!("{}: {}\r\n", key, value)
 }
+

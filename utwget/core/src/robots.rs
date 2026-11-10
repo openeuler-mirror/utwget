@@ -312,3 +312,4 @@ fn path_matches_rule(path: &str, pattern: &str) -> bool {
     }
     false
 }
+

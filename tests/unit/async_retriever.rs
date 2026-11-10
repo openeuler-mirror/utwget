@@ -101,3 +101,4 @@ mod tests {
         // Default robots settings
         assert!(config.recursive.use_robots);
     }
+}

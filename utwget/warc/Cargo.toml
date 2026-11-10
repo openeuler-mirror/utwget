@@ -1,0 +1,17 @@
+[package]
+name = "ut-warc"
+version = "0.1.0"
+edition = "2021"
+description = "WARC (Web ARChive) module for utwget"
+license = "LGPL-3.0-or-later"
+
+[features]
+default = []
+
+[dependencies]
+ut-core = { path = "../core" }
+flate2 = "1"
+sha1 = "0.10"
+chrono = { version = "0.4" }
+thiserror = "2"
+getrandom = "0.2"

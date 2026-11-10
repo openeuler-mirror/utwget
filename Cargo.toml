@@ -1,1 +1,216 @@
 [workspace]
+resolver = "2"
+members = [
+    "utwget/core",
+    "utwget/net",
+    "utwget/http",
+    "utwget/ftp",
+    "utwget/html",
+    "utwget/retriever",
+    "utwget/warc",
+    "utwget/metalink",
+    "utwget/progress",
+    "utwget/cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+rust-version = "1.82.0"
+
+[workspace.dependencies]
+ut-core = { path = "utwget/core" }
+ut-http = { path = "utwget/http", features = ["compression", "auth-digest"] }
+ut-ftp = { path = "utwget/ftp" }
+ut-html = { path = "utwget/html" }
+ut-retriever = { path = "utwget/retriever" }
+ut-warc = { path = "utwget/warc" }
+ut-metalink = { path = "utwget/metalink" }
+utwget-cli = { path = "utwget/cli" }
+base64 = "0.22"
+flate2 = "1"
+
+# Pin dependencies that require edition2024 to older versions for Rust 1.82.0 compatibility
+zeroize = "=1.8.1"
+indexmap = "=2.7.1"
+
+# 根级 crate，编译 utwget 二进制
+[package]
+name = "utwget"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[features]
+default = ["metalink", "hsts", "compression", "http2", "auth-ntlm", "async"]
+metalink = ["ut-metalink"]
+hsts = ["ut-core/hsts"]
+compression = ["ut-core/compression"]
+http2 = ["ut-http/http2", "ut-retriever/http2"]
+auth-ntlm = ["ut-http/auth-ntlm"]
+async = ["ut-retriever/async"]
+
+[dependencies]
+ut-core = { path = "utwget/core" }
+ut-retriever = { path = "utwget/retriever" }
+ut-progress = { path = "utwget/progress" }
+ut-html = { path = "utwget/html" }
+ut-metalink = { path = "utwget/metalink", optional = true }
+clap = { version = "=4.4.18", features = ["derive", "wrap_help"] }
+env_logger = "0.11"
+libc = "0.2"
+log = "0.4"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
+num_cpus = "1"
+
+[[bin]]
+name = "utwget"
+path = "utwget/cli/src/main.rs"
+
+[dev-dependencies]
+ut-core.workspace = true
+ut-http.workspace = true
+ut-ftp.workspace = true
+ut-html.workspace = true
+ut-retriever.workspace = true
+ut-warc.workspace = true
+ut-metalink.workspace = true
+utwget-cli.workspace = true
+base64.workspace = true
+flate2.workspace = true
+chrono = "0.4"
+
+[[test]]
+name = "sync_basic_download"
+path = "tests/sync/basic_download.rs"
+
+[[test]]
+name = "sync_recursive"
+path = "tests/sync/recursive.rs"
+
+[[test]]
+name = "sync_resume"
+path = "tests/sync/resume.rs"
+
+[[test]]
+name = "sync_auth"
+path = "tests/sync/auth.rs"
+
+[[test]]
+name = "sync_redirect"
+path = "tests/sync/redirect.rs"
+
+[[test]]
+name = "sync_warc"
+path = "tests/sync/warc.rs"
+
+# Unit tests
+[[test]]
+name = "unit_cli_wgetrc"
+path = "tests/unit/cli_wgetrc.rs"
+
+[[test]]
+name = "unit_core_cookie"
+path = "tests/unit/core_cookie.rs"
+
+[[test]]
+name = "unit_core_hsts"
+path = "tests/unit/core_hsts.rs"
+
+[[test]]
+name = "unit_core_netrc"
+path = "tests/unit/core_netrc.rs"
+
+[[test]]
+name = "unit_core_robots"
+path = "tests/unit/core_robots.rs"
+
+[[test]]
+name = "unit_core_url"
+path = "tests/unit/core_url.rs"
+
+[[test]]
+name = "unit_core_utils"
+path = "tests/unit/core_utils.rs"
+
+[[test]]
+name = "unit_ftp_listing"
+path = "tests/unit/ftp_listing.rs"
+
+[[test]]
+name = "unit_ftp_opie"
+path = "tests/unit/ftp_opie.rs"
+
+[[test]]
+name = "unit_http_auth"
+path = "tests/unit/http_auth.rs"
+
+[[test]]
+name = "unit_http_headers"
+path = "tests/unit/http_headers.rs"
+
+[[test]]
+name = "unit_http_request"
+path = "tests/unit/http_request.rs"
+
+[[test]]
+name = "unit_http_response"
+path = "tests/unit/http_response.rs"
+
+[[test]]
+name = "unit_retriever_types"
+path = "tests/unit/retriever_types.rs"
+
+[[test]]
+name = "unit_retriever_url_queue"
+path = "tests/unit/retriever_url_queue.rs"
+
+[[test]]
+name = "unit_warc_digest"
+path = "tests/unit/warc_digest.rs"
+
+[[test]]
+name = "unit_warc_format"
+path = "tests/unit/warc_format.rs"
+
+[[test]]
+name = "unit_net_proxy"
+path = "tests/unit/net_proxy.rs"
+
+[[test]]
+name = "unit_progress_bar"
+path = "tests/unit/progress_bar.rs"
+
+[[test]]
+name = "unit_html_extractor"
+path = "tests/unit/html_extractor.rs"
+
+[[test]]
+name = "unit_metalink_parser"
+path = "tests/unit/metalink_parser.rs"
+
+[[test]]
+name = "unit_http2"
+path = "tests/unit/http2.rs"
+
+[[test]]
+name = "unit_connection_pool"
+path = "tests/unit/connection_pool.rs"
+
+[[test]]
+name = "unit_i18n"
+path = "tests/unit/i18n.rs"
+
+[[test]]
+name = "unit_signal"
+path = "tests/unit/signal.rs"
+
+[[test]]
+name = "unit_config_reload"
+path = "tests/unit/config_reload.rs"
+
+[[test]]
+name = "unit_async_retriever"
+path = "tests/unit/async_retriever.rs"

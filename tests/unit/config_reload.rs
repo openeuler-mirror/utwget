@@ -84,3 +84,4 @@ mod tests {
         assert_eq!(normalize_key("timeout"), "timeout");
         assert_eq!(normalize_key("unknown"), "unknown");
     }
+}

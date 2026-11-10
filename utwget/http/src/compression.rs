@@ -187,3 +187,4 @@ pub fn content_encoding_value(encoding_header: Option<&str>) -> Option<String> {
 
     None
 }
+

@@ -524,3 +524,4 @@ fn extract_file(path: &str) -> String {
         None => trimmed.to_string(),
     }
 }
+

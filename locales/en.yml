@@ -1,0 +1,153 @@
+# utwget Internationalization (i18n) Translation Files
+#
+# This directory contains translation files for utwget.
+# Each file is named after its locale code (e.g., en.yml, zh-CN.yml).
+#
+# Supported locales:
+# - en (English) - Default
+# - zh-CN (Simplified Chinese)
+#
+# Usage in code:
+#   use utwget_cli::i18n::{t, set_locale};
+#   set_locale("zh-CN");
+#   let msg = t!("utwget.error_no_url");
+#
+# Format:
+#   _version: 1.0
+#   utwget:
+#     key: "translated text"
+#     key_with_var: "text with %{variable}"
+---
+_version: 1.0
+utwget:
+  # ===================
+  # Version Information
+  # ===================
+  version: "GNU Wget 1.21.4 built on linux-gnu."
+  version_features: |
+    +cares +digest +gpgme +https +ipv6 +iri +large-file +metalink +nls
+    +ntlm +opie +psl +ssl/openssl
+  wgetrc_system: "Wgetrc:\n    /etc/wgetrc (system)\n"
+  locale: "Locale:\n    /usr/share/locale\n"
+
+  # ===============
+  # Help Messages
+  # ===============
+  help_usage: "Usage: utwget [OPTION]... [URL]..."
+  help_mandatory: "Mandatory arguments to long options are mandatory for short options too."
+
+  # Startup options
+  help_startup: "Startup:"
+  help_version: "display the version of Wget and exit"
+  help_help: "print this help"
+  help_background: "go to background after startup"
+  help_execute: "execute a `.wgetrc'-style command"
+
+  # Logging options
+  help_logging: "Logging and input file:"
+  help_output_file: "log messages to FILE"
+  help_append_output: "append messages to FILE"
+  help_debug: "print lots of debugging information"
+  help_quiet: "quiet (no output)"
+  help_verbose: "be verbose (this is the default)"
+  help_no_verbose: "turn off verboseness, without being quiet"
+  help_report_speed: "output bandwidth as TYPE. TYPE can be bits"
+  help_input_file: "download URLs found in local or external FILE"
+  help_force_html: "treat input file as HTML"
+  help_base: "resolves HTML input-file links (-i -F) relative to URL"
+  help_config: "specify config file to use"
+  help_no_config: "do not read any config file"
+  help_rejected_log: "log reasons for URL rejection to FILE"
+
+  # Download options
+  help_download: "Download:"
+  help_tries: "set number of retries to NUMBER (0 unlimits)"
+  help_retry_connrefused: "retry even if connection is refused"
+  help_retry_on_host_error: "consider host errors as non-fatal, transient errors"
+  help_retry_on_http_error: "comma-separated list of HTTP errors to retry"
+  help_output_document: "write documents to FILE"
+  help_no_clobber: "skip downloads that would download to existing files (overwriting them)"
+  help_continue: "resume getting a partially-downloaded file"
+  help_start_pos: "start downloading from zero-based position OFFSET"
+  help_progress: "select progress gauge type"
+  help_show_progress: "display the progress bar in any verbosity mode"
+  help_timestamping: "don't re-retrieve files unless newer than local"
+  help_server_response: "print server response"
+  help_spider: "don't download anything"
+  help_timeout: "set all timeout values to SECONDS"
+  help_wait: "wait SECONDS between retrievals"
+  help_no_proxy: "explicitly turn off proxy"
+  help_quota: "set retrieval quota to NUMBER"
+  help_limit_rate: "limit download rate to RATE"
+
+  # ===============
+  # Error Messages
+  # ===============
+  error_no_url: "No URLs specified"
+  error_file_not_found: "File not found: %{file}"
+  error_connection_refused: "Connection refused"
+  error_timeout: "Connection timed out"
+  error_dns_failure: "DNS resolution failed: %{host}"
+  error_invalid_url: "Invalid URL: %{url}"
+  error_write_failed: "Write failed: %{reason}"
+  error_read_failed: "Read failed: %{reason}"
+  error_network: "Network error: %{reason}"
+  error_ssl: "SSL error: %{reason}"
+  error_auth_failed: "Authentication failed"
+
+  # ===============
+  # Warning Messages
+  # ===============
+  warning_config_error: "warning: error applying %{path}: %{error}"
+  warning_config_read_error: "warning: error reading %{path}: %{error}"
+  warning_failed_set_xattr: "failed to set xattr on %{path}: %{error}"
+  warning_failed_permissions: "failed to set permissions on %{path}: %{error}"
+  warning_partial_download: "warning: partial download completed"
+
+  # ===============
+  # Status Messages
+  # ===============
+  status_saved: "saved [%{size} bytes]"
+  status_saved_to: "Saved to: %{path}"
+  status_download_complete: "Download complete"
+  status_downloading: "Downloading"
+  status_connecting: "Connecting to %{host}:%{port}"
+  status_resolving: "Resolving %{host}..."
+  status_redirect: "Redirected to %{url}"
+  status_not_modified: "Server file not modified"
+  status_skipping: "Skipping %{url}: %{reason}"
+
+  # ===============
+  # Progress Display
+  # ===============
+  progress_finished: "FINISHED --"
+  progress_downloaded: "Downloaded: %{bytes} bytes in %{files} files"
+  progress_time: "Total wall clock time: %{duration}"
+  progress_speed: "Speed: %{speed}"
+
+  # ===============
+  # Authentication
+  # ===============
+  auth_password_prompt: "Password for %{user}: "
+  auth_password_prompt_default: "Password: "
+  auth_username_prompt: "Username: "
+
+  # ===============
+  # Recursive Download
+  # ===============
+  recursive_entering: "Entering directory %{dir}"
+  recursive_leaving: "Leaving directory %{dir}"
+  recursive_depth: "Depth: %{depth}"
+  recursive_following: "Following links in %{url}"
+
+  # ===============
+  # Proxy Messages
+  # ===============
+  proxy_connecting: "Connecting to proxy %{host}:%{port}"
+  proxy_tunnel: "Establishing tunnel to %{host}:%{port}"
+
+  # ===============
+  # Resume Support
+  # ===============
+  resume_partial: "Partial download detected, resuming from byte %{pos}"
+  resume_complete: "Download already complete"

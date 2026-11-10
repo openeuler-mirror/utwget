@@ -120,3 +120,5 @@ pub enum DnsError {
     #[error("DNS I/O error: {0}")]
     Io(#[from] io::Error),
 }
+
+pub use std_resolver::StdResolver;

@@ -513,3 +513,4 @@ pub fn parse_www_authenticate(headers: &[&str]) -> Vec<AuthChallenge> {
     }
     challenges
 }
+

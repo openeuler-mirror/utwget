@@ -272,3 +272,4 @@ impl<'a, T: Read> Iterator for ChunkedReader<'a, T> {
         }
     }
 }
+
