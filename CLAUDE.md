@@ -461,6 +461,14 @@ utwget 实现了原 wget 没有的额外功能：
 | 2026-06-25 | 修复 TLS 握手完成后仍阻塞读取 NewSessionTicket 导致所有 HTTPS 下载挂起（complete_handshake 仅在 is_handshaking 期间读取） |
 | 2026-06-25 | 重写 HTTP 响应读取为二进制安全+长度感知（read_full_response），修复 keep-alive 连接挂起与二进制 body 解析失败；do_http_request 四个分支统一改用 |
 | 2026-06-25 | 修复 HTTP/2 路径：TLS 配置复用应用设置(--no-check-certificate/CA/客户端证书)、头转换(小写/移除 connection-specific/Host)、真实响应映射、代理判定与 ALPN h2+http/1.1 平滑回退 |
+| 2026-06-30 | 代码审查修复：is_informational() 条件矛盾、URL #? 解析、Cookie 文件 unwrap panic、CONNECT 状态检查、整数溢出、进度条宽度 |
+| 2026-06-30 | 修复 HTTP/2 路径未设置 pending_body_reader 导致下载文件为 0 字节 |
+| 2026-06-30 | 修复 Runtime::new().expect() panic，改为 Result 错误传播 |
+| 2026-06-30 | 优化 CONNECT 隧道响应读取（1→1024 字节缓冲区） |
+| 2026-06-30 | 修复 FTPS 多行响应处理（RFC 959：读取到 code + space 的最终行） |
+| 2026-06-30 | 修复 robots.txt 从网络获取（替代读取 /tmp 文件） |
+| 2026-06-30 | 修复 FTPS 下载后应用服务器时间戳 |
+| 2026-06-30 | 所有 791 个测试通过 |
 
 ## 开发指南
 
