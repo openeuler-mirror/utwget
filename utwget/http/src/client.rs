@@ -76,32 +76,26 @@ pub struct FetchResult {
 ///
 /// HTTP response bodies can be transferred in different ways depending
 /// on the headers present in the response.
+///
+/// Each variant holds a single `reader` that may be a raw transport
+/// or a decompressor-wrapped transport when Content-Encoding requires it.
 pub enum BodyReaderEnum {
     /// Body with a known Content-Length.
     ContentLength {
         /// Number of bytes remaining to read.
         remaining: u64,
-        /// The underlying transport.
-        transport: Box<dyn Read + Send>,
-        /// Optional decompressor for compressed content.
-        #[cfg(feature = "compression")]
-        decompressor: Option<crate::compression::Decompressor>,
+        /// The reader (raw transport or decompressor-wrapped transport).
+        reader: Box<dyn Read + Send>,
     },
     /// Body using chunked transfer encoding.
     Chunked {
-        /// The underlying transport.
-        transport: Box<dyn Read + Send>,
-        /// Optional decompressor for compressed content.
-        #[cfg(feature = "compression")]
-        decompressor: Option<crate::compression::Decompressor>,
+        /// The reader (raw transport or decompressor-wrapped transport).
+        reader: Box<dyn Read + Send>,
     },
     /// Body with unknown length (read until connection close).
     ReadToEnd {
-        /// The underlying transport.
-        transport: Box<dyn Read + Send>,
-        /// Optional decompressor for compressed content.
-        #[cfg(feature = "compression")]
-        decompressor: Option<crate::compression::Decompressor>,
+        /// The reader (raw transport or decompressor-wrapped transport).
+        reader: Box<dyn Read + Send>,
     },
 }
 
@@ -119,20 +113,24 @@ impl BodyReaderEnum {
     /// The total number of bytes written.
     pub fn read_to_end(self, output: &mut dyn Write) -> io::Result<u64> {
         match self {
-            BodyReaderEnum::ContentLength { remaining, transport, #[cfg(feature = "compression")] decompressor } => {
-                read_exact(output, transport, remaining, decompressor)
+            BodyReaderEnum::ContentLength { remaining, reader } => {
+                read_exact(output, reader, remaining)
             }
-            BodyReaderEnum::Chunked { transport, #[cfg(feature = "compression")] decompressor } => {
-                read_chunked(output, transport, decompressor)
+            BodyReaderEnum::Chunked { reader } => {
+                read_chunked(output, reader)
             }
-            BodyReaderEnum::ReadToEnd { transport, #[cfg(feature = "compression")] decompressor } => {
-                read_until_eof(output, transport, decompressor)
+            BodyReaderEnum::ReadToEnd { reader } => {
+                read_until_eof(output, reader)
             }
         }
     }
 }
 
-/// Wraps a transport with a decompressor if needed.
+/// Wraps a transport with a decompressor if compression is needed.
+///
+/// Returns a `Box<dyn Read + Send>` that reads decompressed data from the
+/// transport. If the encoding is not a supported compression scheme, returns
+/// the original transport unchanged.
 ///
 /// # Arguments
 ///
@@ -141,13 +139,17 @@ impl BodyReaderEnum {
 ///
 /// # Returns
 ///
-/// A decompressor if compression is detected, otherwise None.
+/// A boxed reader that decompresses on the fly, or the original transport.
 #[cfg(feature = "compression")]
-fn wrap_with_decompressor(
+fn maybe_wrap_decompressor(
     transport: Box<dyn Read + Send>,
     encoding: Option<&str>,
-) -> Option<crate::compression::Decompressor> {
-    crate::compression::Decompressor::from_encoding(DecompressorRead(transport), encoding).ok().filter(|d| !d.is_identity())
+) -> Box<dyn Read + Send> {
+    match crate::compression::Decompressor::from_encoding(DecompressorRead(transport), encoding) {
+        Ok(decomp) if !decomp.is_identity() => Box::new(decomp),
+        Ok(crate::compression::Decompressor::Identity(inner)) => inner,
+        Err(_) => Box::new(DummyRead),
+    }
 }
 
 /// Adapter to implement Read for boxed transport.
@@ -161,14 +163,13 @@ impl Read for DecompressorRead {
     }
 }
 
-/// Reads exactly `remaining` bytes from the transport.
+/// Reads exactly `remaining` bytes from the reader.
 ///
 /// # Arguments
 ///
 /// * `output` - The output writer.
-/// * `transport` - The transport reader.
+/// * `reader` - The reader (raw transport or decompressor-wrapped).
 /// * `remaining` - The exact number of bytes to read.
-/// * `decompressor` - Optional decompressor for compressed content.
 ///
 /// # Returns
 ///
@@ -176,41 +177,24 @@ impl Read for DecompressorRead {
 #[cfg(feature = "compression")]
 fn read_exact(
     output: &mut dyn Write,
-    transport: Box<dyn Read + Send>,
+    mut reader: Box<dyn Read + Send>,
     mut remaining: u64,
-    decompressor: Option<crate::compression::Decompressor>,
 ) -> io::Result<u64> {
     let mut total = 0u64;
     let mut buf = [0u8; 8192];
 
-    if let Some(mut decomp) = decompressor {
-        loop {
-            if remaining == 0 {
-                break;
-            }
-            let to_read = (remaining as usize).min(buf.len());
-            let n = decomp.read(&mut buf[..to_read])?;
-            if n == 0 {
-                break;
-            }
-            output.write_all(&buf[..n])?;
-            total += n as u64;
-            remaining -= n as u64;
+    loop {
+        if remaining == 0 {
+            break;
         }
-    } else {
-        loop {
-            if remaining == 0 {
-                break;
-            }
-            let to_read = (remaining as usize).min(buf.len());
-            let n = transport.read(&mut buf[..to_read])?;
-            if n == 0 {
-                break;
-            }
-            output.write_all(&buf[..n])?;
-            total += n as u64;
-            remaining -= n as u64;
+        let to_read = (remaining as usize).min(buf.len());
+        let n = reader.read(&mut buf[..to_read])?;
+        if n == 0 {
+            break;
         }
+        output.write_all(&buf[..n])?;
+        total += n as u64;
+        remaining -= n as u64;
     }
 
     Ok(total)
@@ -221,8 +205,7 @@ fn read_exact(
 /// # Arguments
 ///
 /// * `output` - The output writer.
-/// * `transport` - The transport reader.
-/// * `decompressor` - Optional decompressor for compressed content.
+/// * `reader` - The reader (raw transport or decompressor-wrapped).
 ///
 /// # Returns
 ///
@@ -230,10 +213,9 @@ fn read_exact(
 #[cfg(feature = "compression")]
 fn read_chunked(
     output: &mut dyn Write,
-    transport: Box<dyn Read + Send>,
-    decompressor: Option<crate::compression::Decompressor>,
+    reader: Box<dyn Read + Send>,
 ) -> io::Result<u64> {
-    let mut reader = ChunkedReaderAdapter { inner: transport };
+    let mut reader = ChunkedReaderAdapter { inner: reader };
 
     let mut total = 0u64;
     loop {
@@ -252,11 +234,7 @@ fn read_chunked(
             let to_read = (size - read_so_far).min(8192);
             let mut buf = vec![0u8; to_read];
 
-            let n = if let Some(ref mut decomp) = decompressor {
-                decomp.read(&mut buf)?
-            } else {
-                reader.read(&mut buf)?
-            };
+            let n = reader.read(&mut buf)?;
 
             if n == 0 {
                 return Err(io::Error::new(
@@ -307,8 +285,7 @@ fn read_chunked(
 /// # Arguments
 ///
 /// * `output` - The output writer.
-/// * `transport` - The transport reader.
-/// * `decompressor` - Optional decompressor for compressed content.
+/// * `reader` - The reader (raw transport or decompressor-wrapped).
 ///
 /// # Returns
 ///
@@ -316,14 +293,9 @@ fn read_chunked(
 #[cfg(feature = "compression")]
 fn read_until_eof(
     output: &mut dyn Write,
-    transport: Box<dyn Read + Send>,
-    decompressor: Option<crate::compression::Decompressor>,
+    reader: Box<dyn Read + Send>,
 ) -> io::Result<u64> {
-    if let Some(mut decomp) = decompressor {
-        io::copy(&mut decomp, output)
-    } else {
-        io::copy(&mut transport.take(u64::MAX), output)
-    }
+    io::copy(&mut reader.take(u64::MAX), output)
 }
 
 /// Reads until EOF without compression support.
@@ -398,12 +370,6 @@ fn parse_chunk_size(line: &[u8]) -> io::Result<usize> {
     })
 }
 
-/// Returns None when compression is not enabled.
-#[cfg(not(feature = "compression"))]
-fn no_decompressor() -> Option<()> {
-    None
-}
-
 /// Creates a body reader based on the response headers.
 ///
 /// # Arguments
@@ -420,24 +386,14 @@ fn make_body_reader(
     transport: Box<dyn Read + Send>,
 ) -> BodyReaderEnum {
     let encoding = response.headers.content_encoding();
-
-    let needs_decomp = encoding.map_or(false, |e| {
-        let e = e.trim();
-        e.eq_ignore_ascii_case("gzip") || e.eq_ignore_ascii_case("x-gzip") || e.eq_ignore_ascii_case("deflate")
-    });
-
-    let (transport, decompressor) = if needs_decomp {
-        (Box::new(DummyRead) as Box<dyn Read + Send>, wrap_with_decompressor(transport, encoding))
-    } else {
-        (transport, None)
-    };
+    let reader = maybe_wrap_decompressor(transport, encoding);
 
     if response.is_chunked() {
-        BodyReaderEnum::Chunked { transport, decompressor }
+        BodyReaderEnum::Chunked { reader }
     } else if let Some(len) = response.content_length() {
-        BodyReaderEnum::ContentLength { remaining: len, transport, decompressor }
+        BodyReaderEnum::ContentLength { remaining: len, reader }
     } else {
-        BodyReaderEnum::ReadToEnd { transport, decompressor }
+        BodyReaderEnum::ReadToEnd { reader }
     }
 }
 
@@ -448,14 +404,14 @@ fn make_body_reader(
     transport: Box<dyn Read + Send>,
 ) -> BodyReaderEnum {
     if response.is_chunked() {
-        BodyReaderEnum::Chunked { transport }
+        BodyReaderEnum::Chunked { reader: transport }
     } else if let Some(len) = response.content_length() {
         BodyReaderEnum::ContentLength {
             remaining: len,
-            transport,
+            reader: transport,
         }
     } else {
-        BodyReaderEnum::ReadToEnd { transport }
+        BodyReaderEnum::ReadToEnd { reader: transport }
     }
 }
 
