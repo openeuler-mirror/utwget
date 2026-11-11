@@ -208,7 +208,7 @@ impl WarcWriterImpl {
             "software: wget-rs/0.1.0\r\n\
              format: WARC File Format 1.1\r\n\
              isPartOf: <urn:uuid:{}>\r\n",
-            generate_uuid_v4()
+            generate_uuid_v4()?
         );
         // Add user-defined headers
         for user_header in &self.user_headers {
@@ -226,7 +226,7 @@ impl WarcWriterImpl {
 
         let header = WarcHeader {
             record_type: WarcRecordType::Warcinfo,
-            record_id: format_record_id(),
+            record_id: format_record_id()?,
             date: format_date(now),
             content_length: content.len() as u64,
             concurrent_to: Vec::new(),
@@ -424,10 +424,10 @@ impl WarcWriterImpl {
         content_type: &str,
         content_length: u64,
         date: String,
-    ) -> WarcHeader {
-        WarcHeader {
+    ) -> Result<WarcHeader> {
+        Ok(WarcHeader {
             record_type,
-            record_id: format_record_id(),
+            record_id: format_record_id()?,
             date,
             content_length,
             concurrent_to: Vec::new(),
@@ -436,7 +436,7 @@ impl WarcWriterImpl {
             gzip_compressed: self.gzip_enabled,
             truncated: None,
             wagon: None,
-        }
+        })
     }
 }
 
@@ -491,7 +491,7 @@ impl WarcWriter for WarcWriterImpl {
             default_content_type(self.gzip_enabled),
             content.len() as u64,
             format_date(date),
-        );
+        )?;
 
         self.write_record(&header, &content)?;
 
@@ -541,7 +541,7 @@ impl WarcWriter for WarcWriterImpl {
             content_type,
             content.len() as u64,
             format_date(date),
-        );
+        )?;
 
         self.write_record(&header, &content)?;
 
@@ -586,7 +586,7 @@ impl WarcWriter for WarcWriterImpl {
             content_type,
             content.len() as u64,
             format_date(date),
-        );
+        )?;
 
         self.write_record(&header, &content)?;
 
@@ -631,7 +631,7 @@ impl WarcWriter for WarcWriterImpl {
             "application/warc-fields",
             content.len() as u64,
             format_date(date),
-        );
+        )?;
         header.concurrent_to = concurrent_to.to_vec();
 
         self.write_record(&header, &content)?;
@@ -657,7 +657,7 @@ impl WarcWriter for WarcWriterImpl {
     ///
     /// Returns `WarcError::Io` if the file cannot be created.
     fn create_temp_file(&mut self) -> Result<(Box<dyn Write + Send>, PathBuf)> {
-        let name = format!("warc-tmp-{}.tmp", generate_uuid_v4());
+        let name = format!("warc-tmp-{}.tmp", generate_uuid_v4()?);
         let path = self.tempdir.join(name);
         let file = File::create(&path).map_err(WarcError::Io)?;
         Ok((Box::new(file), path))
@@ -706,7 +706,7 @@ impl WarcWriter for WarcWriterImpl {
             content_type,
             content.len() as u64,
             format_date(date),
-        );
+        )?;
 
         self.write_record(&header, &content)?;
 
@@ -724,7 +724,7 @@ impl WarcWriter for WarcWriterImpl {
     ///
     /// A URN UUID string in the format `<urn:uuid:...>`.
     fn uuid(&self) -> String {
-        format_record_id()
+        format_record_id().unwrap_or_else(|_| "<urn:uuid:00000000-0000-0000-0000-000000000000>".to_string())
     }
 
     /// Generates a timestamp for the current time.
