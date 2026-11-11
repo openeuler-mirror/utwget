@@ -373,7 +373,7 @@ impl WarcWriterImpl {
             .date
             .replace('-', "")
             .replace(':', "")
-            .replace('T', "000000")
+            .replace('T', "")
             .replace('Z', "");
         let mime = if header.content_type.contains(';') {
             header.content_type.split(';').next().unwrap_or("-")
