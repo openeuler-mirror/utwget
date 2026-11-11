@@ -4,7 +4,7 @@
 //! for HTTP downloads, following RFC 6265 (HTTP State Management Mechanism).
 
 use crate::types::Scheme;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 
@@ -540,17 +540,16 @@ fn path_matches(request_path: &str, cookie_path: &str) -> bool {
 /// `Ok(DateTime)` if parsing succeeds, `Err(())` otherwise.
 fn parse_cookie_expires(s: &str) -> Result<DateTime<Utc>, ()> {
     let formats = [
-        "%a, %d %b %Y %H:%M:%S GMT",
-        "%a, %d-%b-%Y %H:%M:%S GMT",
-        "%A, %d-%b-%y %H:%M:%S GMT",
-        "%a %b %d %H:%M:%S %Y",
         "%a, %d %b %Y %H:%M:%S",
+        "%a, %d-%b-%Y %H:%M:%S",
+        "%A, %d-%b-%y %H:%M:%S",
+        "%a %b %d %H:%M:%S %Y",
         "%d %b %Y %H:%M:%S",
         "%Y-%m-%d %H:%M:%S",
     ];
     for fmt in &formats {
-        if let Ok(dt) = DateTime::parse_from_str(s, fmt) {
-            return Ok(dt.with_timezone(&Utc));
+        if let Ok(dt) = NaiveDateTime::parse_from_str(s, fmt) {
+            return Ok(dt.and_utc());
         }
     }
     Err(())
