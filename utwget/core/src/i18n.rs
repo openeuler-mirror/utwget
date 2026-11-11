@@ -96,7 +96,7 @@ fn get_translation(locale: &str, key: &str) -> Option<&'static str> {
         // ===================
         // English
         // ===================
-        ("en", "utwget.version", "GNU Wget 1.21.4 built on linux-gnu."),
+        ("en", "utwget.version", "utwget 0.1.0 - Rust rewrite of GNU Wget 1.21.4"),
         ("en", "utwget.help_usage", "Usage: utwget [OPTION]... [URL]..."),
         ("en", "utwget.help_mandatory", "Mandatory arguments to long options are mandatory for short options too."),
         ("en", "utwget.error_no_url", "No URLs specified"),
@@ -309,8 +309,8 @@ fn get_translation(locale: &str, key: &str) -> Option<&'static str> {
         // ===================
         // Chinese (Simplified)
         // ===================
-        ("zh-CN", "utwget.version", "GNU Wget 1.21.4 在 linux-gnu 上编译。"),
-        ("zh-CN", "utwget.help_usage", "用法： wget [选项]... [URL]..."),
+        ("zh-CN", "utwget.version", "utwget 0.1.0 - Rust 重构版 GNU Wget 1.21.4"),
+        ("zh-CN", "utwget.help_usage", "用法： utwget [选项]... [URL]..."),
         ("zh-CN", "utwget.help_mandatory", "长选项所必须的参数在使用短选项时也是必须的。"),
         ("zh-CN", "utwget.error_no_url", "未指定 URL"),
         ("zh-CN", "utwget.error_file_not_found", "文件未找到: %{file}"),
