@@ -1299,7 +1299,7 @@ impl Retriever {
 
         // Read CONNECT response
         let mut response_line = String::new();
-        let mut buf = [0u8; 1];
+        let mut buf = [0u8; 1024];
         loop {
             let n = stream.read(&mut buf).map_err(RetrieveError::Io)?;
             if n == 0 {
@@ -1307,7 +1307,7 @@ impl Retriever {
                     "proxy connection closed".into(),
                 )));
             }
-            response_line.push(buf[0] as char);
+            response_line.push_str(&String::from_utf8_lossy(&buf[..n]));
             if response_line.ends_with("\r\n\r\n") {
                 break;
             }
