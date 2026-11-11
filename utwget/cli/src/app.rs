@@ -318,7 +318,76 @@ impl App {
                 }
                 Ok(RetrieveOutcome::Redirected(new_url)) => {
                     if self.config.verbose >= 1 {
-                        eprintln!("{}", crate::i18n::translate_with_args("utwget.status_redirected_to", &[("url", new_url)]));
+                        eprintln!("{}", crate::i18n::translate_with_args("utwget.status_redirected_to", &[("url", new_url.clone())]));
+                    }
+                    let mut redirect_url = new_url;
+                    let mut redirect_count = 0u32;
+                    let max_redirects = self.config.max_redirect;
+                    loop {
+                        redirect_count += 1;
+                        if max_redirects > 0 && redirect_count > max_redirects {
+                            if self.config.verbose >= 1 {
+                                eprintln!("{}", crate::i18n::translate("utwget.error_too_many_redirects"));
+                            }
+                            self.worst_status = ExitStatus::ProtocolError;
+                            break;
+                        }
+                        let redirect_parsed = match ParsedUrl::parse(&redirect_url) {
+                            Ok(p) => p,
+                            Err(e) => {
+                                if self.config.verbose >= 1 || self.config.debug {
+                                    eprintln!("utwget: redirect parse error: {}", e);
+                                }
+                                self.worst_status = ExitStatus::ProtocolError;
+                                break;
+                            }
+                        };
+                        match self.retriever.retrieve_with_retry(&redirect_parsed.display()) {
+                            Ok(RetrieveOutcome::Success(body_result)) => {
+                                self.urls_downloaded += 1;
+                                if let Some(ref file) = body_result.local_file {
+                                    if self.config.verbose >= 1 {
+                                        eprintln!("{}", crate::i18n::translate_with_args("utwget.status_saved_to", &[("path", file.display().to_string())]));
+                                    }
+                                }
+                                break;
+                            }
+                            Ok(RetrieveOutcome::NotModified) => {
+                                if self.config.verbose >= 1 {
+                                    eprintln!("{}", crate::i18n::translate("utwget.status_not_modified"));
+                                }
+                                break;
+                            }
+                            Ok(RetrieveOutcome::Redirected(next_url)) => {
+                                if self.config.verbose >= 1 {
+                                    eprintln!("{}", crate::i18n::translate_with_args("utwget.status_redirected_to", &[("url", next_url.clone())]));
+                                }
+                                redirect_url = next_url;
+                            }
+                            Ok(RetrieveOutcome::SpiderOnly) => {
+                                break;
+                            }
+                            Err(e) => {
+                                let wg_err = match e {
+                                    ut_retriever::RetrieveError::Protocol(w) => w,
+                                    ut_retriever::RetrieveError::Response(w) => w,
+                                    ut_retriever::RetrieveError::Io(io_err) => WgetError::SocketError(io_err),
+                                    ut_retriever::RetrieveError::Quota => WgetError::Other("quota exceeded".to_string()),
+                                    ut_retriever::RetrieveError::NoUrls => WgetError::Other("no URLs to download".to_string()),
+                                };
+                                let status = ExitStatus::from_error(&wg_err);
+                                if status > self.worst_status {
+                                    self.worst_status = status;
+                                }
+                                if self.config.verbose >= 1 || self.config.debug {
+                                    eprintln!("{}", crate::i18n::translate_with_args("utwget.error_downloading", &[
+                                        ("url", redirect_url),
+                                        ("error", wg_err.to_string()),
+                                    ]));
+                                }
+                                break;
+                            }
+                        }
                     }
                 }
                 Ok(RetrieveOutcome::SpiderOnly) => {
@@ -402,7 +471,7 @@ impl App {
 
                 let handle = tokio::task::spawn(async move {
                     {
-                        let mut attempted = urls_attempted.lock().unwrap();
+                        let mut attempted = urls_attempted.lock().unwrap_or_else(|e| e.into_inner());
                         *attempted += 1;
                     }
 
@@ -411,7 +480,7 @@ impl App {
 
                     match result {
                         Ok(RetrieveOutcome::Success(_)) | Ok(_) => {
-                            let mut downloaded = urls_downloaded.lock().unwrap();
+                            let mut downloaded = urls_downloaded.lock().unwrap_or_else(|e| e.into_inner());
                             *downloaded += 1;
                         }
                         Err(e) => {
@@ -423,7 +492,7 @@ impl App {
                                 ut_retriever::RetrieveError::NoUrls => WgetError::Other("no URLs to download".to_string()),
                             };
                             let status = ExitStatus::from_error(&wg_err);
-                            let mut worst = worst_status.lock().unwrap();
+                            let mut worst = worst_status.lock().unwrap_or_else(|e| e.into_inner());
                             if status > *worst {
                                 *worst = status;
                             }
@@ -439,9 +508,9 @@ impl App {
             }
         });
 
-        self.urls_attempted = *urls_attempted.lock().unwrap();
-        self.urls_downloaded = *urls_downloaded.lock().unwrap();
-        self.worst_status = *worst_status.lock().unwrap();
+        self.urls_attempted = *urls_attempted.lock().unwrap_or_else(|e| e.into_inner());
+        self.urls_downloaded = *urls_downloaded.lock().unwrap_or_else(|e| e.into_inner());
+        self.worst_status = *worst_status.lock().unwrap_or_else(|e| e.into_inner());
 
         self.print_summary();
 

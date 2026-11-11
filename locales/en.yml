@@ -94,6 +94,7 @@ utwget:
   error_network: "Network error: %{reason}"
   error_ssl: "SSL error: %{reason}"
   error_auth_failed: "Authentication failed"
+  error_too_many_redirects: "too many redirects"
 
   # ===============
   # Warning Messages
