@@ -1313,8 +1313,15 @@ impl Retriever {
         let status_line = response_line.lines().next().unwrap_or("");
         debug!("CONNECT response: {}", status_line);
 
-        if !status_line.contains("200") {
-            return Err(RetrieveError::Protocol(WgetError::Other(format!(
+        // Parse the numeric status code properly
+        let status_ok = status_line
+            .split_whitespace()
+            .nth(1)
+            .and_then(|s| s.parse::<u16>().ok())
+            .map_or(false, |code| code == 200);
+
+        if !status_ok {
+            return Err(RetrieveError::Protocol(W.getError::Other(format!(
                 "proxy CONNECT failed: {}",
                 status_line
             ))));
