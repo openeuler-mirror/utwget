@@ -475,20 +475,21 @@ impl RecursiveRetriever {
         }
 
         let host_lc = parsed.host.to_ascii_lowercase();
-        if let Some(&allowed) = self.robots_cache.get(&host_lc) {
-            return allowed;
+
+        // Fetch robots.txt from the network if not already cached
+        if !self.robots_cache.contains_key(&host_lc) {
+            let allowed = match self.fetch_robots(&host_lc, robot_parser) {
+                Some(content) => {
+                    robot_parser.load(&host_lc, &content);
+                    robot_parser.is_allowed(&host_lc, url).unwrap_or(true)
+                }
+                None => true,
+            };
+            self.robots_cache.insert(host_lc.clone(), allowed);
         }
 
-        // Fetch robots.txt from the network, cache to /tmp, and load into parser
-        let allowed = match self.fetch_robots(&host_lc, robot_parser) {
-            Some(content) => {
-                robot_parser.load(&host_lc, &content);
-                robot_parser.is_allowed(&host_lc, url).unwrap_or(true)
-            }
-            None => true, // If fetch fails, allow the URL
-        };
-
-        self.robots_cache.insert(host_lc, allowed);
+        // Check path-specific rules
+        let allowed = robot_parser.is_allowed(&host_lc, url).unwrap_or(true);
         allowed
     }
 
