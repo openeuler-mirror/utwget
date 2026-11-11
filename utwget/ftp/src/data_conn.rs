@@ -130,7 +130,16 @@ pub fn enter_epsv(
     let resp = FtpResponse::read(ctrl)?;
 
     if resp.is_positive_completion {
-        let addr = parse_epsv_response(&resp.text)?;
+        let parsed = parse_epsv_response(&resp.text)?;
+        let addr = match parsed {
+            EpsvAddr::Resolved(a) => a,
+            EpsvAddr::UseControlPort(port) => {
+                let peer = ctrl.peer_addr().map_err(FtpCommandError::Io)?;
+                let mut sa = peer;
+                sa.set_port(port);
+                sa
+            }
+        };
         let stream = TcpStream::connect(addr).map_err(FtpCommandError::Io)?;
         stream.set_nonblocking(false).ok();
         log::debug!("FTP EPSV data connection to {}", addr);
@@ -312,12 +321,20 @@ fn parse_pasv_response(text: &str) -> Result<SocketAddr, FtpCommandError> {
     Ok(SocketAddr::V4(SocketAddrV4::new(ip, port)))
 }
 
+/// Parsed result from an EPSV response.
+enum EpsvAddr {
+    /// A fully resolved address (when protocol and address are provided).
+    Resolved(SocketAddr),
+    /// Only the port was provided; the caller should use the control connection's address.
+    UseControlPort(u16),
+}
+
 /// Parse an EPSV response to extract the data connection address.
 ///
 /// The response format is: `229 Entering Extended Passive Mode (|||port|)`
 /// where the protocol and address fields are empty (meaning use the
 /// same as the control connection).
-fn parse_epsv_response(text: &str) -> Result<SocketAddr, FtpCommandError> {
+fn parse_epsv_response(text: &str) -> Result<EpsvAddr, FtpCommandError> {
     let text = text.trim();
     let start = text.find('(').ok_or_else(|| {
         FtpCommandError::MalformedResponse("EPSV: no opening parenthesis".into())
@@ -340,18 +357,23 @@ fn parse_epsv_response(text: &str) -> Result<SocketAddr, FtpCommandError> {
         FtpCommandError::MalformedResponse(format!("EPSV: invalid port: {}", port_str))
     })?;
 
+    // When protocol and address are empty, use the control connection's address with the given port.
+    if proto.is_empty() && addr_str.is_empty() {
+        return Ok(EpsvAddr::UseControlPort(port));
+    }
+
     match proto {
-        "1" | "" => {
+        "1" => {
             let ip: Ipv4Addr = addr_str.parse().map_err(|_| {
                 FtpCommandError::MalformedResponse(format!("EPSV: invalid IPv4: {}", addr_str))
             })?;
-            Ok(SocketAddr::V4(SocketAddrV4::new(ip, port)))
+            Ok(EpsvAddr::Resolved(SocketAddr::V4(SocketAddrV4::new(ip, port))))
         }
         "2" => {
             let ip: Ipv6Addr = addr_str.parse().map_err(|_| {
                 FtpCommandError::MalformedResponse(format!("EPSV: invalid IPv6: {}", addr_str))
             })?;
-            Ok(SocketAddr::V6(SocketAddrV6::new(ip, port, 0, 0)))
+            Ok(EpsvAddr::Resolved(SocketAddr::V6(SocketAddrV6::new(ip, port, 0, 0))))
         }
         other => Err(FtpCommandError::MalformedResponse(
             format!("EPSV: unsupported protocol: {}", other),
