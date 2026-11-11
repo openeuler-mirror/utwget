@@ -656,8 +656,7 @@ impl Retriever {
         let total_size = if self.config.ignore_length {
             None
         } else {
-            resp_meta.content_length.map(|cl| {
-                cl + effective_resume_pos
+            resp_meta.content_length.and_then(|cl| cl.checked_add(effective_resume_pos))
             })
         };
 
