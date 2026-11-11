@@ -657,7 +657,6 @@ impl Retriever {
             None
         } else {
             resp_meta.content_length.and_then(|cl| cl.checked_add(effective_resume_pos))
-            })
         };
 
         self.progress.reset();
@@ -1202,7 +1201,7 @@ impl Retriever {
                 // Send request over TLS
                 let serialized = request.serialize().map_err(RetrieveError::Io)?;
                 debug!("HTTPS request over proxy tunnel:\n{}", String::from_utf8_lossy(&serialized));
-                tls_stream.write_all(&serialized).map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("write error: {}", e))))?;
+                tls_stream.write(&serialized).map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("write error: {}", e))))?;
 
                 let (response, leftover) = {
                     let mut reader = TransportRead::new(&mut tls_stream);
@@ -1238,7 +1237,7 @@ impl Retriever {
 
                 let serialized = request.serialize().map_err(RetrieveError::Io)?;
                 debug!("HTTPS request:\n{}", String::from_utf8_lossy(&serialized));
-                tls_stream.write_all(&serialized).map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("write error: {}", e))))?;
+                tls_stream.write(&serialized).map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("write error: {}", e))))?;
 
                 let (response, leftover) = {
                     let mut reader = TransportRead::new(&mut tls_stream);
@@ -1320,7 +1319,7 @@ impl Retriever {
             .map_or(false, |code| code == 200);
 
         if !status_ok {
-            return Err(RetrieveError::Protocol(W.getError::Other(format!(
+            return Err(RetrieveError::Protocol(WgetError::Other(format!(
                 "proxy CONNECT failed: {}",
                 status_line
             ))));
