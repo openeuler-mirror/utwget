@@ -51,12 +51,27 @@ pub enum FtpError {
     /// Failed to parse server response or URL.
     #[error("parse error: {0}")]
     ParseError(String),
+    /// Invalid input containing control characters (potential command injection).
+    #[error("invalid input: contains control characters (potential command injection)")]
+    InvalidInput,
     /// An I/O error occurred during the operation.
     #[error("I/O error: {0}")]
     Io(#[from] io::Error),
     /// An FTP protocol error occurred.
     #[error("FTP protocol error: {0}")]
     Protocol(#[from] FtpCommandError),
+}
+
+/// Validates that input does not contain control characters that could
+/// be used for FTP command injection (CRLF injection).
+///
+/// FTP commands are terminated by CRLF, so embedding \r or \n in
+/// user-supplied values like filenames allows arbitrary command execution.
+fn validate_ftp_input(input: &str) -> Result<(), FtpError> {
+    if input.contains('\r') || input.contains('\n') {
+        return Err(FtpError::InvalidInput);
+    }
+    Ok(())
 }
 
 impl From<ut_core::WgetError> for FtpError {
@@ -296,6 +311,7 @@ impl FtpClient {
     /// Returns `FtpError::CommandFailed` if the directory doesn't exist
     /// or the command fails.
     pub fn cwd(&mut self, path: &str) -> Result<FtpResponse, FtpError> {
+        validate_ftp_input(path)?;
         self.send_cmd(&format!("CWD {}", path))?;
         let resp = self.read_response()?;
 
@@ -523,6 +539,7 @@ impl FtpClient {
     /// Returns `FtpError::CommandFailed` if the directory already exists
     /// or the command fails.
     pub fn mkdir(&mut self, dirname: &str) -> Result<FtpResponse, FtpError> {
+        validate_ftp_input(dirname)?;
         self.send_cmd(&format!("MKD {}", dirname))?;
         let resp = self.read_response()?;
         if resp.is_positive_completion {
@@ -553,6 +570,7 @@ impl FtpClient {
     /// Returns `FtpError::CommandFailed` if the directory doesn't exist,
     /// is not empty, or the command fails.
     pub fn rmdir(&mut self, dirname: &str) -> Result<FtpResponse, FtpError> {
+        validate_ftp_input(dirname)?;
         self.send_cmd(&format!("RMD {}", dirname))?;
         let resp = self.read_response()?;
         if resp.is_positive_completion {
@@ -582,6 +600,7 @@ impl FtpClient {
     /// Returns `FtpError::CommandFailed` if the file doesn't exist
     /// or the command fails.
     pub fn delete(&mut self, filename: &str) -> Result<FtpResponse, FtpError> {
+        validate_ftp_input(filename)?;
         self.send_cmd(&format!("DELE {}", filename))?;
         let resp = self.read_response()?;
         if resp.is_positive_completion {
@@ -840,6 +859,7 @@ impl FtpClient {
 
         let mut data_conn = self.open_data_connection()?;
 
+        validate_ftp_input(filename)?;
         self.send_cmd(&format!("RETR {}", filename))?;
 
         let transfer_resp = self.read_response()?;
@@ -896,6 +916,7 @@ impl FtpClient {
     ) -> Result<u64, FtpError> {
         let mut data_conn = self.open_data_connection()?;
 
+        validate_ftp_input(filename)?;
         self.send_cmd(&format!("STOR {}", filename))?;
 
         let transfer_resp = self.read_response()?;
