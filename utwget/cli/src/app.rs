@@ -1016,6 +1016,10 @@ pub fn build_config(args: &Args) -> ut_core::Config {
     if let Some(ref tags) = args.ignore_tags {
         config.recursive.ignore_tags = tags.split(',').map(String::from).collect();
     }
+    if let Some(ref tags) = args.reject_tags {
+        let reject: Vec<String> = tags.split(',').map(String::from).collect();
+        config.recursive.ignore_tags.extend(reject);
+    }
     if let Some(ref patterns) = args.accept {
         config.recursive.accept_patterns = patterns.split(',').map(String::from).collect();
     }
