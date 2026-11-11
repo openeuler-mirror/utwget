@@ -162,7 +162,13 @@ impl ParsedUrl {
         }
 
         if relative.starts_with('/') {
-            let full = format!("{}://{}:{}{}", self.scheme, self.host, self.port, relative);
+            let default_port = self.scheme.default_port();
+            let port_part = if self.port != default_port {
+                format!(":{}", self.port)
+            } else {
+                String::new()
+            };
+            let full = format!("{}://{}{}{}", self.scheme, self.host, port_part, relative);
             return ParsedUrl::parse(&full);
         }
 
