@@ -145,10 +145,22 @@ fn maybe_wrap_decompressor(
     transport: Box<dyn Read + Send>,
     encoding: Option<&str>,
 ) -> Box<dyn Read + Send> {
-    match crate::compression::Decompressor::from_encoding(DecompressorRead(transport), encoding) {
-        Ok(decomp) if !decomp.is_identity() => Box::new(decomp),
-        Ok(crate::compression::Decompressor::Identity(inner)) => inner,
-        Err(_) => Box::new(DummyRead),
+    match encoding {
+        None | Some("") | Some("identity") => transport,
+        Some(enc) if enc.eq_ignore_ascii_case("gzip")
+            || enc.eq_ignore_ascii_case("x-gzip")
+            || enc.eq_ignore_ascii_case("deflate") =>
+        {
+            match crate::compression::Decompressor::from_encoding(DecompressorRead(transport), encoding) {
+                Ok(decomp) if !decomp.is_identity() => Box::new(decomp),
+                Ok(crate::compression::Decompressor::Identity(inner)) => inner,
+                Err(_) => Box::new(DummyRead),
+            }
+        }
+        Some(enc) => {
+            log::warn!("unsupported Content-Encoding '{}', passing through raw data", enc);
+            transport
+        }
     }
 }
 
