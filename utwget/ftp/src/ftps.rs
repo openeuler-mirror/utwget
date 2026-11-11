@@ -174,23 +174,57 @@ impl FtpsClient {
         Ok(welcome)
     }
 
-    /// Read FTP response from a plain TCP stream
+    /// Read FTP response from a plain TCP stream.
+    ///
+    /// Handles multi-line FTP responses (RFC 959):
+    /// - Intermediate lines start with "NNN-" (code + dash)
+    /// - Final line starts with "NNN " (code + space)
     fn read_response_from_stream(&self, stream: &TcpStream) -> Result<FtpResponse, FtpError> {
-        let mut line = String::new();
+        let mut data = String::new();
         let mut buf = [0u8; 1];
+        let mut found_code: Option<u16> = None;
 
         loop {
             let n = (&*stream).read(&mut buf)
                 .map_err(FtpError::Io)?;
             if n == 0 {
-                return Err(FtpError::Connect("connection closed".into()));
-            }
-            line.push(buf[0] as char);
-            if buf[0] == b'\n' {
+                if data.is_empty() {
+                    return Err(FtpError::Connect("connection closed".into()));
+                }
                 break;
+            }
+            data.push(buf[0] as char);
+
+            // Check for complete response line
+            if buf[0] == b'\n' {
+                if let Some(pos) = data.find("\r\n") {
+                    let line = &data[..pos];
+                    if line.len() >= 4 {
+                        if let Ok(code) = line[..3].parse::<u16>() {
+                            let fourth = line.as_bytes()[3];
+                            if fourth == b' ' {
+                                // Final line - complete response
+                                found_code = Some(code);
+                                break;
+                            }
+                            // fourth == b'-' means multi-line intermediate, keep reading
+                            found_code = Some(code);
+                        }
+                    }
+                }
             }
         }
 
+        if found_code.is_none() && !data.is_empty() {
+            // Fallback: try to parse whatever we got
+        }
+
+        // Extract the final line for parsing
+        let line = if let Some(pos) = data.rfind("\r\n") {
+            &data[..pos]
+        } else {
+            data.trim()
+        };
         let line = line.trim();
         let code: u16 = line.get(..3)
             .and_then(|s| s.parse().ok())
@@ -336,8 +370,12 @@ impl FtpsClient {
     }
 
     /// Read an FTP response from the TLS connection.
+    ///
+    /// Handles multi-line FTP responses (RFC 959):
+    /// - Intermediate lines start with "NNN-" (code + dash)
+    /// - Final line starts with "NNN " (code + space)
     fn read_response(&mut self) -> Result<FtpResponse, FtpError> {
-        let mut line = String::new();
+        let mut data = String::new();
 
         if let Some(ref mut tls) = self.ctrl_tls {
             // Read TLS data
@@ -348,17 +386,46 @@ impl FtpsClient {
 
             let mut reader = tls.conn.reader();
             let mut buf = [0u8; 1024];
+            let mut found_code: Option<u16> = None;
             loop {
                 let n = reader.read(&mut buf).map_err(FtpError::Io)?;
-                if n == 0 { break; }
-                line.push_str(&String::from_utf8_lossy(&buf[..n]));
-                if line.contains("\r\n") { break; }
+                if n == 0 {
+                    break;
+                }
+                data.push_str(&String::from_utf8_lossy(&buf[..n]));
+
+                // Check for complete response: a line starting with "NNN " (code + space)
+                // which is the final line of a multi-line response, or a single-line response.
+                if let Some(pos) = data.find("\r\n") {
+                    let line = &data[..pos];
+                    if line.len() >= 4 {
+                        if let Ok(code) = line[..3].parse::<u16>() {
+                            let fourth = line.as_bytes()[3];
+                            if fourth == b' ' {
+                                // Final line found - complete response
+                                found_code = Some(code);
+                                break;
+                            }
+                            // fourth == b'-' means multi-line intermediate, keep reading
+                            found_code = Some(code);
+                        }
+                    }
+                }
+            }
+
+            if found_code.is_none() && !data.is_empty() {
+                // Fallback: try to parse whatever we got
             }
         } else {
             return Err(FtpError::Connect("not connected (TLS required)".into()));
         }
 
-        // Parse response
+        // Extract the final line for parsing
+        let line = if let Some(pos) = data.rfind("\r\n") {
+            &data[..pos]
+        } else {
+            data.trim()
+        };
         let line = line.trim();
         log::debug!("FTPS < {}", line);
 

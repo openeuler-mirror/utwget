@@ -862,6 +862,11 @@ impl Retriever {
             let total_bytes = ftps_client.retr(filename, &mut rate_writer, Some(state.resume_position))
                 .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("FTPS transfer error: {}", e))))?;
 
+            // Apply server timestamp (MDTM) before closing the connection
+            if let Some(mdtm) = ftps_client.mdtm(filename).ok().flatten() {
+                apply_file_timestamp(output_path, mdtm);
+            }
+
             ftps_client.quit()
                 .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("FTPS quit error: {}", e))))?;
 
