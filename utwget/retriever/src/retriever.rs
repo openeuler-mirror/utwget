@@ -104,8 +104,13 @@ impl Retriever {
         let mut cookie_jar = CookieJar::new();
         if let Some(ref cookie_file) = config.cookie.input_file {
             if cookie_file.exists() {
-                if let Err(e) = cookie_jar.load_from_reader(File::open(cookie_file).unwrap()) {
-                    warn!("failed to load cookies: {}", e);
+                match File::open(cookie_file) {
+                    Ok(file) => {
+                        if let Err(e) = cookie_jar.load_from_reader(file) {
+                            warn!("failed to load cookies: {}", e);
+                        }
+                    }
+                    Err(e) => warn!("failed to open cookie file {}: {}", cookie_file.display(), e),
                 }
             }
         }
