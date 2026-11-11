@@ -437,7 +437,13 @@ impl Retriever {
                 }
             }
             match h2_response {
-                Some(r) => r,
+                Some(r) => {
+                    // HTTP/2 responses already have the body in r.body.
+                    // Set pending_body_reader so stream_response_body can write it to disk.
+                    let body_data = r.body.clone().unwrap_or_default();
+                    self.pending_body_reader = Some((body_data, Box::new(io::Cursor::new(Vec::new()))));
+                    r
+                }
                 None => {
                     let (r, leftover, reader) = self.do_http_request(&req, url)?;
                     self.pending_body_reader = Some((leftover, reader));
