@@ -67,6 +67,10 @@ struct TlsConnection {
 impl TlsConnection {
     fn complete_handshake(&mut self) -> io::Result<()> {
         loop {
+            if !self.conn.is_handshaking() {
+                break;
+            }
+
             if self.conn.wants_write() {
                 self.conn.write_tls(&mut self.stream)?;
                 continue;
