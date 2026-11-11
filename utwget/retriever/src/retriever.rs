@@ -945,6 +945,9 @@ impl Retriever {
         let total_bytes = ftp_client.retr(filename, &mut rate_writer, Some(state.resume_position))
             .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("FTP transfer error: {}", e))))?;
 
+        // Get server timestamp before closing connection
+        let mdtm = ftp_client.mdtm(filename).ok().flatten();
+
         ftp_client.quit()
             .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("FTP quit error: {}", e))))?;
 
@@ -956,7 +959,7 @@ impl Retriever {
 
         self.total_downloaded += total_bytes;
 
-        if let Some(mdtm) = ftp_client.mdtm(filename).ok().flatten() {
+        if let Some(mdtm) = mdtm {
             apply_file_timestamp(output_path, mdtm);
         }
 
