@@ -378,39 +378,44 @@ impl FtpsClient {
         let mut data = String::new();
 
         if let Some(ref mut tls) = self.ctrl_tls {
-            // Read TLS data
-            tls.conn.read_tls(&mut tls.stream)
-                .map_err(FtpError::Io)?;
-            tls.conn.process_new_packets()
-                .map_err(|e| FtpError::Connect(format!("TLS error: {}", e)))?;
-
-            let mut reader = tls.conn.reader();
-            let mut buf = [0u8; 1024];
             let mut found_code: Option<u16> = None;
-            loop {
-                let n = reader.read(&mut buf).map_err(FtpError::Io)?;
-                if n == 0 {
-                    break;
-                }
-                data.push_str(&String::from_utf8_lossy(&buf[..n]));
 
-                // Check for complete response: a line starting with "NNN " (code + space)
-                // which is the final line of a multi-line response, or a single-line response.
-                if let Some(pos) = data.find("\r\n") {
-                    let line = &data[..pos];
-                    if line.len() >= 4 {
-                        if let Ok(code) = line[..3].parse::<u16>() {
-                            let fourth = line.as_bytes()[3];
-                            if fourth == b' ' {
-                                // Final line found - complete response
+            // Outer loop: keep reading TLS records until we have a complete response.
+            // A multi-line FTP response may span multiple TLS records.
+            loop {
+                tls.conn.read_tls(&mut tls.stream)
+                    .map_err(FtpError::Io)?;
+                tls.conn.process_new_packets()
+                    .map_err(|e| FtpError::Connect(format!("TLS error: {}", e)))?;
+
+                let mut reader = tls.conn.reader();
+                let mut buf = [0u8; 1024];
+                loop {
+                    let n = reader.read(&mut buf).map_err(FtpError::Io)?;
+                    if n == 0 {
+                        break;
+                    }
+                    data.push_str(&String::from_utf8_lossy(&buf[..n]));
+
+                    if let Some(pos) = data.find("\r\n") {
+                        let line = &data[..pos];
+                        if line.len() >= 4 {
+                            if let Ok(code) = line[..3].parse::<u16>() {
+                                let fourth = line.as_bytes()[3];
+                                if fourth == b' ' {
+                                    found_code = Some(code);
+                                    break;
+                                }
                                 found_code = Some(code);
-                                break;
                             }
-                            // fourth == b'-' means multi-line intermediate, keep reading
-                            found_code = Some(code);
                         }
                     }
                 }
+
+                if found_code.is_some() || data.is_empty() {
+                    break;
+                }
+                // TLS reader exhausted but no complete response yet — read more TLS records.
             }
 
             if found_code.is_none() && !data.is_empty() {

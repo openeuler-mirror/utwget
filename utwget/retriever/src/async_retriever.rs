@@ -116,7 +116,8 @@ impl AsyncRetriever {
             let semaphore = self.semaphore.clone();
 
             let handle = tokio::spawn(async move {
-                let _permit = semaphore.acquire_owned().await.unwrap();
+                let _permit = semaphore.acquire_owned().await
+                    .map_err(|_| RetrieveError::Protocol(WgetError::Other("semaphore closed".into())))?;
                 let url_clone = url.clone();
                 let result = tokio::task::spawn_blocking(move || {
                     let progress = create_silent_progress();
