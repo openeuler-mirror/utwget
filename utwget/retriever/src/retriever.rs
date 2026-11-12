@@ -555,6 +555,15 @@ impl Retriever {
             }
             if let Some(location) = response.location() {
                 let redirect_url = url.merge(location).map_err(RetrieveError::Protocol)?;
+
+                // Warn about cross-scheme or cross-host redirects for security awareness
+                if url.scheme != redirect_url.scheme {
+                    warn!("Cross-scheme redirect: {} -> {}", url.scheme, redirect_url.scheme);
+                }
+                if url.host != redirect_url.host {
+                    debug!("Cross-host redirect: {} -> {}", url.host, redirect_url.host);
+                }
+
                 self.download_registry.register_redirection(&url.display(), &redirect_url.display());
                 self.progress.set_redirected(&redirect_url.display());
                 info!("redirected to {}", redirect_url.display());
