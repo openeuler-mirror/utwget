@@ -1806,7 +1806,9 @@ impl Retriever {
             // full-content WARC records.
             let body_bytes: &[u8] = &[];
             let ct = meta.content_type.as_deref().unwrap_or("application/octet-stream");
-            let _ = warc.write_response(url, response.status_code, &header_bytes, body_bytes, ct, date);
+            if let Err(e) = warc.write_response(url, response.status_code, &header_bytes, body_bytes, ct, date) {
+                warn!("WARC write failed: {}", e);
+            }
         }
     }
 
