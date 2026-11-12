@@ -1134,7 +1134,7 @@ pub fn build_config(args: &Args) -> ut_core::Config {
         config.recursive.use_robots = false;
         config.convert_links = true;
         config.page_requisites = true;
-        config.recursive.max_level = Some(0);
+        config.recursive.max_level = None; // Infinite recursion for mirror mode
         config.continue_download = true;
     }
 
