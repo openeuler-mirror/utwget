@@ -324,14 +324,16 @@ impl App {
                     let mut redirect_count = 0u32;
                     let max_redirects = self.config.max_redirect;
                     loop {
-                        redirect_count += 1;
-                        if max_redirects > 0 && redirect_count > max_redirects {
+                        // Check redirect limit BEFORE incrementing count
+                        // This ensures max_redirects=0 prevents any redirects
+                        if max_redirects > 0 && redirect_count >= max_redirects {
                             if self.config.verbose >= 1 {
                                 eprintln!("{}", crate::i18n::translate("utwget.error_too_many_redirects"));
                             }
                             self.worst_status = ExitStatus::ProtocolError;
                             break;
                         }
+                        redirect_count += 1;
                         let redirect_parsed = match ParsedUrl::parse(&redirect_url) {
                             Ok(p) => p,
                             Err(e) => {
