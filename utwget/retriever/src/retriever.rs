@@ -99,7 +99,12 @@ pub struct Retriever {
     /// Connection pool for reusing TCP and TLS connections.
     connection_pool: TlsConnectionPool,
     /// Buffered leftover bytes and body reader from the last HTTP response head read.
-    pending_body_reader: Option<(Vec<u8>, Box<dyn Read>)>,
+    pending_body_reader: Option<(Vec<u8>, BodySource)>,
+    /// Return info for the current pending body reader, used to return the
+    /// connection to the TLS pool after the body is consumed (Keep-Alive).
+    pending_return_info: Option<ReturnInfo>,
+    /// Whether the current pending response allows keep-alive connection reuse.
+    pending_keep_alive: bool,
 }
 
 impl Retriever {
@@ -161,6 +166,8 @@ impl Retriever {
             warc: None,
             connection_pool: TlsConnectionPool::new(5), // Max 5 connections per pool
             pending_body_reader: None,
+            pending_return_info: None,
+            pending_keep_alive: false,
         };
 
         #[cfg(feature = "warc")]
@@ -454,20 +461,26 @@ impl Retriever {
                     // HTTP/2 responses already have the body in r.body.
                     // Set pending_body_reader so stream_response_body can write it to disk.
                     let body_data = r.body.clone().unwrap_or_default();
-                    self.pending_body_reader = Some((body_data, Box::new(io::Cursor::new(Vec::new()))));
+                    self.pending_body_reader = Some((body_data, BodySource::Plain(Box::new(io::Cursor::new(Vec::new())))));
+                    self.pending_return_info = None;
+                    self.pending_keep_alive = false;
                     r
                 }
                 None => {
-                    let (r, leftover, reader) = self.do_http_request(&req, url)?;
-                    self.pending_body_reader = Some((leftover, reader));
+                    let (r, leftover, source, return_info) = self.do_http_request(&req, url)?;
+                    self.pending_keep_alive = r.keep_alive() && return_info.is_some();
+                    self.pending_return_info = return_info;
+                    self.pending_body_reader = Some((leftover, source));
                     r
                 }
             }
         };
         #[cfg(not(feature = "http2"))]
         let mut response = {
-            let (r, leftover, reader) = self.do_http_request(&req, url)?;
-            self.pending_body_reader = Some((leftover, reader));
+            let (r, leftover, source, return_info) = self.do_http_request(&req, url)?;
+            self.pending_keep_alive = r.keep_alive() && return_info.is_some();
+            self.pending_return_info = return_info;
+            self.pending_body_reader = Some((leftover, source));
             r
         };
 
@@ -543,8 +556,10 @@ impl Retriever {
                                 Some(&auth_val),
                             );
                             response = {
-                                let (r, leftover, reader) = self.do_http_request(&retry_req, url)?;
-                                self.pending_body_reader = Some((leftover, reader));
+                                let (r, leftover, source, return_info) = self.do_http_request(&retry_req, url)?;
+                                self.pending_keep_alive = r.keep_alive() && return_info.is_some();
+                                self.pending_return_info = return_info;
+                                self.pending_body_reader = Some((leftover, source));
                                 r
                             };
                             state.auth_finished = true;
@@ -705,14 +720,35 @@ impl Retriever {
         }
 
         let mut body_bytes_read = 0u64;
-        if let Some((leftover, mut reader)) = self.pending_body_reader.take() {
-            body_bytes_read = stream_response_body(
-                &mut io::Cursor::new(leftover).chain(&mut reader),
+        if let Some((leftover, mut source)) = self.pending_body_reader.take() {
+            let stream_result = stream_response_body(
+                &mut io::Cursor::new(leftover).chain(&mut source),
                 &mut file,
                 &response,
                 &mut *self.progress,
                 state.resume_position,
-            )?;
+            );
+            // On success, try to return the connection to the pool for Keep-Alive.
+            // On error, drop the connection (do not reuse potentially-broken connections).
+            if let Ok(n) = stream_result {
+                body_bytes_read = n;
+                if self.pending_keep_alive {
+                    if let Some((host, port)) = self.pending_return_info.take() {
+                        if let BodySource::Tls(mut t) = source {
+                            if let Some(conn) = t.take_inner() {
+                                debug!("returning TLS connection to pool for {}:{}", host, port);
+                                self.connection_pool.put_tls(&host, port, conn);
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Body read failed: connection may be in an inconsistent state.
+                // Discard it (do not return to pool) and propagate the error.
+                self.pending_return_info = None;
+                self.pending_keep_alive = false;
+                return Err(stream_result.unwrap_err());
+            }
         }
 
         // Flush BufWriter before applying timestamps / xattrs to ensure
@@ -1272,7 +1308,7 @@ impl Retriever {
         &mut self,
         request: &HttpRequest,
         url: &ParsedUrl,
-    ) -> Result<(HttpResponse, Vec<u8>, Box<dyn Read>), RetrieveError> {
+    ) -> Result<(HttpResponse, Vec<u8>, BodySource, Option<ReturnInfo>), RetrieveError> {
         let host = &url.host;
         let port = url.port;
 
@@ -1310,8 +1346,9 @@ impl Retriever {
                     let mut reader = TransportRead::new(&mut tls_stream);
                     read_response_head(&mut reader)?
                 };
-                let boxed_reader: Box<dyn Read> = Box::new(OwnedTransportRead::new(tls_stream));
-                Ok((response, leftover, boxed_reader))
+                // Proxy tunnel: not returned to the direct-host TLS pool.
+                let source = BodySource::Tls(OwnedTransportRead::new(tls_stream));
+                Ok((response, leftover, source, None))
             } else {
                 // Plain HTTP over proxy
                 let proxy_req = build_proxy_request(request, &url.host, url.port);
@@ -1320,23 +1357,28 @@ impl Retriever {
                 stream.flush().map_err(RetrieveError::Io)?;
 
                 let (response, leftover) = read_response_head(&mut stream)?;
-                let boxed_reader: Box<dyn Read> = Box::new(stream);
-                Ok((response, leftover, boxed_reader))
+                let source = BodySource::Plain(Box::new(stream));
+                Ok((response, leftover, source, None))
             }
         } else {
             debug!("connecting to {}:{}", host, port);
-            let mut stream = self.create_tcp_stream(host, port)?;
 
             if url.scheme.is_secure() {
-                // Wrap with TLS
-                let tls_config = ut_net::tls::TlsConfig::from_core(&self.config.tls);
-                let tls_connector = ut_net::tls::RustlsConnector::new();
-                let mut tls_stream = tls_connector.connect(
-                    Box::new(ut_net::transport::TcpTransport::new(stream)),
-                    host,
-                    port,
-                    &tls_config,
-                ).map_err(|e| RetrieveError::Protocol(WgetError::Tls(ut_core::error::TlsError::HandshakeFailed(e.to_string()))))?;
+                // Try to reuse a pooled TLS connection (Keep-Alive)
+                let mut tls_stream = if let Some(pooled) = self.connection_pool.get_tls(host, port) {
+                    debug!("reusing pooled TLS connection to {}:{}", host, port);
+                    pooled
+                } else {
+                    let stream = self.create_tcp_stream(host, port)?;
+                    let tls_config = ut_net::tls::TlsConfig::from_core(&self.config.tls);
+                    let tls_connector = ut_net::tls::RustlsConnector::new();
+                    tls_connector.connect(
+                        Box::new(ut_net::transport::TcpTransport::new(stream)),
+                        host,
+                        port,
+                        &tls_config,
+                    ).map_err(|e| RetrieveError::Protocol(WgetError::Tls(ut_core::error::TlsError::HandshakeFailed(e.to_string()))))?
+                };
 
                 let serialized = request.serialize().map_err(RetrieveError::Io)?;
                 debug!("HTTPS request:\n{}", String::from_utf8_lossy(&serialized));
@@ -1346,17 +1388,20 @@ impl Retriever {
                     let mut reader = TransportRead::new(&mut tls_stream);
                     read_response_head(&mut reader)?
                 };
-                let boxed_reader: Box<dyn Read> = Box::new(OwnedTransportRead::new(tls_stream));
-                Ok((response, leftover, boxed_reader))
+                // Direct HTTPS: connection can be returned to the (host, port) TLS pool
+                // after the body is consumed, if the server allows keep-alive.
+                let source = BodySource::Tls(OwnedTransportRead::new(tls_stream));
+                Ok((response, leftover, source, Some((host.clone(), port))))
             } else {
+                let mut stream = self.create_tcp_stream(host, port)?;
                 let serialized = request.serialize().map_err(RetrieveError::Io)?;
                 debug!("HTTP request:\n{}", String::from_utf8_lossy(&serialized));
                 stream.write_all(&serialized).map_err(RetrieveError::Io)?;
                 stream.flush().map_err(RetrieveError::Io)?;
 
                 let (response, leftover) = read_response_head(&mut stream)?;
-                let boxed_reader: Box<dyn Read> = Box::new(stream);
-                Ok((response, leftover, boxed_reader))
+                let source = BodySource::Plain(Box::new(stream));
+                Ok((response, leftover, source, None))
             }
         }
     }
@@ -1452,23 +1497,68 @@ impl<'a> Read for TransportRead<'a> {
 }
 
 /// Owned adapter that wraps a boxed `Transport` and exposes `std::io::Read`.
+///
+/// The inner transport is stored as an `Option` so it can be extracted after
+/// the response body is fully read, allowing the connection to be returned to
+/// the TLS connection pool for Keep-Alive reuse.
 struct OwnedTransportRead {
-    inner: Box<dyn ut_net::Transport<Error = ut_core::error::TlsError>>,
+    inner: Option<Box<dyn ut_net::Transport<Error = ut_core::error::TlsError>>>,
 }
 
 impl OwnedTransportRead {
     fn new(inner: Box<dyn ut_net::Transport<Error = ut_core::error::TlsError>>) -> Self {
-        OwnedTransportRead { inner }
+        OwnedTransportRead { inner: Some(inner) }
+    }
+
+    /// Extract the underlying transport, if still present.
+    ///
+    /// Returns `None` if the transport was already taken (e.g. after a
+    /// previous return-to-pool). This is used after the response body is
+    /// fully consumed to return the connection to the pool for Keep-Alive.
+    fn take_inner(&mut self) -> Option<Box<dyn ut_net::Transport<Error = ut_core::error::TlsError>>> {
+        self.inner.take()
     }
 }
 
 impl Read for OwnedTransportRead {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.inner
-            .read(buf)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))
+        match self.inner.as_mut() {
+            Some(t) => t.read(buf).map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string())),
+            None => Ok(0), // transport already taken; behave as EOF
+        }
     }
 }
+
+/// The source of a response body reader.
+///
+/// Distinguishes between a non-poolable reader (plain HTTP, proxy, or
+/// in-memory HTTP/2 buffer) and a poolable TLS transport (direct HTTPS).
+/// Only the `Tls` variant can be returned to the connection pool for
+/// Keep-Alive reuse after the body is fully consumed.
+enum BodySource {
+    /// Non-poolable reader: plain HTTP TCP stream, proxy tunnel, or HTTP/2
+    /// in-memory buffer. Cannot be returned to the TLS pool.
+    Plain(Box<dyn Read + Send>),
+    /// Poolable TLS transport (direct HTTPS only). The underlying transport
+    /// can be extracted after the body is read and returned to the pool.
+    Tls(OwnedTransportRead),
+}
+
+impl Read for BodySource {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self {
+            BodySource::Plain(p) => p.read(buf),
+            BodySource::Tls(t) => t.read(buf),
+        }
+    }
+}
+
+/// Information needed to return a connection to the TLS connection pool
+/// after the response body is fully consumed.
+///
+/// `None` means the connection should not be reused (e.g. proxy tunnel where
+/// the pool key differs, or a non-reusable response).
+type ReturnInfo = (String, u16); // (host, port)
 
 /// I/O buffer size for streaming response bodies (64KB).
 ///
