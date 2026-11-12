@@ -407,7 +407,13 @@ fn find_unescaped_slash(s: &str) -> usize {
     for (i, ch) in s.char_indices() {
         match ch {
             '[' => bracket_depth += 1,
-            ']' => bracket_depth -= 1,
+            ']' => {
+                bracket_depth -= 1;
+                // Prevent negative depth (malformed URL like "]foo[")
+                if bracket_depth < 0 {
+                    bracket_depth = 0;
+                }
+            }
             '/' if bracket_depth == 0 => return i,
             _ => {}
         }
