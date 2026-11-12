@@ -18,7 +18,7 @@ use std::io::{self, Read, Write};
 #[cfg(unix)]
 use std::os::fd::AsRawFd;
 use std::net::TcpStream;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
@@ -28,6 +28,17 @@ use rustls::{ClientConfig, ClientConnection, DigitallySignedStruct, RootCertStor
 use super::{TlsConfig, TlsConnector, TlsError, CheckCertMode};
 use crate::transport::{Interest, TcpTransport, Transport};
 use ut_core::SecureProtocol;
+
+/// Process-wide cache of compiled TLS ClientConfig, keyed by config signature.
+///
+/// Building a ClientConfig is expensive (loads CA certs, parses keys), so we
+/// cache the result keyed by the relevant config fields. This avoids rebuilding
+/// the config on every TLS connection when the same TLS settings are reused.
+static CONFIG_CACHE: OnceLock<Mutex<std::collections::HashMap<String, Arc<ClientConfig>>>> = OnceLock::new();
+
+fn config_cache() -> &'static Mutex<std::collections::HashMap<String, Arc<ClientConfig>>> {
+    CONFIG_CACHE.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
+}
 
 /// TLS connector using the rustls library.
 ///
@@ -57,6 +68,44 @@ impl RustlsConnector {
     /// ```
     pub fn new() -> Self {
         Self
+    }
+
+    /// Returns a cached `Arc<ClientConfig>` for the given `TlsConfig`,
+    /// building it on first use and reusing it for subsequent calls with
+    /// the same effective configuration.
+    ///
+    /// This dramatically reduces TLS setup overhead when many connections
+    /// reuse the same TLS settings (the common case).
+    pub fn cached_config(config: &TlsConfig) -> Result<Arc<ClientConfig>, TlsError> {
+        let key = Self::config_signature(config);
+        let cache = config_cache();
+        // Fast path: config already cached
+        if let Ok(map) = cache.lock() {
+            if let Some(c) = map.get(&key) {
+                return Ok(Arc::clone(c));
+            }
+        }
+        // Slow path: build and cache
+        let built = Arc::new(Self::build_config(config)?);
+        if let Ok(mut map) = cache.lock() {
+            map.insert(key, built.clone());
+        }
+        Ok(built)
+    }
+
+    /// Builds a cache key string from the TLS config fields that affect the
+    /// resulting `ClientConfig`.
+    fn config_signature(config: &TlsConfig) -> String {
+        format!(
+            "{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}",
+            config.check_certificate,
+            config.ca_cert,
+            config.cert_file,
+            config.private_key,
+            config.ca_directory,
+            config.secure_protocol,
+            config.ciphers,
+        )
     }
 
     /// Builds a rustls `ClientConfig` from the given `TlsConfig`.
@@ -207,7 +256,7 @@ impl TlsConnector for RustlsConnector {
             .take_stream()
             .map_err(TlsError::Io)?;
 
-        let client_config = Arc::new(Self::build_config(config)?);
+        let client_config = Self::cached_config(config)?;
 
         let server_name = ServerName::try_from(host)
             .map_err(|e| TlsError::HandshakeFailed(format!("invalid server name '{}': {}", host, e)))?
