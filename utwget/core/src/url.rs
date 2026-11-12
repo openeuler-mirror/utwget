@@ -199,8 +199,19 @@ impl ParsedUrl {
             "/"
         };
         let new_path = format!("{}{}{}", base_dir, separator, relative);
-        let full = format!("{}://{}:{}{}", self.scheme, self.host, self.port, new_path);
+        let normalized = normalize_dot_segments(&new_path);
+        let full = format!("{}://{}:{}{}", self.scheme, self.host, self.port, normalized);
         ParsedUrl::parse(&full)
+    }
+
+    /// Normalize `.` and `..` path segments per RFC 3986 section 5.2.4.
+    ///
+    /// Removes `.` segments and resolves `..` segments against the preceding
+    /// component. A trailing slash is preserved. This prevents `..` from
+    /// appearing literally in the path, which would break output-path
+    /// computation and the `--no-parent` filter.
+    pub fn normalize_dot_segments(path: &str) -> String {
+        normalize_dot_segments(path)
     }
 
     /// Get the full path including params and query string.
@@ -528,25 +539,85 @@ fn split_params(path: &str) -> (String, Option<String>) {
 }
 
 fn extract_dir(path: &str) -> String {
-    let trimmed = path.trim_end_matches('/');
-    match trimmed.rfind('/') {
-        Some(0) => "/".to_string(),
-        Some(idx) => {
-            let mut dir = trimmed[..idx + 1].to_string();
-            if !dir.ends_with('/') {
-                dir.push('/');
+    // A trailing slash means the path refers to a directory; the entire path
+    // (minus the trailing slash) is the directory. Otherwise, the directory
+    // is everything up to and including the last '/'.
+    if path.ends_with('/') {
+        // Directory path: e.g. "/a/b/" -> dir "/a/b/"
+        let trimmed = path.trim_end_matches('/');
+        match trimmed.rfind('/') {
+            Some(0) => "/".to_string(),
+            Some(idx) => {
+                let mut dir = trimmed[..idx + 1].to_string();
+                let last = &trimmed[idx + 1..];
+                if !last.is_empty() {
+                    dir.push_str(last);
+                    dir.push('/');
+                }
+                dir
             }
-            dir
+            None => "/".to_string(),
         }
-        None => "/".to_string(),
+    } else {
+        // File path: e.g. "/a/b/file.html" -> dir "/a/b/"
+        match path.rfind('/') {
+            Some(0) => "/".to_string(),
+            Some(idx) => path[..idx + 1].to_string(),
+            None => "/".to_string(),
+        }
     }
 }
 
 fn extract_file(path: &str) -> String {
-    let trimmed = path.trim_end_matches('/');
-    match trimmed.rfind('/') {
-        Some(idx) => trimmed[idx + 1..].to_string(),
-        None => trimmed.to_string(),
+    // A trailing slash means the path refers to a directory with no filename
+    // component. The caller will substitute "index.html" as needed.
+    if path.ends_with('/') {
+        return String::new();
+    }
+    match path.rfind('/') {
+        Some(idx) => path[idx + 1..].to_string(),
+        None => path.to_string(),
     }
 }
 
+
+/// Normalize `.` and `..` segments in a URL path (RFC 3986 §5.2.4).
+///
+/// - `.` segments are removed
+/// - `..` segments remove the preceding component
+/// - A trailing slash is preserved
+/// - Leading `..` that would escape above root are dropped
+fn normalize_dot_segments(path: &str) -> String {
+    let leading_slash = path.starts_with('/');
+    let trailing_slash = path.ends_with('/') && path != "/";
+
+    let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    let mut out: Vec<&str> = Vec::new();
+    for seg in &segments {
+        match *seg {
+            "." => continue,
+            ".." => {
+                if let Some(last) = out.last() {
+                    if *last != ".." {
+                        out.pop();
+                    }
+                }
+            }
+            other => out.push(other),
+        }
+    }
+
+    let joined = out.join("/");
+    let mut result = String::new();
+    if leading_slash {
+        result.push('/');
+    }
+    result.push_str(&joined);
+    if trailing_slash && !result.ends_with('/') {
+        result.push('/');
+    }
+    if result.is_empty() {
+        result.push('/');
+    }
+    result
+}
