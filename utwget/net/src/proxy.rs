@@ -130,13 +130,14 @@ pub fn connect_via_proxy(
         });
     }
 
-    // Consume remaining headers
-    while {
+    // Consume remaining headers until empty line or EOF
+    loop {
         let mut line = String::new();
-        reader.read_line(&mut line).map_err(ProxyError::Io)?;
-        line
-    } != "\r\n"
-    {}
+        let n = reader.read_line(&mut line).map_err(ProxyError::Io)?;
+        if n == 0 || line == "\r\n" || line.is_empty() {
+            break;
+        }
+    }
 
     stream
         .set_read_timeout(Some(read_timeout))
