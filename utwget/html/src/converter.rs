@@ -257,7 +257,7 @@ impl LinkConverter {
 
                             if let Some(local_path) = url_to_local_clone.get(&original_url) {
                                 let _ = el.set_attribute(attr_name, local_path);
-                                *count_a.lock().unwrap() += 1;
+                                *count_a.lock().unwrap_or_else(|e| e.into_inner()) += 1;
                             }
                         }
                     }
@@ -270,7 +270,7 @@ impl LinkConverter {
             {
                 let out = rewritten_a.clone();
                 move |chunk: &[u8]| {
-                    out.lock().unwrap().extend_from_slice(chunk);
+                    out.lock().unwrap_or_else(|e| e.into_inner()).extend_from_slice(chunk);
                 }
             },
         );
@@ -284,12 +284,12 @@ impl LinkConverter {
 
         let rewritten = match Arc::try_unwrap(rewritten_content) {
             Ok(mutex) => mutex.into_inner().unwrap_or_else(|e| e.into_inner()),
-            Err(arc) => arc.lock().unwrap().clone(),
+            Err(arc) => arc.lock().unwrap_or_else(|e| e.into_inner()).clone(),
         };
 
         let count = match Arc::try_unwrap(rewrite_count) {
             Ok(mutex) => mutex.into_inner().unwrap_or(0),
-            Err(arc) => *arc.lock().unwrap(),
+            Err(arc) => *arc.lock().unwrap_or_else(|e| e.into_inner()),
         };
 
         let output = String::from_utf8(rewritten)

@@ -81,7 +81,7 @@ impl TlsConnectionPool {
     /// A `PooledConnection` if one is available, `None` otherwise.
     fn get(&self, host: &str, port: u16, use_tls: bool) -> Option<PooledConnection> {
         let key = (host.to_string(), port, use_tls);
-        let mut pools = self.pools.lock().unwrap();
+        let mut pools = self.pools.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(pool) = pools.get_mut(&key) {
             // Remove expired connections and find a valid one
             pool.retain(|entry| entry.last_used.elapsed() < MAX_IDLE_AGE);
@@ -105,7 +105,7 @@ impl TlsConnectionPool {
     /// * `conn` - The connection to return to the pool.
     fn put(&self, host: &str, port: u16, use_tls: bool, conn: PooledConnection) {
         let key = (host.to_string(), port, use_tls);
-        let mut pools = self.pools.lock().unwrap();
+        let mut pools = self.pools.lock().unwrap_or_else(|e| e.into_inner());
         let pool = pools.entry(key).or_insert_with(Vec::new);
         if pool.len() < self.max_per_pool {
             pool.push(ConnectionEntry {
@@ -143,13 +143,13 @@ impl TlsConnectionPool {
 
     /// Clear all connections from the pool.
     pub fn clear(&self) {
-        let mut pools = self.pools.lock().unwrap();
+        let mut pools = self.pools.lock().unwrap_or_else(|e| e.into_inner());
         pools.clear();
     }
 
     /// Get the total number of pooled connections.
     pub fn total_pooled(&self) -> usize {
-        let pools = self.pools.lock().unwrap();
+        let pools = self.pools.lock().unwrap_or_else(|e| e.into_inner());
         pools.values().map(|pool| pool.len()).sum()
     }
 }
