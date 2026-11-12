@@ -267,6 +267,40 @@ fn parse_rfc5987_value(value: &str) -> Option<String> {
     Some(url_decode(encoded))
 }
 
+/// Sanitize a filename to prevent path traversal attacks.
+///
+/// Removes or replaces characters that could be used for path traversal:
+/// - Path separators (/ and \)
+/// - Parent directory references (..)
+/// - Null bytes
+/// - Control characters
+///
+/// Returns a safe filename that can be safely joined with a directory path.
+pub(crate) fn sanitize_filename(filename: &str) -> String {
+    let mut result = String::with_capacity(filename.len());
+
+    for ch in filename.chars() {
+        match ch {
+            // Reject path separators
+            '/' | '\\' => continue,
+            // Reject null bytes and control characters
+            '\0'..='\x1f' => continue,
+            // Keep other characters
+            _ => result.push(ch),
+        }
+    }
+
+    // Remove leading dots to prevent hidden files and ".." tricks
+    let trimmed = result.trim_start_matches('.');
+
+    // If the result is empty after sanitization, return a default
+    if trimmed.is_empty() {
+        "download".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
 /// Simple URL decoding.
 ///
 /// Replaces percent-encoded sequences (`%XX`) with their corresponding characters.
