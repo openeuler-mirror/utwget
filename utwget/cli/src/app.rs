@@ -1,7 +1,8 @@
 use std::fs;
 use std::io::{self, BufRead, BufReader, Cursor, IsTerminal};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, AtomicU8, Ordering};
 use std::time::{Duration, Instant};
 
 use ut_core::error::WgetError;
@@ -128,6 +129,24 @@ impl ExitStatus {
             ExitStatus::ServerAuthFail => 6,
             ExitStatus::ProtocolError => 7,
             ExitStatus::ServerError => 8,
+        }
+    }
+
+    /// Converts a `u8` discriminant back to an `ExitStatus`.
+    ///
+    /// This is the inverse of `as u8` for use with atomic counters.
+    /// Returns `ExitStatus::Error` for invalid values.
+    fn from_u8(v: u8) -> Self {
+        match v {
+            0 => ExitStatus::Success,
+            1 => ExitStatus::Error,
+            3 => ExitStatus::IoFail,
+            4 => ExitStatus::NetworkFail,
+            5 => ExitStatus::SslAuthFail,
+            6 => ExitStatus::ServerAuthFail,
+            7 => ExitStatus::ProtocolError,
+            8 => ExitStatus::ServerError,
+            _ => ExitStatus::Error,
         }
     }
 }
@@ -437,9 +456,12 @@ impl App {
 
         let urls = urls.to_vec();
         let config = self.config.clone();
-        let worst_status = Arc::new(Mutex::new(ExitStatus::Success));
-        let urls_downloaded = Arc::new(Mutex::new(0u32));
-        let urls_attempted = Arc::new(Mutex::new(0u32));
+        // Use atomic counters instead of Mutex to avoid lock contention.
+        // Atomic operations are lock-free and significantly faster under
+        // concurrent access than Mutex-protected counters.
+        let worst_status = Arc::new(AtomicU8::new(ExitStatus::Success as u8));
+        let urls_downloaded = Arc::new(AtomicU32::new(0));
+        let urls_attempted = Arc::new(AtomicU32::new(0));
 
         // Create tokio runtime
         let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -460,25 +482,34 @@ impl App {
                 let urls_attempted = urls_attempted.clone();
 
                 let handle = tokio::task::spawn(async move {
-                    {
-                        let mut attempted = urls_attempted.lock().unwrap_or_else(|e| e.into_inner());
-                        *attempted += 1;
-                    }
+                    urls_attempted.fetch_add(1, Ordering::Relaxed);
 
                     // Use async retriever
                     let result = async_retriever.retrieve(&url).await;
 
                     match result {
                         Ok(RetrieveOutcome::Success(_)) | Ok(_) => {
-                            let mut downloaded = urls_downloaded.lock().unwrap_or_else(|e| e.into_inner());
-                            *downloaded += 1;
+                            urls_downloaded.fetch_add(1, Ordering::Relaxed);
                         }
                         Err(e) => {
                             let wg_err: WgetError = e.into();
                             let status = ExitStatus::from_error(&wg_err);
-                            let mut worst = worst_status.lock().unwrap_or_else(|e| e.into_inner());
-                            if status > *worst {
-                                *worst = status;
+                            // Atomically update worst_status only if new status is greater
+                            let status_u8 = status as u8;
+                            loop {
+                                let current = worst_status.load(Ordering::Relaxed);
+                                if status_u8 <= current {
+                                    break;
+                                }
+                                match worst_status.compare_exchange_weak(
+                                    current,
+                                    status_u8,
+                                    Ordering::Relaxed,
+                                    Ordering::Relaxed,
+                                ) {
+                                    Ok(_) => break,
+                                    Err(_) => continue,
+                                }
                             }
                         }
                     }
@@ -491,17 +522,29 @@ impl App {
                 if let Err(e) = handle.await {
                     // Task panicked or was cancelled
                     log::error!("Download task failed: {}", e);
-                    let mut worst = worst_status.lock().unwrap_or_else(|e| e.into_inner());
-                    if ExitStatus::NetworkFail > *worst {
-                        *worst = ExitStatus::NetworkFail;
+                    let status_u8 = ExitStatus::NetworkFail as u8;
+                    loop {
+                        let current = worst_status.load(Ordering::Relaxed);
+                        if status_u8 <= current {
+                            break;
+                        }
+                        match worst_status.compare_exchange_weak(
+                            current,
+                            status_u8,
+                            Ordering::Relaxed,
+                            Ordering::Relaxed,
+                        ) {
+                            Ok(_) => break,
+                            Err(_) => continue,
+                        }
                     }
                 }
             }
         });
 
-        self.urls_attempted = *urls_attempted.lock().unwrap_or_else(|e| e.into_inner());
-        self.urls_downloaded = *urls_downloaded.lock().unwrap_or_else(|e| e.into_inner());
-        self.worst_status = *worst_status.lock().unwrap_or_else(|e| e.into_inner());
+        self.urls_attempted = urls_attempted.load(Ordering::Relaxed);
+        self.urls_downloaded = urls_downloaded.load(Ordering::Relaxed);
+        self.worst_status = ExitStatus::from_u8(worst_status.load(Ordering::Relaxed));
 
         self.print_summary();
 
