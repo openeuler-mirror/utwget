@@ -43,13 +43,16 @@ use ut_warc::{WarcWriterImpl, WarcWriter};
 /// Process-wide DNS cache, keyed by hostname.
 ///
 /// Caches resolved socket addresses with a TTL to avoid repeated DNS lookups
-/// for the same host. Disabled when `--no-dns-cache` is set (per-Retriever).
-static DNS_CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, (Vec<std::net::SocketAddr>, Instant)>>> = std::sync::OnceLock::new();
+/// for the same host. The cache is keyed by (host, port) because the resolved
+/// SocketAddr values include the port — caching by host alone would cause a
+/// request to port 443 to reuse addresses resolved for port 80 (or vice versa).
+/// Disabled when `--no-dns-cache` is set (per-Retriever).
+static DNS_CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<(String, u16), (Vec<std::net::SocketAddr>, Instant)>>> = std::sync::OnceLock::new();
 
 /// DNS cache entry TTL (seconds).
 const DNS_CACHE_TTL: Duration = Duration::from_secs(60);
 
-fn dns_cache() -> &'static std::sync::Mutex<std::collections::HashMap<String, (Vec<std::net::SocketAddr>, Instant)>> {
+fn dns_cache() -> &'static std::sync::Mutex<std::collections::HashMap<(String, u16), (Vec<std::net::SocketAddr>, Instant)>> {
     DNS_CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
 }
 
@@ -1138,9 +1141,9 @@ impl Retriever {
             // Check DNS cache first (unless disabled)
             if !self.config.no_dns_cache {
                 if let Ok(cache) = dns_cache().lock() {
-                    if let Some((cached_addrs, cached_at)) = cache.get(host) {
+                    if let Some((cached_addrs, cached_at)) = cache.get(&(host.to_string(), port)) {
                         if cached_at.elapsed() < DNS_CACHE_TTL {
-                            debug!("DNS cache hit for {}", host);
+                            debug!("DNS cache hit for {}:{}", host, port);
                             cached_addrs.clone()
                         } else {
                             // Stale; fall through to resolve and refresh below.
@@ -1208,7 +1211,7 @@ impl Retriever {
             // Store in cache (unless disabled)
             if !self.config.no_dns_cache && !collected.is_empty() {
                 if let Ok(mut cache) = dns_cache().lock() {
-                    cache.insert(host.to_string(), (collected.clone(), Instant::now()));
+                    cache.insert((host.to_string(), port), (collected.clone(), Instant::now()));
                 }
             }
 
