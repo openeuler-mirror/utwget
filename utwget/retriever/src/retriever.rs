@@ -39,6 +39,19 @@ use crate::utils::{
 #[cfg(feature = "warc")]
 use ut_warc::{WarcWriterImpl, WarcWriter};
 
+/// Process-wide DNS cache, keyed by hostname.
+///
+/// Caches resolved socket addresses with a TTL to avoid repeated DNS lookups
+/// for the same host. Disabled when `--no-dns-cache` is set (per-Retriever).
+static DNS_CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, (Vec<std::net::SocketAddr>, Instant)>>> = std::sync::OnceLock::new();
+
+/// DNS cache entry TTL (seconds).
+const DNS_CACHE_TTL: Duration = Duration::from_secs(60);
+
+fn dns_cache() -> &'static std::sync::Mutex<std::collections::HashMap<String, (Vec<std::net::SocketAddr>, Instant)>> {
+    DNS_CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
 /// Main file retriever for downloading URLs.
 ///
 /// The `Retriever` handles all aspects of downloading files including:
@@ -1059,8 +1072,34 @@ impl Retriever {
 
         let _addr_str = format!("{}:{}", host, port);
 
-        // Resolve addresses with optional DNS timeout
+        // Resolve addresses with optional DNS timeout.
+        // A process-wide DNS cache (TTL 60s) avoids repeated lookups for the
+        // same host. Disabled when --no-dns-cache is set.
         let addresses: Vec<std::net::SocketAddr> = {
+            // Check DNS cache first (unless disabled)
+            if !self.config.no_dns_cache {
+                if let Ok(cache) = dns_cache().lock() {
+                    if let Some((cached_addrs, cached_at)) = cache.get(host) {
+                        if cached_at.elapsed() < DNS_CACHE_TTL {
+                            debug!("DNS cache hit for {}", host);
+                            cached_addrs.clone()
+                        } else {
+                            // Stale; fall through to resolve and refresh below.
+                            Vec::new()
+                        }
+                    } else {
+                        Vec::new()
+                    }
+                } else {
+                    Vec::new()
+                }
+            } else {
+                Vec::new()
+            }
+        };
+        let addresses: Vec<std::net::SocketAddr> = if !addresses.is_empty() {
+            addresses
+        } else {
             let addrs = if let Some(dns_timeout) = self.config.dns_timeout.or(self.config.timeout) {
                 // Use a background thread with channel-based timeout for DNS resolution
                 let host_owned = host.to_string();
@@ -1105,7 +1144,16 @@ impl Retriever {
                         format!("DNS resolution error: {}", e)
                     )))?
             };
-            addrs.collect()
+            let collected: Vec<std::net::SocketAddr> = addrs.collect();
+
+            // Store in cache (unless disabled)
+            if !self.config.no_dns_cache && !collected.is_empty() {
+                if let Ok(mut cache) = dns_cache().lock() {
+                    cache.insert(host.to_string(), (collected.clone(), Instant::now()));
+                }
+            }
+
+            collected
         };
 
         if addresses.is_empty() {

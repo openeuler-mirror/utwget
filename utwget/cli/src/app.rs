@@ -1169,6 +1169,7 @@ pub fn build_config(args: &Args) -> ut_core::Config {
     config.connect_timeout = args.connect_timeout.map(Duration::from_secs_f64);
     config.read_timeout = args.read_timeout.map(Duration::from_secs_f64);
     config.dns_timeout = args.dns_timeout.map(Duration::from_secs_f64);
+    config.no_dns_cache = args.no_dns_cache;
 
     config.cookie.enabled = !args.no_cookies;
     config.cookie.input_file = args.load_cookies.clone();

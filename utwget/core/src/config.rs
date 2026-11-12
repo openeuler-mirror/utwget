@@ -160,6 +160,8 @@ pub struct Config {
     pub read_timeout: Option<Duration>,
     /// DNS resolution timeout (--dns-timeout)
     pub dns_timeout: Option<Duration>,
+    /// Disable DNS caching (--no-dns-cache)
+    pub no_dns_cache: bool,
 
     /// Local address to bind for outgoing connections (--bind-address)
     pub bind_address: Option<String>,
@@ -250,6 +252,7 @@ impl Default for Config {
             connect_timeout: None,
             read_timeout: None,
             dns_timeout: None,
+            no_dns_cache: false,
 
             bind_address: None,
             no_host_directories: false,
