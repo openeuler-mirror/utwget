@@ -391,6 +391,10 @@ fn print_wget_help() {
     println!("       --waitretry=SECONDS         {}", t("utwget.help_waitretry"));
     println!("       --random-wait               {}", t("utwget.help_random_wait"));
     println!("       --no-proxy                  {}", t("utwget.help_no_proxy"));
+    println!("  -4,  --inet4-only                {}", t("utwget.help_inet4_only"));
+    println!("  -6,  --inet6-only                {}", t("utwget.help_inet6_only"));
+    println!("       --proxy-user=USER           {}", t("utwget.help_proxy_user"));
+    println!("       --proxy-password=PASS       {}", t("utwget.help_proxy_password"));
     println!("  -j,  --concurrency=NUMBER        {}", t("utwget.help_concurrency"));
     println!("  -Q,  --quota=NUMBER              {}", t("utwget.help_quota"));
     println!("       --limit-rate=RATE           {}", t("utwget.help_limit_rate"));

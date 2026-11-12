@@ -1244,6 +1244,8 @@ impl Retriever {
         }
 
         // Filter addresses based on address family settings
+        log::debug!("IPv4 filter: {}, IPv6 filter: {}", self.config.force_ipv4, self.config.force_ipv6);
+        log::debug!("Before filter: {:?}", addresses);
         let filtered_addresses: Vec<std::net::SocketAddr> = addresses.into_iter()
             .filter(|addr| {
                 if self.config.force_ipv4 {
@@ -1255,6 +1257,7 @@ impl Retriever {
                 }
             })
             .collect();
+        log::debug!("After filter: {:?}", filtered_addresses);
 
         // Apply prefer_family ordering
         let mut sorted_addresses = filtered_addresses;
@@ -1398,7 +1401,13 @@ impl Retriever {
                 Ok((response, leftover, source, None))
             } else {
                 // Plain HTTP over proxy
-                let proxy_req = build_proxy_request(request, &url.host, url.port);
+                let proxy_req = build_proxy_request(
+                    request,
+                    &url.host,
+                    url.port,
+                    self.config.proxy.proxy_user.as_deref(),
+                    self.config.proxy.proxy_password.as_deref(),
+                );
                 let serialized = proxy_req.serialize().map_err(RetrieveError::Io)?;
                 stream.write_all(&serialized).map_err(RetrieveError::Io)?;
                 stream.flush().map_err(RetrieveError::Io)?;
