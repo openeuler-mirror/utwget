@@ -293,6 +293,15 @@ impl FtpsClient {
         let resp = self.read_response()?;
         if resp.is_positive_completion {
             self.config.require_data_tls = true;
+        } else {
+            // Server refused encrypted data channel: data transfers will be
+            // sent in cleartext even though the control channel is encrypted.
+            // Warn the user - they may believe the entire session is encrypted.
+            log::warn!(
+                "FTPS: server refused PROT P ({}); data channel will be UNENCRYPTED. \
+                 Control channel is still encrypted, but file contents are sent in cleartext.",
+                resp.text.trim()
+            );
         }
 
         log::debug!("FTPS: TLS upgrade complete");
