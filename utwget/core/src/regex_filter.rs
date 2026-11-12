@@ -73,7 +73,7 @@ impl Default for CompositeFilter {
 ///
 /// URLs are accepted if their filename matches any of the patterns.
 pub struct PatternAcceptFilter {
-    /// Glob patterns to match.
+    /// Glob patterns to match (pre-lowercased for case-insensitive matching).
     patterns: Vec<String>,
 }
 
@@ -84,6 +84,8 @@ impl PatternAcceptFilter {
     ///
     /// * `patterns` - Glob patterns to accept (e.g., "*.html").
     pub fn new(patterns: Vec<String>) -> Self {
+        // Pre-lowercase patterns once to avoid repeated allocation on every match
+        let patterns = patterns.into_iter().map(|p| p.to_ascii_lowercase()).collect();
         PatternAcceptFilter { patterns }
     }
 }
@@ -93,7 +95,8 @@ impl UrlFilter for PatternAcceptFilter {
         if self.patterns.is_empty() {
             return true;
         }
-        self.patterns.iter().any(|p| match_glob(filename, p))
+        let filename_lc = filename.to_ascii_lowercase();
+        self.patterns.iter().any(|p| glob_match(&filename_lc, p))
     }
 }
 
@@ -101,7 +104,7 @@ impl UrlFilter for PatternAcceptFilter {
 ///
 /// URLs are rejected if their filename matches any of the patterns.
 pub struct PatternRejectFilter {
-    /// Glob patterns to reject.
+    /// Glob patterns to reject (pre-lowercased for case-insensitive matching).
     patterns: Vec<String>,
 }
 
@@ -112,6 +115,7 @@ impl PatternRejectFilter {
     ///
     /// * `patterns` - Glob patterns to reject (e.g., "*.jpg").
     pub fn new(patterns: Vec<String>) -> Self {
+        let patterns = patterns.into_iter().map(|p| p.to_ascii_lowercase()).collect();
         PatternRejectFilter { patterns }
     }
 }
@@ -121,7 +125,8 @@ impl UrlFilter for PatternRejectFilter {
         if self.patterns.is_empty() {
             return true;
         }
-        !self.patterns.iter().any(|p| match_glob(filename, p))
+        let filename_lc = filename.to_ascii_lowercase();
+        !self.patterns.iter().any(|p| glob_match(&filename_lc, p))
     }
 }
 
@@ -498,25 +503,11 @@ fn url_to_scheme(url: &str) -> Option<Scheme> {
     ParsedUrl::parse(url).ok().map(|u| u.scheme)
 }
 
-/// Matches a string against a glob pattern (case-insensitive).
-///
-/// # Arguments
-///
-/// * `s` - The string to match.
-/// * `pattern` - The glob pattern (supports * and ?).
-///
-/// # Returns
-///
-/// `true` if the string matches the pattern.
-fn match_glob(s: &str, pattern: &str) -> bool {
-    let pat_lc = pattern.to_ascii_lowercase();
-    let s_lc = s.to_ascii_lowercase();
-    glob_match(&s_lc, &pat_lc)
-}
-
-/// Implements glob pattern matching.
+/// Implements glob pattern matching using byte slicing for performance.
 ///
 /// Supports `*` (matches any sequence) and `?` (matches any single character).
+/// Operates on UTF-8 bytes; since glob metacharacters are ASCII, this is safe
+/// for matching against ASCII filenames with non-ASCII characters.
 ///
 /// # Arguments
 ///
@@ -527,18 +518,18 @@ fn match_glob(s: &str, pattern: &str) -> bool {
 ///
 /// `true` if the text matches the pattern.
 fn glob_match(text: &str, pattern: &str) -> bool {
-    let t: Vec<char> = text.chars().collect();
-    let p: Vec<char> = pattern.chars().collect();
+    let t = text.as_bytes();
+    let p = pattern.as_bytes();
     let mut ti = 0;
     let mut pi = 0;
     let mut star_ti = usize::MAX;
     let mut star_pi = 0;
 
     while ti < t.len() {
-        if pi < p.len() && (p[pi] == '?' || p[pi] == t[ti]) {
+        if pi < p.len() && (p[pi] == b'?' || p[pi] == t[ti]) {
             ti += 1;
             pi += 1;
-        } else if pi < p.len() && p[pi] == '*' {
+        } else if pi < p.len() && p[pi] == b'*' {
             star_ti = ti;
             star_pi = pi;
             pi += 1;
@@ -551,7 +542,7 @@ fn glob_match(text: &str, pattern: &str) -> bool {
         }
     }
 
-    while pi < p.len() && p[pi] == '*' {
+    while pi < p.len() && p[pi] == b'*' {
         pi += 1;
     }
 
