@@ -81,17 +81,30 @@ impl TlsConnectionPool {
     /// A `PooledConnection` if one is available, `None` otherwise.
     fn get(&self, host: &str, port: u16, use_tls: bool) -> Option<PooledConnection> {
         let key = (host.to_string(), port, use_tls);
-        let mut pools = self.pools.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(pool) = pools.get_mut(&key) {
-            // Remove expired connections and find a valid one
-            pool.retain(|entry| entry.last_used.elapsed() < MAX_IDLE_AGE);
-            while let Some(entry) = pool.pop() {
-                if entry.conn.is_alive() {
-                    debug!("reusing pooled connection to {}:{}", host, port);
-                    return Some(entry.conn);
-                }
+
+        // First, get a candidate connection from the pool
+        let candidate = {
+            let mut pools = self.pools.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(pool) = pools.get_mut(&key) {
+                // Remove expired connections
+                pool.retain(|entry| entry.last_used.elapsed() < MAX_IDLE_AGE);
+                // Pop a candidate connection
+                pool.pop()
+            } else {
+                None
             }
+        };
+
+        // Now check is_alive() outside the lock to avoid holding lock during I/O
+        if let Some(entry) = candidate {
+            if entry.conn.is_alive() {
+                debug!("reusing pooled connection to {}:{}", host, port);
+                return Some(entry.conn);
+            }
+            // Connection is dead, don't return it to pool
+            debug!("pooled connection to {}:{} is dead, discarding", host, port);
         }
+
         None
     }
 
