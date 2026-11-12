@@ -12,6 +12,7 @@ mod core_utils;
 mod ftp_listing;
 mod ftp_opie;
 mod html_extractor;
+mod h2_integration;
 mod http2;
 mod http_auth;
 mod http_headers;

@@ -2,9 +2,16 @@
 //!
 //! This module provides integration between the HTTP/2 client and the retriever,
 //! allowing transparent use of HTTP/2 when available, including over proxies.
+//!
+//! # Connection Multiplexing
+//!
+//! HTTP/2 supports multiple streams over a single connection. This module
+//! caches established HTTP/2 connections keyed by (host, port) so that
+//! repeated requests to the same host reuse the same connection, avoiding
+//! the expensive TLS + HTTP/2 handshake on every request.
 
 use std::io::{Read, Write};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 use log::debug;
 
 use crate::types::RetrieveError;
@@ -13,20 +20,108 @@ use ut_core::url::ParsedUrl;
 use ut_http::request::HttpRequest;
 use ut_http::response::{HeaderMap, HttpResponse};
 
+/// Process-wide cache of HTTP/2 connections, keyed by (host, port).
+///
+/// Reusing an HTTP/2 connection avoids the TLS + h2 handshake on every
+/// request to the same host, and enables stream multiplexing (multiple
+/// requests share one connection). Entries are evicted when the cache is
+/// full (LRU-ish: oldest entry dropped).
+static H2_POOL: OnceLock<H2ConnectionPool> = OnceLock::new();
+
+/// Maximum number of HTTP/2 connections to cache.
+const H2_POOL_MAX_ENTRIES: usize = 8;
+
+/// Returns the process-wide HTTP/2 connection pool.
+pub fn h2_pool() -> &'static H2ConnectionPool {
+    H2_POOL.get_or_init(|| H2ConnectionPool::new(H2_POOL_MAX_ENTRIES))
+}
+
+/// A generic connection pool keyed by (host, port).
+///
+/// Generic over the connection type `T` so the pool logic can be unit-tested
+/// with a mock connection type. In production, `T = ut_http::h2::H2Client`.
+pub struct ConnectionPool<T> {
+    cache: Mutex<std::collections::HashMap<(String, u16), T>>,
+    max_entries: usize,
+}
+
+impl<T> ConnectionPool<T> {
+    /// Create a new pool with the given maximum number of entries.
+    pub fn new(max_entries: usize) -> Self {
+        ConnectionPool {
+            cache: Mutex::new(std::collections::HashMap::new()),
+            max_entries: max_entries.max(1),
+        }
+    }
+
+    /// Take a connection from the pool, if one exists for (host, port).
+    ///
+    /// The connection is removed from the pool (not cloned) so the caller
+    /// takes ownership. If the connection turns out to be dead, the caller
+    /// should not return it via `put`.
+    pub fn take(&self, host: &str, port: u16) -> Option<T> {
+        let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        cache.remove(&(host.to_string(), port))
+    }
+
+    /// Return a connection to the pool for reuse.
+    ///
+    /// If the pool is full, the oldest entry (by `HashMap` iteration order)
+    /// is evicted to make room.
+    pub fn put(&self, host: String, port: u16, conn: T) {
+        let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        // Evict an arbitrary entry if at capacity. HashMap iteration order is
+        // effectively random, providing simple eviction.
+        if cache.len() >= self.max_entries && !cache.contains_key(&(host.clone(), port)) {
+            if let Some(key) = cache.keys().next().cloned() {
+                cache.remove(&key);
+                debug!("evicted H2 pool entry for {}:{}", key.0, key.1);
+            }
+        }
+        cache.insert((host, port), conn);
+    }
+
+    /// Number of cached connections.
+    pub fn len(&self) -> usize {
+        self.cache.lock().unwrap_or_else(|e| e.into_inner()).len()
+    }
+
+    /// Whether the pool is empty.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Remove all cached connections.
+    pub fn clear(&self) {
+        self.cache.lock().unwrap_or_else(|e| e.into_inner()).clear();
+    }
+}
+
+/// HTTP/2 connection pool (concrete instantiation for `H2Client`).
+pub type H2ConnectionPool = ConnectionPool<ut_http::h2::H2Client>;
+
 /// HTTP/2 client wrapper that integrates with the retriever.
+///
+/// On `Drop`, if the connection is still usable, it is returned to the
+/// process-wide pool for reuse by subsequent requests to the same host.
 pub struct H2Retriever {
-    /// HTTP/2 client for making requests.
-    client: ut_http::h2::H2Client,
+    /// HTTP/2 client for making requests. `None` after the connection has been
+    /// returned to the pool or determined to be unusable.
+    client: Option<ut_http::h2::H2Client>,
     /// Target host.
     host: String,
     /// Target port.
     port: u16,
+    /// Whether the connection is still considered reusable (no error occurred).
+    reusable: bool,
 }
 
 impl H2Retriever {
     /// Create a new HTTP/2 retriever connection.
     ///
-    /// If a proxy is configured, establishes a CONNECT tunnel through the proxy first.
+    /// Attempts to reuse a pooled HTTP/2 connection for (host, port) first.
+    /// If none is available, establishes a new connection (optionally via a
+    /// proxy CONNECT tunnel).
     ///
     /// # Arguments
     ///
@@ -39,6 +134,17 @@ impl H2Retriever {
     pub fn connect(url: &ParsedUrl, config: &Config) -> Result<Self, RetrieveError> {
         let host = url.host.clone();
         let port = url.port;
+
+        // Try to reuse a pooled HTTP/2 connection first (multiplexing).
+        if let Some(client) = h2_pool().take(&host, port) {
+            debug!("reusing pooled HTTP/2 connection to {}:{}", host, port);
+            return Ok(H2Retriever {
+                client: Some(client),
+                host,
+                port,
+                reusable: true,
+            });
+        }
 
         // Reuse the same proxy decision as the HTTP/1.1 path so behavior is
         // consistent (e.g. localhost / no-proxy domains, and only routing via
@@ -65,9 +171,10 @@ impl H2Retriever {
             )))?;
 
         Ok(H2Retriever {
-            client,
+            client: Some(client),
             host: host.to_string(),
             port,
+            reusable: true,
         })
     }
 
@@ -199,9 +306,10 @@ impl H2Retriever {
             .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("H2 client creation failed: {}", e))))?;
 
         Ok(H2Retriever {
-            client,
+            client: Some(client),
             host: host.to_string(),
             port,
+            reusable: true,
         })
     }
 
@@ -216,6 +324,9 @@ impl H2Retriever {
     /// response (status, headers, body) back into an `HttpResponse` so the
     /// retriever can handle redirects, auth, decompression, etc. uniformly.
     ///
+    /// On error, the connection is marked non-reusable so it will not be
+    /// returned to the pool on drop.
+    ///
     /// # Arguments
     ///
     /// * `request` - The HTTP request to send.
@@ -224,6 +335,10 @@ impl H2Retriever {
     ///
     /// The full HTTP response (status, headers, body).
     pub fn send_request(&mut self, request: &HttpRequest) -> Result<HttpResponse, RetrieveError> {
+        let client = self.client.as_mut().ok_or_else(|| {
+            RetrieveError::Protocol(WgetError::Other("HTTP/2 client not available".into()))
+        })?;
+
         // Convert ut_http request to http crate request
         let method = match request.method {
             ut_http::request::HttpMethod::Get => http::Method::GET,
@@ -236,7 +351,10 @@ impl H2Retriever {
 
         let uri: http::Uri = format!("https://{}:{}{}", self.host, self.port, request.path)
             .parse()
-            .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("invalid URI: {}", e))))?;
+            .map_err(|e| {
+                self.reusable = false;
+                RetrieveError::Protocol(WgetError::Other(format!("invalid URI: {}", e)))
+            })?;
 
         let builder = http::Request::builder()
             .method(method)
@@ -255,11 +373,17 @@ impl H2Retriever {
 
         let http_request = builder
             .body(())
-            .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("failed to build request: {}", e))))?;
+            .map_err(|e| {
+                self.reusable = false;
+                RetrieveError::Protocol(WgetError::Other(format!("failed to build request: {}", e)))
+            })?;
 
         // Send request via HTTP/2
-        let (response, _send_stream) = self.client.send_request(http_request)
-            .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("HTTP/2 request failed: {}", e))))?;
+        let (response, _send_stream) = client.send_request(http_request)
+            .map_err(|e| {
+                self.reusable = false;
+                RetrieveError::Protocol(WgetError::Other(format!("HTTP/2 request failed: {}", e)))
+            })?;
 
         // Map the real response status and headers.
         let status = response.status().as_u16();
@@ -273,8 +397,11 @@ impl H2Retriever {
         }
 
         // Read response body
-        let body = self.client.read_body(&mut response.into_body())
-            .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("HTTP/2 body read failed: {}", e))))?;
+        let body = client.read_body(&mut response.into_body())
+            .map_err(|e| {
+                self.reusable = false;
+                RetrieveError::Protocol(WgetError::Other(format!("HTTP/2 body read failed: {}", e)))
+            })?;
 
         let mut resp = HttpResponse::new("2.0".to_string(), status, reason);
         resp.headers = headers;
@@ -290,6 +417,20 @@ impl H2Retriever {
     /// Get the target port.
     pub fn port(&self) -> u16 {
         self.port
+    }
+}
+
+impl Drop for H2Retriever {
+    /// Return the connection to the pool for reuse if it is still usable.
+    fn drop(&mut self) {
+        if !self.reusable {
+            debug!("dropping non-reusable HTTP/2 connection to {}:{}", self.host, self.port);
+            return;
+        }
+        if let Some(client) = self.client.take() {
+            debug!("returning HTTP/2 connection to pool for {}:{}", self.host, self.port);
+            h2_pool().put(self.host.clone(), self.port, client);
+        }
     }
 }
 
@@ -341,7 +482,7 @@ fn build_h2_tls_config(config: &Config) -> Result<rustls::ClientConfig, Retrieve
 ///
 /// HTTP/2 forbids connection-specific headers and derives `:authority` from
 /// the URI, so `host` is also dropped.
-fn is_h2_forbidden_header(lower_name: &str) -> bool {
+pub fn is_h2_forbidden_header(lower_name: &str) -> bool {
     match lower_name {
         "connection" | "transfer-encoding" | "keep-alive" | "proxy-connection"
         | "upgrade" | "host" => true,
@@ -404,3 +545,4 @@ pub async fn download_with_http2(
 
     retriever.send_request(&request)
 }
+
