@@ -1412,6 +1412,13 @@ impl Read for OwnedTransportRead {
     }
 }
 
+/// I/O buffer size for streaming response bodies (64KB).
+///
+/// Larger buffers reduce the number of system calls for read/write operations,
+/// significantly improving throughput for large file downloads.
+/// 64KB is a good balance between memory usage and syscall reduction.
+const IO_BUFFER_SIZE: usize = 64 * 1024;
+
 fn stream_response_body<R: Read, W: Write>(
     reader: &mut R,
     writer: &mut W,
@@ -1433,7 +1440,7 @@ fn stream_response_body<R: Read, W: Write>(
         Ok(received)
     } else if let Some(len) = response.content_length() {
         let mut received = 0u64;
-        let mut tmp = [0u8; 8192];
+        let mut tmp = [0u8; IO_BUFFER_SIZE];
         while received < len {
             let want = ((len - received) as usize).min(tmp.len());
             let n = reader
@@ -1450,7 +1457,7 @@ fn stream_response_body<R: Read, W: Write>(
         Ok(received)
     } else {
         let mut received = 0u64;
-        let mut tmp = [0u8; 8192];
+        let mut tmp = [0u8; IO_BUFFER_SIZE];
         loop {
             let n = reader
                 .read(&mut tmp)

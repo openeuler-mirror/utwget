@@ -193,7 +193,8 @@ fn read_exact(
     mut remaining: u64,
 ) -> io::Result<u64> {
     let mut total = 0u64;
-    let mut buf = [0u8; 8192];
+    // 64KB buffer reduces system calls and improves throughput
+    let mut buf = [0u8; 64 * 1024];
 
     loop {
         if remaining == 0 {
@@ -230,6 +231,8 @@ fn read_chunked(
     let mut reader = ChunkedReaderAdapter { inner: reader };
 
     let mut total = 0u64;
+    // Reuse a single buffer across all chunks instead of allocating per chunk
+    let mut buf = [0u8; 64 * 1024];
     loop {
         let line = read_chunk_line(&mut reader)?;
         if line.is_empty() {
@@ -243,10 +246,9 @@ fn read_chunked(
 
         let mut read_so_far = 0usize;
         while read_so_far < size {
-            let to_read = (size - read_so_far).min(8192);
-            let mut buf = vec![0u8; to_read];
+            let to_read = (size - read_so_far).min(buf.len());
 
-            let n = reader.read(&mut buf)?;
+            let n = reader.read(&mut buf[..to_read])?;
 
             if n == 0 {
                 return Err(io::Error::new(

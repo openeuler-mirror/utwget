@@ -693,7 +693,8 @@ impl FtpsClient {
         // Read data
         let start_pos = resume_pos.unwrap_or(0);
         let mut total_bytes = start_pos;
-        let mut buf = [0u8; 32768];
+        // 64KB buffer reduces system calls and improves throughput
+        let mut buf = [0u8; 64 * 1024];
 
         loop {
             let n = std::io::Read::read(&mut data_stream, &mut buf).map_err(|e| FtpError::TransferFailed(e.to_string()))?;
