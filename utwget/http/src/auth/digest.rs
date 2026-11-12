@@ -237,10 +237,11 @@ impl DigestAuthenticator {
         &self,
         algorithm: DigestAlgorithm,
         credentials: &ut_core::types::Credentials,
+        realm: &str,
         nonce: &str,
         cnonce: &str,
     ) -> String {
-        let base = format!("{}:{}", credentials.username, credentials.password);
+        let base = format!("{}:{}:{}", credentials.username, realm, credentials.password);
         let ha1_base = algorithm.hash_func(base.as_bytes());
 
         match algorithm {
@@ -302,21 +303,14 @@ impl DigestAuthenticator {
 
     /// Generates a client nonce (`cnonce`) value.
     ///
-    /// The cnonce is derived from the current system timestamp (nanoseconds since epoch)
-    /// and the process ID, producing a 16-character hex string.
+    /// Uses a cryptographically secure random number generator.
     ///
     /// # Returns
     ///
-    /// A hex-encoded client nonce string.
+    /// A 16-character hex-encoded client nonce string.
     fn generate_cnonce() -> String {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        let rand_bytes: [u8; 8] = std::array::from_fn(|_| {
-            ((timestamp & 0xFF) as u8).wrapping_add(((timestamp >> 8) as u8).wrapping_add(std::process::id() as u8))
-        });
+        use rand::Rng;
+        let rand_bytes: [u8; 8] = rand::thread_rng().gen();
         rand_bytes.iter().map(|b| format!("{:02x}", b)).collect()
     }
 }
@@ -360,7 +354,8 @@ impl Authenticator for DigestAuthenticator {
         let nc = self.nonce_count;
         let cnonce = Self::generate_cnonce();
 
-        let ha1 = self.compute_ha1(algorithm, credentials, nonce, &cnonce);
+        let realm = challenge.realm.as_deref().unwrap_or("");
+        let ha1 = self.compute_ha1(algorithm, credentials, realm, nonce, &cnonce);
 
         let qop_value = challenge.qop.as_ref().and_then(|qops| {
             qops.split(',')
