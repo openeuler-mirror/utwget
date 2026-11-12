@@ -819,7 +819,9 @@ impl Retriever {
                 .split('/').filter(|s| !s.is_empty()).collect();
             if path_segments.len() > 1 {
                 for dir in &path_segments[..path_segments.len() - 1] {
-                    let _ = ftps_client.cwd(dir);
+                    if let Err(e) = ftps_client.cwd(dir) {
+                        debug!("FTP CWD {} failed (continuing anyway): {}", dir, e);
+                    }
                 }
             }
 
@@ -902,7 +904,9 @@ impl Retriever {
             .split('/').filter(|s| !s.is_empty()).collect();
         if path_segments.len() > 1 {
             for dir in &path_segments[..path_segments.len() - 1] {
-                let _ = ftp_client.cwd(dir);
+                if let Err(e) = ftp_client.cwd(dir) {
+                    debug!("FTP CWD {} failed (continuing anyway): {}", dir, e);
+                }
             }
         }
 
