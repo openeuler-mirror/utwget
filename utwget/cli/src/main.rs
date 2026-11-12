@@ -224,8 +224,8 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    let mut config = app::build_config(&args);
-
+    // First, load wgetrc files to get defaults
+    let mut config = ut_core::Config::default();
     let config_paths = load_wgetrc_paths(&args);
     for path in &config_paths {
         if path.exists() {
@@ -241,6 +241,9 @@ fn main() -> ExitCode {
             }
         }
     }
+
+    // Then apply command-line arguments (they override wgetrc)
+    app::apply_args(&mut config, &args);
 
     if !args.execute.is_empty() {
         app::apply_execute_commands(&mut config, &args.execute);

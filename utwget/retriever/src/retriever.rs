@@ -1008,7 +1008,8 @@ impl Retriever {
         }
 
         // Regular FTP
-        let mut ftp_client = ut_ftp::FtpClient::new();
+        log::debug!("FTP passive mode: {}", self.config.ftp.passive);
+        let mut ftp_client = ut_ftp::FtpClient::new().with_passive(self.config.ftp.passive);
         ftp_client.connect(&url.host, url.port)
             .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("FTP connect error: {}", e))))?;
         ftp_client.login(&user, &password)

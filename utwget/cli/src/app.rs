@@ -937,7 +937,16 @@ impl App {
 /// A `ut_core::Config` populated with all user-specified options and defaults.
 pub fn build_config(args: &Args) -> ut_core::Config {
     let mut config = ut_core::Config::default();
+    apply_args(&mut config, args);
+    config
+}
 
+/// Apply command-line arguments to an existing configuration.
+///
+/// This function overrides config values with command-line arguments.
+/// It should be called AFTER loading wgetrc files, so that command-line
+/// arguments take precedence over wgetrc settings.
+pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
     if args.quiet {
         config.quiet = true;
         config.verbose = 0;
@@ -1256,8 +1265,6 @@ pub fn build_config(args: &Args) -> ut_core::Config {
     config.progress.force_noscroll = !args.show_progress || !io::stdout().is_terminal();
 
     config.reject_log = args.reject_log.clone();
-
-    config
 }
 
 /// Prompt for password interactively from terminal.
