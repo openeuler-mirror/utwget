@@ -95,6 +95,9 @@ pub fn enter_pasv(
         let addr = parse_pasv_response(&resp.text)?;
         let stream = TcpStream::connect(addr).map_err(FtpCommandError::Io)?;
         stream.set_nonblocking(false).ok();
+        // Set timeout to prevent indefinite hang if server stops mid-transfer
+        stream.set_read_timeout(Some(std::time::Duration::from_secs(60))).ok();
+        stream.set_write_timeout(Some(std::time::Duration::from_secs(60))).ok();
         log::debug!("FTP PASV data connection to {}", addr);
         return Ok(DataConnection::new(Box::new(stream)));
     }
@@ -142,6 +145,9 @@ pub fn enter_epsv(
         };
         let stream = TcpStream::connect(addr).map_err(FtpCommandError::Io)?;
         stream.set_nonblocking(false).ok();
+        // Set timeout to prevent indefinite hang if server stops mid-transfer
+        stream.set_read_timeout(Some(std::time::Duration::from_secs(60))).ok();
+        stream.set_write_timeout(Some(std::time::Duration::from_secs(60))).ok();
         log::debug!("FTP EPSV data connection to {}", addr);
         return Ok(DataConnection::new(Box::new(stream)));
     }

@@ -1154,6 +1154,9 @@ impl FtpClient {
             let (stream, _addr) = listener.accept()
                 .map_err(|e| FtpError::DataConnectFailed(format!("failed to accept data connection: {}", e)))?;
             stream.set_nonblocking(false).ok();
+            // Set timeout to prevent indefinite hang if server stops mid-transfer
+            stream.set_read_timeout(Some(std::time::Duration::from_secs(60))).ok();
+            stream.set_write_timeout(Some(std::time::Duration::from_secs(60))).ok();
             log::debug!("FTP active mode data connection accepted from {}", _addr);
 
             Ok(DataConnection::new(Box::new(stream)))
