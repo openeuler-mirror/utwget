@@ -58,14 +58,14 @@ impl Default for FetchOptions {
 
 /// Result of an HTTP fetch operation.
 ///
-/// Contains the response status, headers, and an optional body reader.
+/// Contains the response status and headers. The response body should be
+/// read directly from the transport after calling `fetch()`, since the
+/// transport is positioned right after the response headers.
 pub struct FetchResult {
     /// The HTTP status code (e.g., 200, 404).
     pub status_code: u16,
     /// The complete HTTP response with headers.
     pub response: HttpResponse,
-    /// A reader for the response body, if present.
-    pub body_reader: Option<BodyReaderEnum>,
     /// Whether the response is a redirect.
     pub redirected: bool,
     /// Whether authentication was handled automatically.
@@ -574,7 +574,6 @@ impl HttpClient {
 
                             return Ok(FetchResult {
                                 status_code: response.status_code,
-                                body_reader: None,
                                 response,
                                 redirected: false,
                                 auth_handled: true,
@@ -600,16 +599,9 @@ impl HttpClient {
             body: None,
         };
 
-        let body_reader = if (200..400).contains(&status_code) || self.config.http.content_on_error {
-            Some(make_body_reader(&response, Box::new(DummyRead)))
-        } else {
-            None
-        };
-
         Ok(FetchResult {
             status_code,
             response: response_clone,
-            body_reader,
             redirected,
             auth_handled: false,
         })
