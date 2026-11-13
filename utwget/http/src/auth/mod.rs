@@ -201,8 +201,8 @@ impl AuthChallenge {
                     "qop" => challenge.qop = Some(value),
                     "algorithm" => challenge.algorithm = Some(value),
                     "charset" => challenge.charset = Some(value),
-                    "userhash" => challenge.userhash = Some(value == "true"),
-                    "stale" => challenge.stale = Some(value == "true"),
+                    "userhash" => challenge.userhash = Some(value.eq_ignore_ascii_case("true") || value == "1"),
+                    "stale" => challenge.stale = Some(value.eq_ignore_ascii_case("true") || value == "1"),
                     "domain" => challenge.domain = Some(value),
                     _ => {}
                 }
@@ -243,21 +243,9 @@ fn parse_auth_params(input: &str) -> (Vec<(String, String)>, &str) {
             continue;
         }
 
+        // Skip if next token doesn't look like a key=value parameter
         if rest.chars().next().map_or(false, |c| c.is_alphabetic())
-            && !rest.starts_with("realm")
-            && !rest.starts_with("nonce")
-            && !rest.starts_with("opaque")
-            && !rest.starts_with("qop")
-            && !rest.starts_with("algorithm")
-            && !rest.starts_with("charset")
-            && !rest.starts_with("userhash")
-            && !rest.starts_with("stale")
-            && !rest.starts_with("domain")
-            && !rest.starts_with("response")
-            && !rest.starts_with("cnonce")
-            && !rest.starts_with("nc")
-            && !rest.starts_with("uri")
-            && !rest.starts_with("username")
+            && !rest.contains('=')
         {
             break;
         }
