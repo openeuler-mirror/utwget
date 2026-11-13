@@ -140,40 +140,6 @@ impl BodyReaderEnum {
 /// # Returns
 ///
 /// A boxed reader that decompresses on the fly, or the original transport.
-#[cfg(feature = "compression")]
-fn maybe_wrap_decompressor(
-    transport: Box<dyn Read + Send>,
-    encoding: Option<&str>,
-) -> Box<dyn Read + Send> {
-    match encoding {
-        None | Some("") | Some("identity") => transport,
-        Some(enc) if enc.eq_ignore_ascii_case("gzip")
-            || enc.eq_ignore_ascii_case("x-gzip")
-            || enc.eq_ignore_ascii_case("deflate") =>
-        {
-            match crate::compression::Decompressor::from_encoding(DecompressorRead(transport), encoding) {
-                Ok(decomp) if !decomp.is_identity() => Box::new(decomp),
-                Ok(crate::compression::Decompressor::Identity(inner)) => inner,
-                Err(_) => Box::new(DummyRead),
-            }
-        }
-        Some(enc) => {
-            log::warn!("unsupported Content-Encoding '{}', passing through raw data", enc);
-            transport
-        }
-    }
-}
-
-/// Adapter to implement Read for boxed transport.
-#[cfg(feature = "compression")]
-struct DecompressorRead(Box<dyn Read + Send>);
-
-#[cfg(feature = "compression")]
-impl Read for DecompressorRead {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.0.read(buf)
-    }
-}
 
 /// Reads exactly `remaining` bytes from the reader.
 ///
@@ -665,15 +631,6 @@ impl HttpClient {
         }
 
         None
-    }
-}
-
-/// Dummy reader that returns EOF immediately.
-struct DummyRead;
-
-impl Read for DummyRead {
-    fn read(&mut self, _buf: &mut [u8]) -> io::Result<usize> {
-        Ok(0)
     }
 }
 
