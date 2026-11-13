@@ -130,12 +130,19 @@ pub fn connect_via_proxy(
         });
     }
 
-    // Consume remaining headers until empty line or EOF
+    // Consume remaining headers until empty line or EOF (limit to 100 headers)
+    let mut header_count = 0u32;
     loop {
         let mut line = String::new();
         let n = reader.read_line(&mut line).map_err(ProxyError::Io)?;
         if n == 0 || line == "\r\n" || line.is_empty() {
             break;
+        }
+        header_count += 1;
+        if header_count > 100 {
+            return Err(ProxyError::InvalidResponse(
+                "too many proxy response headers".into()
+            ));
         }
     }
 
