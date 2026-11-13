@@ -44,7 +44,7 @@ fn test_auth_dispatcher_preemptive_auth() {
     use ut_core::types::Credentials;
     let mut dispatcher = AuthDispatcher::new();
     let creds = Credentials { username: "admin".into(), password: "secret".into() };
-    let result = dispatcher.preemptive_auth(&creds, "/admin");
+    let result = dispatcher.preemptive_auth(&creds, "/admin", "GET");
     assert!(result.is_some());
     let header = result.unwrap();
     assert!(header.starts_with("Basic "));
