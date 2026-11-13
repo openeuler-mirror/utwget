@@ -407,13 +407,26 @@ impl Retriever {
             eprintln!("--{}--  {}", now.format("%Y-%m-%d %H:%M:%S"), display_url);
         }
 
-        // Debug: show request headers
+        // Debug: show request headers (mask sensitive values)
         if self.config.debug {
             eprintln!("---请求头---");
             eprintln!("{} {} HTTP/1.1", req.method, req.path);
             eprintln!("Host: {}", url.host);
             for (key, value) in req.headers.iter() {
-                eprintln!("{}: {}", key, value);
+                let display_value = if key.eq_ignore_ascii_case("Authorization")
+                    || key.eq_ignore_ascii_case("Proxy-Authorization")
+                {
+                    // Mask credentials: show scheme but hide the actual token
+                    let parts: Vec<&str> = value.splitn(2, ' ').collect();
+                    if parts.len() == 2 {
+                        format!("{} ****", parts[0])
+                    } else {
+                        "****".to_string()
+                    }
+                } else {
+                    value.clone()
+                };
+                eprintln!("{}: {}", key, display_value);
             }
             eprintln!("---请求头结束---");
         }
