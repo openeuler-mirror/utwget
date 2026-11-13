@@ -608,30 +608,15 @@ fn ntlm_v2_hash(nt_hash: &[u8; 16], username: &[u8], domain: &[u8]) -> [u8; 16] 
 
 /// Generates a random 8-byte client challenge.
 ///
-/// Uses the current timestamp and process ID as entropy sources.
+/// Uses a cryptographically secure random number generator for NTLMv2
+/// client challenge generation.
 ///
 /// # Returns
 ///
 /// An 8-byte client challenge value.
 fn generate_client_challenge() -> [u8; 8] {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-
-    let pid = std::process::id();
-
-    [
-        (timestamp & 0xFF) as u8,
-        ((timestamp >> 8) & 0xFF) as u8,
-        ((timestamp >> 16) & 0xFF) as u8,
-        ((timestamp >> 24) & 0xFF) as u8,
-        (pid & 0xFF) as u8,
-        ((pid >> 8) & 0xFF) as u8,
-        ((pid >> 16) & 0xFF) as u8,
-        ((pid >> 24) & 0xFF) as u8,
-    ]
+    use rand::Rng;
+    rand::thread_rng().gen()
 }
 
 /// Calculates the NTLMv2 response pair (NT response and LM response).
@@ -847,32 +832,47 @@ fn g(x: u32, y: u32, z: u32) -> u32 { (x & y) | (x & z) | (y & z) }
 /// MD4 round 3 function.
 fn h(x: u32, y: u32, z: u32) -> u32 { x ^ y ^ z }
 
-/// Computes HMAC-MD5 with a 16-byte key.
+/// Computes HMAC-MD5 per RFC 2104.
+///
+/// Handles keys of any length. If the key exceeds the block size (64 bytes),
+/// it is first hashed to 16 bytes.
 ///
 /// # Arguments
 ///
-/// * `key` - The 16-byte key.
+/// * `key` - The authentication key.
 /// * `data` - The data to authenticate.
 ///
 /// # Returns
 ///
 /// The 16-byte HMAC-MD5 digest.
-fn hmac_md5(key: &[u8; 16], data: &[u8]) -> [u8; 16] {
-    // Simplified HMAC-MD5 for 16-byte key
-    let mut inner = Vec::with_capacity(64 + data.len());
-    for &k in key.iter() {
+fn hmac_md5(key: &[u8], data: &[u8]) -> [u8; 16] {
+    const BLOCK_SIZE: usize = 64;
+
+    // If key > block_size, hash it first (RFC 2104)
+    let actual_key: Vec<u8> = if key.len() > BLOCK_SIZE {
+        md5_hash(key).to_vec()
+    } else {
+        key.to_vec()
+    };
+
+    // Pad key to block_size with zeros
+    let mut key_padded = vec![0u8; BLOCK_SIZE];
+    key_padded[..actual_key.len()].copy_from_slice(&actual_key);
+
+    // Inner padding: key XOR ipad (0x36)
+    let mut inner = Vec::with_capacity(BLOCK_SIZE + data.len());
+    for &k in &key_padded {
         inner.push(k ^ 0x36);
     }
-    inner.extend_from_slice(&[0x36; 48]); // Pad to 64 bytes
     inner.extend_from_slice(data);
 
     let inner_hash = md5_hash(&inner);
 
-    let mut outer = Vec::with_capacity(64 + 16);
-    for &k in key.iter() {
+    // Outer padding: key XOR opad (0x5c)
+    let mut outer = Vec::with_capacity(BLOCK_SIZE + 16);
+    for &k in &key_padded {
         outer.push(k ^ 0x5c);
     }
-    outer.extend_from_slice(&[0x5c; 48]);
     outer.extend_from_slice(&inner_hash);
 
     md5_hash(&outer)
@@ -1036,6 +1036,24 @@ impl Md5Ctx {
         c = b.wrapping_add((c.wrapping_add(h_md5(d, a, b)).wrapping_add(x[15]).wrapping_add(0x1fa27cf8)).rotate_left(16));
         b = a.wrapping_add((b.wrapping_add(h_md5(c, d, a)).wrapping_add(x[2]).wrapping_add(0xc4ac5665)).rotate_left(23));
 
+        // Round 4
+        a = b.wrapping_add((a.wrapping_add(i_md5(b, c, d)).wrapping_add(x[0]).wrapping_add(0xf4292244)).rotate_left(6));
+        d = c.wrapping_add((d.wrapping_add(i_md5(a, b, c)).wrapping_add(x[7]).wrapping_add(0x432aff97)).rotate_left(10));
+        c = b.wrapping_add((c.wrapping_add(i_md5(d, a, b)).wrapping_add(x[14]).wrapping_add(0xab9423a7)).rotate_left(15));
+        b = a.wrapping_add((b.wrapping_add(i_md5(c, d, a)).wrapping_add(x[5]).wrapping_add(0xfc93a039)).rotate_left(21));
+        a = b.wrapping_add((a.wrapping_add(i_md5(b, c, d)).wrapping_add(x[12]).wrapping_add(0x655b59c3)).rotate_left(6));
+        d = c.wrapping_add((d.wrapping_add(i_md5(a, b, c)).wrapping_add(x[3]).wrapping_add(0x8f0ccc92)).rotate_left(10));
+        c = b.wrapping_add((c.wrapping_add(i_md5(d, a, b)).wrapping_add(x[10]).wrapping_add(0xffeff47d)).rotate_left(15));
+        b = a.wrapping_add((b.wrapping_add(i_md5(c, d, a)).wrapping_add(x[1]).wrapping_add(0x85845dd1)).rotate_left(21));
+        a = b.wrapping_add((a.wrapping_add(i_md5(b, c, d)).wrapping_add(x[8]).wrapping_add(0x6fa87e4f)).rotate_left(6));
+        d = c.wrapping_add((d.wrapping_add(i_md5(a, b, c)).wrapping_add(x[15]).wrapping_add(0xfe2ce6e0)).rotate_left(10));
+        c = b.wrapping_add((c.wrapping_add(i_md5(d, a, b)).wrapping_add(x[6]).wrapping_add(0xa3014314)).rotate_left(15));
+        b = a.wrapping_add((b.wrapping_add(i_md5(c, d, a)).wrapping_add(x[13]).wrapping_add(0x4e0811a1)).rotate_left(21));
+        a = b.wrapping_add((a.wrapping_add(i_md5(b, c, d)).wrapping_add(x[4]).wrapping_add(0xf7537e82)).rotate_left(6));
+        d = c.wrapping_add((d.wrapping_add(i_md5(a, b, c)).wrapping_add(x[11]).wrapping_add(0xbd3af235)).rotate_left(10));
+        c = b.wrapping_add((c.wrapping_add(i_md5(d, a, b)).wrapping_add(x[2]).wrapping_add(0x2ad7d2bb)).rotate_left(15));
+        b = a.wrapping_add((b.wrapping_add(i_md5(c, d, a)).wrapping_add(x[9]).wrapping_add(0xeb86d391)).rotate_left(21));
+
         self.state[0] = self.state[0].wrapping_add(a);
         self.state[1] = self.state[1].wrapping_add(b);
         self.state[2] = self.state[2].wrapping_add(c);
@@ -1049,6 +1067,8 @@ fn f_md5(x: u32, y: u32, z: u32) -> u32 { (x & y) | (!x & z) }
 fn g_md5(x: u32, y: u32, z: u32) -> u32 { (x & z) | (y & !z) }
 /// MD5 round 3 function.
 fn h_md5(x: u32, y: u32, z: u32) -> u32 { x ^ y ^ z }
+/// MD5 round 4 function.
+fn i_md5(x: u32, y: u32, z: u32) -> u32 { y ^ (x | !z) }
 
 /// Creates an 8-byte DES key from 7 input bytes.
 ///
