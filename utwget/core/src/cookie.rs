@@ -72,6 +72,14 @@ impl Cookie {
         if host_lc == domain_lc {
             return true;
         }
+
+        // RFC 6265: IP address domains must match exactly
+        if host_lc.parse::<std::net::IpAddr>().is_ok()
+            || domain_lc.parse::<std::net::IpAddr>().is_ok()
+        {
+            return false;
+        }
+
         if domain_lc.starts_with('.') {
             if let Some(suffix) = host_lc.strip_suffix(&domain_lc) {
                 if suffix.ends_with('.') || suffix.is_empty() {
@@ -202,10 +210,15 @@ impl CookieJar {
                 }
                 "max-age" => {
                     if let Some(v) = val {
-                        persistent = true;
                         if let Ok(secs) = v.parse::<i64>() {
-                            let dur = chrono::Duration::seconds(secs);
-                            expires = Some(Utc::now() + dur);
+                            if secs <= 0 {
+                                // Max-Age=0 means immediately expire the cookie
+                                expires = Some(Utc::now() - chrono::Duration::seconds(1));
+                            } else {
+                                persistent = true;
+                                let dur = chrono::Duration::seconds(secs);
+                                expires = Some(Utc::now() + dur);
+                            }
                         }
                     }
                 }
