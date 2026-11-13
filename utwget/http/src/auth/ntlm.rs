@@ -194,14 +194,22 @@ impl NtlmAuthenticator {
         domain: &str,
         workstation: &str,
         challenge: &NtlmChallenge,
-    ) -> Vec<u8> {
+    ) -> Result<Vec<u8>, AuthError> {
         // Convert strings to UTF-16LE
         let username_bytes = username.encode_utf16().flat_map(|c| c.to_le_bytes()).collect::<Vec<_>>();
         let password_bytes = password.encode_utf16().flat_map(|c| c.to_le_bytes()).collect::<Vec<_>>();
         let domain_bytes = domain.encode_utf16().flat_map(|c| c.to_le_bytes()).collect::<Vec<_>>();
         let workstation_bytes = workstation.encode_utf16().flat_map(|c| c.to_le_bytes()).collect::<Vec<_>>();
 
-        if self.ntlm_v2 {
+        // NTLM message fields use u16 for length; reject if any field exceeds limit
+        let max = u16::MAX as usize;
+        if username_bytes.len() > max || domain_bytes.len() > max || workstation_bytes.len() > max {
+            return Err(AuthError::InvalidChallenge(
+                "NTLM field length exceeds u16 limit".into(),
+            ));
+        }
+
+        let msg = if self.ntlm_v2 {
             self.create_type3_message_v2(
                 &username_bytes,
                 &password_bytes,
@@ -217,7 +225,15 @@ impl NtlmAuthenticator {
                 &workstation_bytes,
                 challenge,
             )
+        };
+
+        if msg.len() > max {
+            return Err(AuthError::InvalidChallenge(
+                "NTLM Type 3 message too large".into(),
+            ));
         }
+
+        Ok(msg)
     }
 
     /// Creates a Type 3 message using NTLMv1 protocol.
@@ -446,7 +462,7 @@ impl Authenticator for NtlmAuthenticator {
                     "", // domain
                     "", // workstation
                     &ntlm_challenge,
-                );
+                )?;
 
                 let response_b64 = STANDARD.encode(&response);
                 return Ok(Some(format!("NTLM {}", response_b64)));
