@@ -491,9 +491,9 @@ impl Transport for TlsTransport {
         {
             let fd = stream.as_raw_fd();
             stream.set_nonblocking(true).map_err(TlsError::Io)?;
-            let result = crate::transport::poll_fd(fd, interest, timeout).map_err(TlsError::Io);
+            let result = crate::transport::poll_fd(fd, interest, timeout);
             let _ = stream.set_nonblocking(false);
-            return result;
+            return result.map_err(TlsError::Io);
         }
 
         #[cfg(not(unix))]
