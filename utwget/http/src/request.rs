@@ -162,7 +162,11 @@ impl HttpRequest {
         write!(buf, "{} {} {}\r\n", self.method, self.path, self.version)?;
 
         for (key, value) in &self.headers {
-            write!(buf, "{}: {}\r\n", key, value)?;
+            // Strip CR/LF from header values to prevent header injection
+            let safe_value: String = value.chars()
+                .filter(|&c| c != '\r' && c != '\n')
+                .collect();
+            write!(buf, "{}: {}\r\n", key, safe_value)?;
         }
 
         buf.extend_from_slice(b"\r\n");
