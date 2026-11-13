@@ -203,6 +203,12 @@ fn read_exact(
         let to_read = (remaining as usize).min(buf.len());
         let n = reader.read(&mut buf[..to_read])?;
         if n == 0 {
+            if remaining > 0 {
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    format!("premature EOF: {} bytes remaining", remaining),
+                ));
+            }
             break;
         }
         output.write_all(&buf[..n])?;
