@@ -783,6 +783,9 @@ impl Md4 {
     ///
     /// The 16-byte MD4 digest.
     fn finalize(&mut self) -> [u8; 16] {
+        // Capture bit length BEFORE padding updates total_len
+        let bit_len = (self.total_len * 8).to_le_bytes();
+
         // Pad message
         let pad_len = if self.buffer_len < 56 { 56 - self.buffer_len } else { 120 - self.buffer_len };
         let mut padding = vec![0u8; pad_len as usize];
@@ -790,8 +793,7 @@ impl Md4 {
 
         self.update(&padding);
 
-        // Append length in bits
-        let bit_len = (self.total_len * 8).to_le_bytes();
+        // Append length in bits (use pre-captured value)
         self.update(&bit_len);
 
         // Output state
