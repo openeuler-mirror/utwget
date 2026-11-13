@@ -90,24 +90,35 @@ impl RobotParser {
 
             match directive_lc.as_str() {
                 "user-agent" => {
-                    if let Some(group) = current_group.take() {
-                        groups.push(group);
+                    // Consecutive User-agent lines should be merged into one group
+                    match &mut current_group {
+                        Some(ref mut group) => {
+                            group.user_agents.push(value.to_string());
+                        }
+                        None => {
+                            current_group = Some(RobotGroup {
+                                user_agents: vec![value.to_string()],
+                                rules: Vec::new(),
+                                crawl_delay: None,
+                                sitemaps: Vec::new(),
+                            });
+                        }
                     }
-                    current_group = Some(RobotGroup {
-                        user_agents: vec![value.to_string()],
-                        rules: Vec::new(),
-                        crawl_delay: None,
-                        sitemaps: Vec::new(),
-                    });
                 }
                 "disallow" => {
                     if let Some(ref mut group) = current_group {
-                        let path = if value.is_empty() {
-                            String::new()
+                        if value.is_empty() {
+                            // Empty Disallow means "allow everything" per robots.txt spec
+                            group.rules.push(RobotRule {
+                                path: "/".to_string(),
+                                allow: true,
+                            });
                         } else {
-                            value.to_string()
-                        };
-                        group.rules.push(RobotRule { path, allow: false });
+                            group.rules.push(RobotRule {
+                                path: value.to_string(),
+                                allow: false,
+                            });
+                        }
                     }
                 }
                 "allow" => {
