@@ -168,9 +168,10 @@ fn md5_hex(data: &[u8]) -> String {
 ///
 /// A 64-character hex-encoded SHA-256 digest.
 fn sha256_hex(data: &[u8]) -> String {
-    ut_core::hash::sha256_reader(&mut data.as_ref()).unwrap_or_else(|_| {
-        data.iter().map(|b| format!("{:02x}", b)).collect()
-    })
+    // SHA-256 must not silently fall back to raw hex on failure,
+    // as that would produce wrong Digest auth responses.
+    ut_core::hash::sha256_reader(&mut data.as_ref())
+        .expect("SHA-256 computation failed — this should never happen")
 }
 
 /// Authenticator that implements HTTP Digest Access Authentication (RFC 7616).
