@@ -29,6 +29,9 @@
 
 use std::io::{self, Read, Write};
 
+/// Maximum allowed chunk size (1 GB) to prevent OOM from malicious servers.
+const MAX_CHUNK_SIZE: usize = 1024 * 1024 * 1024;
+
 /// Internal state machine for chunk parsing.
 enum ChunkState {
     /// Waiting to read the next chunk size line.
@@ -172,12 +175,21 @@ impl<'a, T: Read> ChunkedReader<'a, T> {
             .unwrap_or("")
             .trim();
 
-        usize::from_str_radix(hex_str, 16).map_err(|_| {
+        let size = usize::from_str_radix(hex_str, 16).map_err(|_| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("invalid chunk size: {}", hex_str),
             )
-        })
+        })?;
+
+        if size > MAX_CHUNK_SIZE {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("chunk size too large: {} bytes (max {})", size, MAX_CHUNK_SIZE),
+            ));
+        }
+
+        Ok(size)
     }
 
     /// Reads the next chunk of data from the response body.
@@ -208,8 +220,22 @@ impl<'a, T: Read> ChunkedReader<'a, T> {
                 ChunkState::ReadData { remaining } => {
                     let remaining = *remaining;
                     if self.buffer.len() >= remaining + 2 {
+                        // Validate trailing CRLF after chunk data
+                        if self.buffer[remaining] != b'\r' || self.buffer[remaining + 1] != b'\n' {
+                            return Err(io::Error::new(
+                                io::ErrorKind::InvalidData,
+                                "missing CRLF after chunk data",
+                            ));
+                        }
                         let data: Vec<u8> = self.buffer[..remaining].to_vec();
                         self.buffer.drain(..remaining + 2);
+
+                        // Shrink buffer if it's much larger than needed to prevent
+                        // unbounded memory growth from varying chunk sizes.
+                        if self.buffer.capacity() > 256 * 1024 && self.buffer.len() < 64 * 1024 {
+                            self.buffer.shrink_to(128 * 1024);
+                        }
+
                         self.state = ChunkState::ReadSize;
                         return Ok(Some(data));
                     }
