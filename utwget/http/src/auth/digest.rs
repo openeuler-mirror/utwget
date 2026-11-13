@@ -377,7 +377,22 @@ impl Authenticator for DigestAuthenticator {
         );
 
         let mut parts = Vec::new();
-        parts.push(format!("username=\"{}\"", credentials.username));
+
+        // When userhash=true, send hashed username instead of plaintext
+        let use_userhash = challenge.userhash == Some(true);
+        if use_userhash {
+            let userhash = algorithm.hash_func(
+                format!("{}:{}", credentials.username, challenge.realm.as_deref().unwrap_or("")).as_bytes(),
+            );
+            // MD5 truncates to 32 chars, SHA-256 uses full 64 chars
+            let hash_str = match algorithm {
+                DigestAlgorithm::Md5 | DigestAlgorithm::Md5Sess => &userhash[..32],
+                DigestAlgorithm::Sha256 | DigestAlgorithm::Sha256Sess => &userhash,
+            };
+            parts.push(format!("username=\"{}\"", hash_str));
+        } else {
+            parts.push(format!("username=\"{}\"", credentials.username));
+        }
 
         if let Some(ref realm) = challenge.realm {
             parts.push(format!("realm=\"{}\"", realm));
@@ -398,12 +413,8 @@ impl Authenticator for DigestAuthenticator {
             parts.push(format!("opaque=\"{}\"", opaque));
         }
 
-        if let Some(true) = challenge.userhash {
-            let userhash = algorithm.hash_func(
-                format!("{}:{}", credentials.username, challenge.realm.as_deref().unwrap_or("")).as_bytes(),
-            );
+        if use_userhash {
             parts.push(format!("userhash=true"));
-            parts.push(format!("username=\"{}\"", &userhash[..userhash.len().min(32)]));
         }
 
         Ok(Some(format!("Digest {}", parts.join(", "))))
