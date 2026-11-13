@@ -110,7 +110,7 @@ fn resolve_addresses(
     family: AddressFamily,
 ) -> Result<Vec<SocketAddr>, ConnectError> {
     let addr = format!("{}:{}", host, port);
-    let addrs: Vec<SocketAddr> = (addr.as_str(), 0u16)
+    let mut addrs: Vec<SocketAddr> = (addr.as_str(), 0u16)
         .to_socket_addrs()
         .map_err(|e| ConnectError::DnsFailed(DnsError::ResolveFailed {
             host: host.to_string(),
@@ -122,6 +122,27 @@ fn resolve_addresses(
             a
         })
         .collect();
+
+    // Sort to prefer the right address family
+    match family {
+        AddressFamily::PreferIpv4 => addrs.sort_by(|a, b| {
+            use std::net::IpAddr::{V4, V6};
+            match (&a.ip(), &b.ip()) {
+                (V4(_), V6(_)) => std::cmp::Ordering::Less,
+                (V6(_), V4(_)) => std::cmp::Ordering::Greater,
+                _ => std::cmp::Ordering::Equal,
+            }
+        }),
+        AddressFamily::PreferIpv6 => addrs.sort_by(|a, b| {
+            use std::net::IpAddr::{V4, V6};
+            match (&a.ip(), &b.ip()) {
+                (V6(_), V4(_)) => std::cmp::Ordering::Less,
+                (V4(_), V6(_)) => std::cmp::Ordering::Greater,
+                _ => std::cmp::Ordering::Equal,
+            }
+        }),
+        _ => {}
+    }
 
     if addrs.is_empty() {
         return Err(ConnectError::DnsFailed(DnsError::NoAddresses {
@@ -150,10 +171,9 @@ fn matches_family(addr: &SocketAddr, family: AddressFamily) -> bool {
         (V6(_), AddressFamily::Ipv6) => true,
         (V4(_), AddressFamily::Ipv6) => false,
         (V6(_), AddressFamily::Ipv4) => false,
-        (V4(_), AddressFamily::PreferIpv6) => false,
-        (V6(_), AddressFamily::PreferIpv4) => false,
-        (_, AddressFamily::PreferIpv4) => matches!(addr.ip(), V4(_)),
-        (_, AddressFamily::PreferIpv6) => matches!(addr.ip(), V6(_)),
+        // Prefer variants accept all addresses (sorting handles preference)
+        (_, AddressFamily::PreferIpv4) => true,
+        (_, AddressFamily::PreferIpv6) => true,
         (_, AddressFamily::Unspecified) => true,
     }
 }
