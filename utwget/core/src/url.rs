@@ -601,6 +601,12 @@ fn normalize_dot_segments(path: &str) -> String {
                     if *last != ".." {
                         out.pop();
                     }
+                } else if leading_slash {
+                    // ".." above root for rooted paths: drop it
+                    continue;
+                } else {
+                    // Relative path: keep ".." as-is
+                    out.push("..");
                 }
             }
             other => out.push(other),
