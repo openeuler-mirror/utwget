@@ -90,6 +90,28 @@ impl TlsConnection {
         }
         Ok(())
     }
+
+    /// Read decrypted application data from the TLS connection.
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        loop {
+            // Try to read from the TLS reader first
+            match self.conn.reader().read(buf) {
+                Ok(0) => {}
+                Ok(n) => return Ok(n),
+                Err(e) if e.kind() == io::ErrorKind::UnexpectedEof
+                    || e.kind() == io::ErrorKind::WouldBlock => {}
+                Err(e) => return Err(e),
+            }
+            // No buffered data: pull more TLS records from the network
+            match self.conn.read_tls(&mut self.stream) {
+                Ok(0) => return Ok(0),
+                Ok(_) => {}
+                Err(e) => return Err(e),
+            }
+            self.conn.process_new_packets()
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+        }
+    }
 }
 
 impl FtpsClient {
@@ -702,17 +724,46 @@ impl FtpsClient {
         }
 
         // Connect to data port
-        let mut data_stream = TcpStream::connect(format!("{}:{}", data_host, data_port))
+        let mut data_tcp = TcpStream::connect(format!("{}:{}", data_host, data_port))
             .map_err(|e| FtpError::DataConnectFailed(e.to_string()))?;
 
+        // Wrap with TLS if PROT P was negotiated
+        if self.config.require_data_tls {
+            let host = self.host.as_deref().unwrap_or("unknown");
+            let mut data_tls = self.wrap_tls(data_tcp, host)?;
+
+            // Read data over encrypted channel
+            let start_pos = resume_pos.unwrap_or(0);
+            let mut total_bytes = start_pos;
+            let mut buf = [0u8; 64 * 1024];
+
+            loop {
+                let n = data_tls.read(&mut buf).map_err(|e| FtpError::TransferFailed(e.to_string()))?;
+                if n == 0 { break; }
+                output.write_all(&buf[..n]).map_err(|e| FtpError::TransferFailed(e.to_string()))?;
+                total_bytes += n as u64;
+            }
+
+            // Read final response
+            let done_resp = self.read_response()?;
+            if !done_resp.is_positive_completion {
+                return Err(FtpError::TransferFailed(format!(
+                    "transfer not confirmed: {} {}", done_resp.code, done_resp.text
+                )));
+            }
+
+            log::debug!("FTPS RETR {}: {} bytes (encrypted)", filename, total_bytes);
+            return Ok(total_bytes);
+        }
+
+        // Fallback: unencrypted data channel (PROT P was refused)
         // Read data
         let start_pos = resume_pos.unwrap_or(0);
         let mut total_bytes = start_pos;
-        // 64KB buffer reduces system calls and improves throughput
         let mut buf = [0u8; 64 * 1024];
 
         loop {
-            let n = std::io::Read::read(&mut data_stream, &mut buf).map_err(|e| FtpError::TransferFailed(e.to_string()))?;
+            let n = std::io::Read::read(&mut data_tcp, &mut buf).map_err(|e| FtpError::TransferFailed(e.to_string()))?;
             if n == 0 { break; }
             output.write_all(&buf[..n]).map_err(|e| FtpError::TransferFailed(e.to_string()))?;
             total_bytes += n as u64;
