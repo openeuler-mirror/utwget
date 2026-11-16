@@ -53,6 +53,33 @@ pub struct WarcWriterImpl {
     user_headers: Vec<String>,
 }
 
+/// Returns a standard HTTP reason phrase for the given status code.
+fn http_status_text(code: u16) -> &'static str {
+    match code {
+        100 => "Continue",
+        101 => "Switching Protocols",
+        200 => "OK",
+        201 => "Created",
+        204 => "No Content",
+        206 => "Partial Content",
+        301 => "Moved Permanently",
+        302 => "Found",
+        304 => "Not Modified",
+        400 => "Bad Request",
+        401 => "Unauthorized",
+        403 => "Forbidden",
+        404 => "Not Found",
+        405 => "Method Not Allowed",
+        407 => "Proxy Authentication Required",
+        408 => "Request Timeout",
+        416 => "Range Not Satisfiable",
+        500 => "Internal Server Error",
+        502 => "Bad Gateway",
+        503 => "Service Unavailable",
+        _ => "",
+    }
+}
+
 impl WarcWriterImpl {
     /// Creates a new WARC writer with standard options.
     ///
@@ -321,6 +348,8 @@ impl WarcWriterImpl {
         payload.extend_from_slice(crlf);
         payload.extend_from_slice(b"HTTP/1.1 ");
         payload.extend_from_slice(status_code.to_string().as_bytes());
+        payload.push(b' ');
+        payload.extend_from_slice(http_status_text(status_code).as_bytes());
         payload.extend_from_slice(crlf);
         if !headers.is_empty() {
             payload.extend_from_slice(headers);
