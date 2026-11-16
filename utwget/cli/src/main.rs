@@ -245,13 +245,31 @@ fn main() -> ExitCode {
     // Then apply command-line arguments (they override wgetrc)
     app::apply_args(&mut config, &args);
 
+    // Redirect diagnostic output to -o/-a log file as early as possible so
+    // every subsequent message (including those from apply_args/askpass) goes
+    // to the log. CLI flags override wgetrc values, matching GNU wget.
+    let log_target = args.output_file.clone()
+        .or(args.append_output.clone())
+        .or(config.output_file.clone())
+        .or(config.append_output.clone());
+    let log_append = args.append_output.is_some() || config.append_output.is_some();
+    if let Some(ref target) = log_target {
+        if let Err(e) = redirect_log_output(target, log_append) {
+            eprintln!("utwget: {}", e);
+            return ExitCode::from(1);
+        }
+    }
+
     if !args.execute.is_empty() {
         app::apply_execute_commands(&mut config, &args.execute);
     }
 
     // Daemonize if --background is set
     if config.background {
-        match daemonize() {
+        // If -o/-a redirected stderr to a log file, keep that redirection in
+        // the daemon; otherwise send stderr to /dev/null (classic daemon).
+        let keep_log = config.output_file.is_some() || config.append_output.is_some();
+        match daemonize(!keep_log) {
             Ok(true) => {
                 // Parent process after successful fork - exit immediately
                 return ExitCode::SUCCESS;
@@ -540,6 +558,58 @@ fn print_wget_help() {
     println!("{}", t("utwget.help_email"));
 }
 
+/// Redirect process logging to a file specified by `-o`/`-a`.
+///
+/// GNU wget routes all diagnostic output through a single log file pointer.
+/// We achieve the same effect by redirecting the process's stderr file
+/// descriptor to the target file with `dup2`, so that every `eprintln!`
+/// and `log` message flows into it automatically — no call-site changes
+/// are required.
+///
+/// * `-o FILE`  — truncate FILE and write logs there.
+/// * `-a FILE`  — append logs to FILE.
+/// * `-o -`     — write logs to stdout (matching GNU wget).
+///
+/// When neither is set, stderr is left untouched. This must run before
+/// `daemonize()` so the daemon inherits the redirected descriptor.
+fn redirect_log_output(file: &std::path::Path, append: bool) -> Result<(), Box<dyn std::error::Error>> {
+    // `-o -` (or `-a -`) routes logs to stdout.
+    if file == std::path::Path::new("-") {
+        // dup2(stdout, stderr) so eprintln!/log go to stdout.
+        unsafe {
+            if libc::dup2(libc::STDOUT_FILENO, libc::STDERR_FILENO) < 0 {
+                return Err("failed to redirect stderr to stdout".into());
+            }
+        }
+        return Ok(());
+    }
+
+    let flags = libc::O_WRONLY | libc::O_CREAT | if append { libc::O_APPEND } else { libc::O_TRUNC };
+    let fd = unsafe {
+        let c_path = std::ffi::CString::new(file.as_os_str().as_encoded_bytes())
+            .map_err(|e| format!("invalid log path: {e}"))?;
+        libc::open(c_path.as_ptr(), flags, 0o644)
+    };
+    if fd < 0 {
+        let err = std::io::Error::last_os_error();
+        return Err(format!("cannot open log file {}: {}", file.display(), err).into());
+    }
+
+    // Redirect stderr to the log file. If stdout is not already the log
+    // file, leave it untouched (downloaded content via `-O -` uses stdout).
+    unsafe {
+        if libc::dup2(fd, libc::STDERR_FILENO) < 0 {
+            let err = std::io::Error::last_os_error();
+            libc::close(fd);
+            return Err(format!("failed to redirect stderr to {}: {}", file.display(), err).into());
+        }
+        if fd > libc::STDERR_FILENO {
+            libc::close(fd);
+        }
+    }
+    Ok(())
+}
+
 /// Daemonize the process by forking and creating a new session.
 ///
 /// Returns `Ok(true)` in the parent process (should exit),
@@ -550,7 +620,11 @@ fn print_wget_help() {
 /// 2. Call setsid() to create new session
 /// 3. Fork second time - first child exits, grandchild continues
 /// 4. Redirect stdin/stdout/stderr to /dev/null
-fn daemonize() -> Result<bool, Box<dyn std::error::Error>> {
+///
+/// `redirect_stderr_to_null` controls whether stderr is sent to /dev/null. When
+/// `-o`/`-a` has already redirected stderr to a log file (via
+/// `redirect_log_output`), pass `false` to preserve that redirection.
+fn daemonize(redirect_stderr_to_null: bool) -> Result<bool, Box<dyn std::error::Error>> {
     // First fork
     let pid = unsafe { libc::fork() };
     if pid < 0 {
@@ -583,7 +657,11 @@ fn daemonize() -> Result<bool, Box<dyn std::error::Error>> {
         if devnull >= 0 {
             libc::dup2(devnull, libc::STDIN_FILENO);
             libc::dup2(devnull, libc::STDOUT_FILENO);
-            libc::dup2(devnull, libc::STDERR_FILENO);
+            // Only redirect stderr to /dev/null when no log file (-o/-a)
+            // was set up; otherwise keep the log-file redirection.
+            if redirect_stderr_to_null {
+                libc::dup2(devnull, libc::STDERR_FILENO);
+            }
             if devnull > 2 {
                 libc::close(devnull);
             }

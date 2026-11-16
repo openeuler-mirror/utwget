@@ -41,9 +41,13 @@ pub struct Config {
     pub retry_on_host_error: bool,
     /// HTTP status codes to retry on (--retry-on-http-error)
     pub retry_on_http_error: Vec<u16>,
-    /// Run in background mode (--background)
-    pub background: bool,
-    /// Enable debug output (--debug)
+   /// Run in background mode (--background)
+   pub background: bool,
+    /// Log output file (-o / --output-file). "-" means stdout.
+    pub output_file: Option<PathBuf>,
+    /// Append (instead of truncate) to log file (-a / --append-output).
+    pub append_output: Option<PathBuf>,
+   /// Enable debug output (--debug)
     pub debug: bool,
     /// Print server response headers (--server-response)
     pub server_response: bool,
@@ -188,8 +192,10 @@ impl Default for Config {
             retry_connrefused: false,
             retry_on_host_error: false,
             retry_on_http_error: Vec::new(),
-            background: false,
-            debug: false,
+           background: false,
+            output_file: None,
+            append_output: None,
+           debug: false,
             server_response: false,
 
             output_document: None,
