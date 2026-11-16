@@ -777,10 +777,14 @@ impl FtpClient {
 
         let mut listing_data = Vec::new();
         let mut buf = [0u8; FTP_IO_BUFFER_SIZE];
+        const MAX_LISTING_SIZE: usize = 64 * 1024 * 1024; // 64MB limit
         loop {
             let n = data_conn.stream.read(&mut buf).map_err(|e| FtpError::TransferFailed(e.to_string()))?;
             if n == 0 { break; }
             listing_data.extend_from_slice(&buf[..n]);
+            if listing_data.len() > MAX_LISTING_SIZE {
+                return Err(FtpError::TransferFailed("LIST response too large (exceeds 64MB)".into()));
+            }
         }
 
         let done_resp = self.read_response()?;
@@ -836,10 +840,14 @@ impl FtpClient {
 
         let mut data = Vec::new();
         let mut buf = [0u8; FTP_IO_BUFFER_SIZE];
+        const MAX_NLST_SIZE: usize = 64 * 1024 * 1024; // 64MB limit
         loop {
             let n = data_conn.stream.read(&mut buf).map_err(|e| FtpError::TransferFailed(e.to_string()))?;
             if n == 0 { break; }
             data.extend_from_slice(&buf[..n]);
+            if data.len() > MAX_NLST_SIZE {
+                return Err(FtpError::TransferFailed("NLST response too large (exceeds 64MB)".into()));
+            }
         }
 
         let done_resp = self.read_response()?;
