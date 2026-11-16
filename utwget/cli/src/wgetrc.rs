@@ -815,6 +815,13 @@ fn parse_duration(s: &str) -> Result<Option<std::time::Duration>, ConfigError> {
         })?
     };
 
+    if !seconds.is_finite() || seconds < 0.0 {
+        return Err(ConfigError::InvalidValue {
+            option: "duration".to_string(),
+            reason: format!("invalid duration value: {}", seconds),
+        });
+    }
+
     if seconds <= 0.0 {
         Ok(None)
     } else {
