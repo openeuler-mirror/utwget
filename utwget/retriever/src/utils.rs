@@ -165,6 +165,21 @@ pub(crate) fn rotate_backups(path: &Path, n_backups: u32) {
     }
 }
 
+/// Find the next available backup filename for a file that already exists.
+///
+/// Returns `.1` if it doesn't exist, `.2` if `.1` exists, etc., up to `max_backups`.
+/// Returns `None` if all backup slots are full.
+pub(crate) fn find_next_backup(path: &Path, max_backups: u32) -> Option<PathBuf> {
+    for i in 1..=max_backups {
+        let backup = PathBuf::from(format!("{}.{}", path.display(), i));
+        if !backup.exists() {
+            return Some(backup);
+        }
+    }
+    // All slots full — use the highest number (overwriting the oldest backup)
+    Some(PathBuf::from(format!("{}.{}", path.display(), max_backups)))
+}
+
 /// Adjust file extension based on Content-Type.
 ///
 /// If `--adjust-extension` is set and the Content-Type indicates HTML or CSS,
