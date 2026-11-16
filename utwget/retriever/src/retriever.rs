@@ -1526,6 +1526,17 @@ impl Retriever {
             ))));
         }
 
+        // Validate leftover bytes: a well-formed CONNECT 200 response has no body.
+        // Leftover data could be from a malicious proxy injecting data into the
+        // TLS handshake. Log a warning if unexpected data is present.
+        if !leftover.is_empty() {
+            warn!(
+                "proxy CONNECT response contained {} unexpected bytes after header; \
+                 this may indicate a misconfigured or malicious proxy",
+                leftover.len()
+            );
+        }
+
         // Return the stream and any leftover bytes for TLS wrapping
         let cloned = stream.try_clone().map_err(RetrieveError::Io)?;
         Ok((cloned, leftover))
