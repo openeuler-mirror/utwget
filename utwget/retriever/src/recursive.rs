@@ -517,7 +517,8 @@ impl RecursiveRetriever {
     ///
     /// `Some(content)` if robots.txt was successfully fetched, `None` otherwise.
     fn fetch_robots(&mut self, host: &str, _robot_parser: &mut RobotParser) -> Option<String> {
-        let robots_url = format!("http://{}/robots.txt", host);
+        // Use HTTPS when possible to prevent MITM injection of false robots.txt
+        let robots_url = format!("https://{}/robots.txt", host);
 
         match self.retriever.retrieve(&robots_url) {
             Ok(RetrieveOutcome::Success(body)) => {
