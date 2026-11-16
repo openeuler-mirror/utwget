@@ -36,7 +36,10 @@ fn test_safe_filename_no_extension() {
 #[test]
 fn test_safe_filename_dots() {
     assert_eq!(safe_filename(".hidden"), ".hidden");
-    assert_eq!(safe_filename(".."), "..");
+    // ".." is sanitized to "_" to prevent path traversal when joined into
+    // a filesystem path (defense in depth, see url.rs normalize_dot_segments).
+    assert_eq!(safe_filename(".."), "_");
+    assert_eq!(safe_filename("."), "_");
 }
 
 #[test]

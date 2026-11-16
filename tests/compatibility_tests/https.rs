@@ -1,6 +1,6 @@
 // HTTPS 协议行为兼容性测试
 
-use crate::compatibility_tests::common::{TestContext, CommandComparison};
+use super::common::{TestContext, CommandComparison};
 use crate::require_network;
 
 /// 对比 HTTPS 下载行为

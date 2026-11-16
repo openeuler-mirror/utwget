@@ -25,6 +25,7 @@ fn test_warc_header_serialize_basic() {
         gzip_compressed: false,
         truncated: None,
         wagon: None,
+        payload_digest: None,
     };
 
     let bytes = header.serialize();
@@ -65,6 +66,7 @@ fn test_warc_header_serialize_all_record_types() {
             gzip_compressed: false,
             truncated: None,
             wagon: None,
+            payload_digest: None,
         };
 
         let bytes = header.serialize();
@@ -90,6 +92,7 @@ fn test_warc_header_serialize_with_concurrent_to() {
         gzip_compressed: false,
         truncated: None,
         wagon: None,
+        payload_digest: None,
     };
 
     let bytes = header.serialize();
@@ -113,6 +116,7 @@ fn test_warc_header_serialize_gzip_compressed() {
         gzip_compressed: true,
         truncated: None,
         wagon: None,
+        payload_digest: None,
     };
 
     let bytes = header.serialize();
@@ -135,6 +139,7 @@ fn test_warc_header_serialize_truncated() {
         gzip_compressed: false,
         truncated: Some("length".to_string()),
         wagon: None,
+        payload_digest: None,
     };
 
     let bytes = header.serialize();
@@ -157,6 +162,7 @@ fn test_warc_header_serialize_wagon() {
         gzip_compressed: false,
         truncated: None,
         wagon: Some("wagon-metadata-here".to_string()),
+        payload_digest: None,
     };
 
     let bytes = header.serialize();
@@ -179,6 +185,7 @@ fn test_warc_header_serialize_terminates_with_double_crlf() {
         gzip_compressed: false,
         truncated: None,
         wagon: None,
+        payload_digest: None,
     };
 
     let bytes = header.serialize();
@@ -199,6 +206,7 @@ fn test_warc_header_serialize_no_target_uri_when_empty() {
         gzip_compressed: false,
         truncated: None,
         wagon: None,
+        payload_digest: None,
     };
 
     let bytes = header.serialize();
@@ -221,6 +229,7 @@ fn test_warc_header_serialize_crlf_line_endings() {
         gzip_compressed: false,
         truncated: None,
         wagon: None,
+        payload_digest: None,
     };
 
     let bytes = header.serialize();
@@ -427,6 +436,7 @@ fn test_warc_header_serialize_complete() {
         gzip_compressed: true,
         truncated: Some("time".to_string()),
         wagon: Some("test-wagon".to_string()),
+        payload_digest: None,
     };
 
     let bytes = header.serialize();

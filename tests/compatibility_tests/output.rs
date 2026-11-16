@@ -2,7 +2,7 @@
 //
 // 测试 utwget 与原 wget 的输出格式一致性
 
-use crate::compatibility_tests::common::TestContext;
+use super::common::TestContext;
 use crate::require_network;
 
 #[cfg(test)]
