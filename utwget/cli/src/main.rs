@@ -74,7 +74,7 @@ fn rearrange_args() -> Vec<String> {
     // Known short options that take a value
     let short_opts_with_value = [
         'e', 'o', 'a', 'i', 'B', 'l', 'O', 'P', 'Q', 'w', 't', 'T',
-        'A', 'R', 'D', 'I', 'X', 'U', 'S', // Add more as needed
+        'A', 'R', 'D', 'I', 'X', 'U', // Add more as needed
     ];
 
     // Known long options that take a value
