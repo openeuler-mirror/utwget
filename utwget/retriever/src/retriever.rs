@@ -855,6 +855,7 @@ impl Retriever {
                 &response,
                 &mut *self.progress,
                 state.resume_position,
+                self.config.ignore_length,
             );
             // Flush the (possibly decompressing) writer before dropping, so all
             // pending decompressed bytes are written to the underlying file.
@@ -1741,6 +1742,7 @@ fn stream_response_body<R: Read, W: Write>(
     response: &HttpResponse,
     progress: &mut dyn ProgressDisplay,
     resume_from: u64,
+    ignore_length: bool,
 ) -> Result<u64, RetrieveError> {
     if response.is_chunked() {
         let mut received = 0u64;
@@ -1754,7 +1756,8 @@ fn stream_response_body<R: Read, W: Write>(
             progress.update(resume_from + received, Duration::ZERO);
         }
         Ok(received)
-    } else if let Some(len) = response.content_length() {
+    } else if !ignore_length {
+        if let Some(len) = response.content_length() {
         let mut received = 0u64;
         let mut tmp = [0u8; IO_BUFFER_SIZE];
         while received < len {
@@ -1771,22 +1774,35 @@ fn stream_response_body<R: Read, W: Write>(
             progress.update(resume_from + received, Duration::ZERO);
         }
         Ok(received)
-    } else {
-        let mut received = 0u64;
-        let mut tmp = [0u8; IO_BUFFER_SIZE];
-        loop {
-            let n = reader
-                .read(&mut tmp)
-                .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("body read error: {}", e))))?;
-            if n == 0 {
-                break;
-            }
-            writer.write_all(&tmp[..n]).map_err(RetrieveError::Io)?;
-            received += n as u64;
-            progress.update(resume_from + received, Duration::ZERO);
+        } else {
+            read_until_eof(reader, writer, progress, resume_from)
         }
-        Ok(received)
+    } else {
+        read_until_eof(reader, writer, progress, resume_from)
     }
+}
+
+/// Read the response body until EOF, writing each chunk to `writer`.
+fn read_until_eof<R: Read, W: Write>(
+    reader: &mut R,
+    writer: &mut W,
+    progress: &mut dyn ProgressDisplay,
+    resume_from: u64,
+) -> Result<u64, RetrieveError> {
+    let mut received = 0u64;
+    let mut tmp = [0u8; IO_BUFFER_SIZE];
+    loop {
+        let n = reader
+            .read(&mut tmp)
+            .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("body read error: {}", e))))?;
+        if n == 0 {
+            break;
+        }
+        writer.write_all(&tmp[..n]).map_err(RetrieveError::Io)?;
+        received += n as u64;
+        progress.update(resume_from + received, Duration::ZERO);
+    }
+    Ok(received)
 }
 
 /// Reads only the HTTP response head (status line + headers), returning any
