@@ -292,6 +292,30 @@ impl ParsedUrl {
     pub fn display(&self) -> String {
         self.to_string()
     }
+
+    /// Get a log-safe string representation with credentials masked.
+    ///
+    /// Credentials (user:password) are replaced with `***:***` to prevent
+    /// leaking sensitive information in debug/log output.
+    pub fn display_safe(&self) -> String {
+        let mut result = format!("{}://", self.scheme);
+        if self.user.is_some() {
+            result.push_str("***:***@");
+        }
+        result.push_str(&self.host);
+        let default_port = self.scheme.default_port();
+        if self.port != default_port {
+            result.push_str(&format!(":{}", self.port));
+        }
+        result.push_str(&self.path);
+        if let Some(ref q) = self.query {
+            result.push_str(&format!("?{}", q));
+        }
+        if let Some(ref fr) = self.fragment {
+            result.push_str(&format!("#{}", fr));
+        }
+        result
+    }
 }
 
 impl fmt::Display for ParsedUrl {
