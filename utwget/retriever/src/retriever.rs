@@ -18,6 +18,8 @@ use ut_core::url::ParsedUrl;
 use ut_core::{
     CompositeFilter, Config, CookieJar, NetrcDb, Scheme, WgetError,
 };
+#[cfg(feature = "hsts")]
+use ut_core::HstsStore;
 use ut_http::auth::{AuthChallenge, AuthDispatcher};
 use ut_http::request::{build_request, HttpRequest};
 use ut_http::response::{HeaderMap, HttpResponse};
@@ -87,6 +89,9 @@ pub struct Retriever {
     cookie_jar: CookieJar,
     /// .netrc credentials database for automatic authentication.
     netrc: NetrcDb,
+    /// HSTS (HTTP Strict Transport Security) cache for HTTPS upgrade policy.
+    #[cfg(feature = "hsts")]
+    hsts: HstsStore,
     /// Composite filter for URL inclusion/exclusion rules.
     url_filter: CompositeFilter,
     /// Registry tracking downloaded files and URL redirections.
@@ -149,6 +154,23 @@ impl Retriever {
             }
         }
 
+        // Load HSTS store from the configured file, or ~/.wget-hsts by default.
+        #[cfg(feature = "hsts")]
+        let hsts_store = {
+            let mut store = HstsStore::new();
+            if config.hsts.enabled {
+                let hsts_path = config.hsts.file.clone().or_else(|| {
+                    std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".wget-hsts"))
+                });
+                if let Some(ref path) = hsts_path {
+                    if let Err(e) = store.load_from_file(path) {
+                        warn!("failed to load HSTS from {}: {}", path.display(), e);
+                    }
+                }
+            }
+            store
+        };
+
         let mut url_filter = CompositeFilter::new();
         if !config.recursive.domains.is_empty() || !config.recursive.exclude_domains.is_empty() {
             url_filter.add(ut_core::regex_filter::DomainFilter::new(
@@ -162,6 +184,8 @@ impl Retriever {
             progress,
             cookie_jar,
             netrc,
+            #[cfg(feature = "hsts")]
+            hsts: hsts_store,
             url_filter,
             download_registry: DownloadRegistry::new(),
             auth_dispatcher: AuthDispatcher::new(),
@@ -332,10 +356,27 @@ impl Retriever {
         let display_url = url.display();
         info!("--{}", url.display_safe());
 
-        let effective_url = match self.resolve_effective_url(url) {
+        let mut effective_url = match self.resolve_effective_url(url) {
             Some(u) => u,
             None => url.clone(),
         };
+
+        // Apply HSTS policy: upgrade HTTP to HTTPS when the host has an
+        // active HSTS entry (RFC 6797). This happens before any request is
+        // sent, so the upgrade is transparent to the rest of the pipeline.
+        #[cfg(feature = "hsts")]
+        {
+            if self.config.hsts.enabled {
+                let upgraded = self.hsts.should_upgrade(&effective_url.host, effective_url.scheme);
+                if upgraded != effective_url.scheme {
+                    debug!("HSTS: upgrading {} to HTTPS", effective_url.display());
+                    effective_url.scheme = upgraded;
+                    if effective_url.port == Scheme::Http.default_port() {
+                        effective_url.port = Scheme::Https.default_port();
+                    }
+                }
+            }
+        }
 
         let mut output_path = self.determine_output_path(&effective_url)?;
 
@@ -562,6 +603,17 @@ impl Retriever {
 
         self.process_cookies(&url, &response.headers);
 
+        // Process HSTS policy from the Strict-Transport-Security header.
+        // Only HTTPS responses can establish HSTS policy (RFC 6797 §8.1).
+        #[cfg(feature = "hsts")]
+        {
+            if self.config.hsts.enabled && url.scheme == Scheme::Https {
+                if let Some(sts) = response.headers.get("strict-transport-security") {
+                    self.hsts.add_from_header(&url.host, sts);
+                }
+            }
+        }
+
         if response.status_code == 401 && creds.is_some() {
             let www_auth = response.headers.www_authenticate();
             if !www_auth.is_empty() {
@@ -600,6 +652,14 @@ impl Retriever {
                             };
                             state.auth_finished = true;
                             self.process_cookies(&url, &response.headers);
+                            #[cfg(feature = "hsts")]
+                            {
+                                if self.config.hsts.enabled && url.scheme == Scheme::Https {
+                                    if let Some(sts) = response.headers.get("strict-transport-security") {
+                                        self.hsts.add_from_header(&url.host, sts);
+                                    }
+                                }
+                            }
                             break;
                         }
                     }
@@ -2141,6 +2201,41 @@ impl Retriever {
     /// Get a reference to the application configuration.
     pub fn config(&self) -> &Config {
         &self.config
+    }
+
+    /// Persist session state to disk.
+    ///
+    /// Saves cookies to `--save-cookies` file (if configured) and the HSTS
+    /// cache to `--hsts-file` (or `~/.wget-hsts` by default) when HSTS is
+    /// enabled. Errors are logged as warnings rather than propagated, so a
+    /// save failure never masks the download result.
+    pub fn save_state(&self) {
+        // Save cookies
+        if let Some(ref cookie_file) = self.config.cookie.output_file {
+            match fs::File::create(cookie_file) {
+                Ok(file) => {
+                    if let Err(e) = self.cookie_jar.save_to_writer(file) {
+                        warn!("failed to save cookies to {}: {}", cookie_file.display(), e);
+                    }
+                }
+                Err(e) => warn!("failed to create cookie file {}: {}", cookie_file.display(), e),
+            }
+        }
+
+        // Save HSTS store
+        #[cfg(feature = "hsts")]
+        {
+            if self.config.hsts.enabled {
+                let hsts_path = self.config.hsts.file.clone().or_else(|| {
+                    std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".wget-hsts"))
+                });
+                if let Some(ref path) = hsts_path {
+                    if let Err(e) = self.hsts.save_to_file(path) {
+                        warn!("failed to save HSTS to {}: {}", path.display(), e);
+                    }
+                }
+            }
+        }
     }
 
     /// Calculate the backoff duration for retry attempts.
