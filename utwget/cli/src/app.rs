@@ -1025,10 +1025,15 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
         }
     }
 
-    // Handle --use-askpass: use external program to get password
-    if let Some(ref askpass_cmd) = args.use_askpass {
-        if config.http.password.is_none() {
-            config.http.password = run_askpass(askpass_cmd);
+    // Handle --use-askpass: use external program to get password.
+    // Resolution order: explicit value, then WGET_ASKPASS, then SSH_ASKPASS.
+    if config.http.password.is_none() {
+        if let Some(program) = resolve_askpass(args.use_askpass.as_deref()) {
+            let prompt = match config.http.user {
+                Some(ref user) => format!("Password for {}: ", user),
+                None => "Password: ".to_string(),
+            };
+            config.http.password = run_askpass(&program, &prompt);
         }
     }
 
@@ -1339,19 +1344,22 @@ fn prompt_password(prompt: &str) -> Option<String> {
 
 /// Run external askpass program to get password.
 ///
-/// Executes the program specified by `--use-askpass` and captures its stdout
-/// as the password. This is consistent with the `SSH_ASKPASS` convention.
+/// Executes the askpass program and captures its stdout as the password.
+/// The prompt string is passed as the first argument, matching GNU wget's
+/// behavior (`argv[1] = question`).
 ///
 /// # Arguments
 /// * `program` — Path or name of the askpass executable.
+/// * `prompt` — The prompt/question string passed to the program.
 ///
 /// # Returns
 /// The password text returned by the program, or `None` if the program could
 /// not be run or returned a non-zero exit code.
-fn run_askpass(program: &str) -> Option<String> {
+fn run_askpass(program: &str, prompt: &str) -> Option<String> {
     use std::process::Command;
 
     let result = Command::new(program)
+        .arg(prompt)
         .output()
         .ok()?;
 
@@ -1361,6 +1369,35 @@ fn run_askpass(program: &str) -> Option<String> {
     } else {
         None
     }
+}
+
+/// Resolve the askpass program and prompt string.
+///
+/// Implements GNU wget's `--use-askpass` resolution order:
+/// 1. If `--use-askpass=COMMAND` was given an explicit value, use it.
+/// 2. Otherwise, fall back to the `WGET_ASKPASS` environment variable.
+/// 3. Then fall back to the `SSH_ASKPASS` environment variable.
+///
+/// Returns `Some(program)` if a program was resolved, or `None` (after
+/// printing an error) if none of the sources yielded a value.
+fn resolve_askpass(explicit: Option<&str>) -> Option<String> {
+    if let Some(cmd) = explicit {
+        if !cmd.is_empty() {
+            return Some(cmd.to_string());
+        }
+    }
+    if let Some(cmd) = std::env::var_os("WGET_ASKPASS") {
+        if !cmd.is_empty() {
+            return cmd.to_string_lossy().into_owned().into();
+        }
+    }
+    if let Some(cmd) = std::env::var_os("SSH_ASKPASS") {
+        if !cmd.is_empty() {
+            return cmd.to_string_lossy().into_owned().into();
+        }
+    }
+    eprintln!("use-askpass requires a string or either environment variable WGET_ASKPASS or SSH_ASKPASS to be set.");
+    None
 }
 
 /// Parse a `--secure-protocol` argument string into a `SecureProtocol` value.
