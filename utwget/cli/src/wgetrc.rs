@@ -694,13 +694,12 @@ impl WgetrcParser {
     /// # Errors
     ///
     /// Returns `ConfigError` if the command is invalid.
-    fn apply_cmd(key: &str, args: &[String], _config: &mut ut_core::Config) -> Result<(), ConfigError> {
+    fn apply_cmd(key: &str, args: &[String], config: &mut ut_core::Config) -> Result<(), ConfigError> {
         let key = key.to_ascii_lowercase();
         match key.as_str() {
             "accept" | "reject" | "include_directories" | "exclude_directories" => {
                 if args.len() == 1 {
-                    let mut cfg = ut_core::Config::default();
-                    Self::apply_set(&key, args[0].as_str(), &mut cfg)?;
+                    Self::apply_set(&key, args[0].as_str(), config)?;
                     return Ok(());
                 }
             }
