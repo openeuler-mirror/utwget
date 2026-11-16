@@ -81,6 +81,8 @@ pub struct WarcHeader {
     pub truncated: Option<String>,
     /// Optional wagon metadata.
     pub wagon: Option<String>,
+    /// Payload digest (e.g., "sha1:abc123...") for integrity verification.
+    pub payload_digest: Option<String>,
 }
 
 impl WarcHeader {
@@ -130,8 +132,8 @@ impl WarcHeader {
             lines.push(format!("WARC-Concurrent-To: {}", ct));
         }
 
-        if self.gzip_compressed {
-            lines.push("WARC-Payload-Digest: sha1:".to_string());
+        if let Some(ref digest) = self.payload_digest {
+            lines.push(format!("WARC-Payload-Digest: {}", digest));
         }
 
         if let Some(ref t) = self.truncated {

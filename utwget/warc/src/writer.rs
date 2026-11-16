@@ -235,6 +235,7 @@ impl WarcWriterImpl {
             gzip_compressed: self.gzip_enabled,
             truncated: None,
             wagon: None,
+            payload_digest: None,
         };
 
         self.write_record(&header, &content)?;
@@ -436,6 +437,7 @@ impl WarcWriterImpl {
             gzip_compressed: self.gzip_enabled,
             truncated: None,
             wagon: None,
+            payload_digest: None,
         })
     }
 }
