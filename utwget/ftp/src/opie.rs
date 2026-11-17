@@ -74,6 +74,13 @@ pub fn parse_opie_challenge(prompt: &str) -> Option<OpieChallenge> {
     let seq_str = parts.iter().find(|p| p.parse::<u64>().is_ok())?;
     let sequence: u64 = seq_str.parse().ok()?;
 
+    // RFC 2289: the sequence number must be in [1, 9999]. Reject anything
+    // outside this range; a malicious or malformed server could otherwise
+    // supply a huge value, causing opie_reduce to loop billions of times.
+    if sequence < 1 || sequence > 9999 {
+        return None;
+    }
+
     let seed = parts.iter()
         .find(|p| !p.parse::<u64>().is_ok() && !p.contains("otp-") && !p.contains("s/key"))
         .map(|s| s.trim_end_matches(':').to_string())
