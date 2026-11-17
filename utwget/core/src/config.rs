@@ -522,9 +522,9 @@ pub struct WarcConfig {
     pub enabled: bool,
     /// Base filename for WARC files
     pub filename: Option<String>,
-    /// Temporary directory for WARC writing (--warc-temp-dir)
+    /// Temporary directory for WARC writing (--warc-tempdir)
     pub tempdir: Option<PathBuf>,
-    /// Maximum WARC file size in bytes (--warc-maxsize)
+    /// Maximum WARC file size in bytes (--warc-max-size)
     pub max_size: Option<u64>,
     /// Enable WARC compression (--warc-compression)
     pub compression: bool,

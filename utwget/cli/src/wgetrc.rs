@@ -46,7 +46,7 @@
 
 use std::fs;
 use std::io::{BufRead, BufReader};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use ut_core::error::{ConfigError, WgetError};
 
@@ -474,8 +474,11 @@ impl WgetrcParser {
             "warc_file" | "warc-file" => {
                 config.warc.filename = Some(value.to_string());
             }
-            "warc_maxsize" | "warc-maxsize" => {
+            "warc_maxsize" | "warc-maxsize" | "warcmaxsize" => {
                 config.warc.max_size = parse_warc_maxsize(value);
+            }
+            "warc_tempdir" | "warc-tempdir" | "warctempdir" => {
+                config.warc.tempdir = Some(PathBuf::from(value));
             }
             "prefer_family" | "prefer-family" => {
                 config.prefer_family = parse_address_family(value)?;
@@ -1010,8 +1013,8 @@ fn normalize_wgetrc_key(key: &str) -> String {
         "warcfile" => "warc-file".to_string(),
         "warcheader" => "warc-header".to_string(),
         "warckeeplog" => "warc-keep-log".to_string(),
-        "warcmaxsize" => "warc-maxsize".to_string(),
-        "warctempdir" => "warc-temp-dir".to_string(),
+        "warcmaxsize" => "warc-max-size".to_string(),
+        "warctempdir" => "warc-tempdir".to_string(),
         _ => key.to_string(),
     }
 }

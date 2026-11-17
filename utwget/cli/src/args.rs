@@ -600,7 +600,7 @@ pub struct Args {
     pub warc_file: Option<String>,
 
     /// Maximum size of WARC files (e.g. 100K, 2.5G, inf).
-    #[arg(long = "warc-maxsize")]
+    #[arg(long = "warc-max-size")]
     pub warc_maxsize: Option<String>,
 
     /// Write CDX index files for WARC.
@@ -636,7 +636,7 @@ pub struct Args {
     pub no_warc_keep_log: bool,
 
     /// Location for temporary files created by WARC writer.
-    #[arg(long = "warc-temp-dir")]
+    #[arg(long = "warc-tempdir")]
     pub warc_temp_dir: Option<PathBuf>,
 
     /// Number of concurrent downloads (utwget extension).
