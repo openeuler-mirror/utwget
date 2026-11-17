@@ -96,6 +96,11 @@ pub enum WgetError {
     #[error("quota exceeded: downloaded {downloaded}, limit {quota}")]
     QuotaExceeded { downloaded: u64, quota: u64 },
 
+    /// Response body was truncated: the server closed the connection before
+    /// all bytes promised by Content-Length were delivered.
+    #[error("response body truncated: got {received} of {expected} bytes")]
+    BodyTruncated { received: u64, expected: u64 },
+
     /// Maximum retry count exceeded.
     #[error("retry limit exceeded ({tries} tries)")]
     RetryLimitExceeded { tries: u32 },
@@ -243,6 +248,7 @@ impl WgetError {
                 | WgetError::ConnectionTimeout(_)
                 | WgetError::SocketError(_)
                 | WgetError::Http { status: 500..=599, .. }
+                | WgetError::BodyTruncated { .. }
                 | WgetError::TooManyRedirects { .. }
         )
     }

@@ -869,24 +869,31 @@ impl Retriever {
             let _ = writer.flush();
             // On success, try to return the connection to the pool for Keep-Alive.
             // On error, drop the connection (do not reuse potentially-broken connections).
-            if let Ok(n) = stream_result {
-                body_bytes_read = n;
-                if self.pending_keep_alive {
-                    if let Some((host, port)) = self.pending_return_info.take() {
-                        if let BodySource::Tls(mut t) = source {
-                            if let Some(conn) = t.take_inner() {
-                                debug!("returning TLS connection to pool for {}:{}", host, port);
-                                self.connection_pool.put_tls(&host, port, conn);
+            match stream_result {
+                Ok(result) => {
+                    body_bytes_read = result.bytes;
+                    // Only reuse the connection if the body was fully drained
+                    // (Content-Length complete or chunked terminator). EOF-delimited
+                    // or truncated bodies mean the server closed the connection;
+                    // attempting to reuse it would yield stale bytes or immediate EOF.
+                    if self.pending_keep_alive && result.connection_reusable {
+                        if let Some((host, port)) = self.pending_return_info.take() {
+                            if let BodySource::Tls(mut t) = source {
+                                if let Some(conn) = t.take_inner() {
+                                    debug!("returning TLS connection to pool for {}:{}", host, port);
+                                    self.connection_pool.put_tls(&host, port, conn);
+                                }
                             }
                         }
                     }
                 }
-            } else {
-                // Body read failed: connection may be in an inconsistent state.
-                // Discard it (do not return to pool) and propagate the error.
-                self.pending_return_info = None;
-                self.pending_keep_alive = false;
-                return Err(stream_result.unwrap_err());
+                Err(err) => {
+                    // Body read failed: connection may be in an inconsistent state.
+                    // Discard it (do not return to pool) and propagate the error.
+                    self.pending_return_info = None;
+                    self.pending_keep_alive = false;
+                    return Err(err);
+                }
             }
         }
         // Note: file (wrapped in BufWriter, possibly in a decompressor) was
@@ -1885,6 +1892,17 @@ fn is_private_ip(addr: &IpAddr) -> bool {
     }
 }
 
+/// Result of streaming a response body to disk.
+struct BodyReadResult {
+    /// Number of bytes written (after de-chunking / decompression where applicable).
+    bytes: u64,
+    /// Whether the connection was fully drained and is safe to reuse.
+    ///
+    /// This is `false` for close-delimited bodies (EOF terminated), where the
+    /// server has already closed the connection, and for truncated bodies.
+    connection_reusable: bool,
+}
+
 fn stream_response_body<R: Read, W: Write>(
     reader: &mut R,
     writer: &mut W,
@@ -1892,7 +1910,7 @@ fn stream_response_body<R: Read, W: Write>(
     progress: &mut dyn ProgressDisplay,
     resume_from: u64,
     ignore_length: bool,
-) -> Result<u64, RetrieveError> {
+) -> Result<BodyReadResult, RetrieveError> {
     if response.is_chunked() {
         let mut received = 0u64;
         let mut chunked = ut_http::chunked::ChunkedReader::new(reader);
@@ -1904,7 +1922,12 @@ fn stream_response_body<R: Read, W: Write>(
             received += chunk.len() as u64;
             progress.update(resume_from + received, Duration::ZERO);
         }
-        Ok(received)
+        // Chunked bodies are terminated by a 0-length chunk (and optional
+        // trailers), so the connection is fully drained and reusable.
+        Ok(BodyReadResult {
+            bytes: received,
+            connection_reusable: true,
+        })
     } else if !ignore_length {
         if let Some(len) = response.content_length() {
         let mut received = 0u64;
@@ -1915,14 +1938,23 @@ fn stream_response_body<R: Read, W: Write>(
                 .read(&mut tmp[..want])
                 .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("body read error: {}", e))))?;
             if n == 0 {
-                debug!("response body truncated: got {} of {} bytes", received, len);
-                break;
+                // Truncated body: the server closed the connection before
+                // delivering all promised bytes. Return an error so the caller
+                // discards the connection (never returns it to the pool) and
+                // may retry with a Range request, matching wget's behavior.
+                return Err(RetrieveError::Protocol(WgetError::BodyTruncated {
+                    received,
+                    expected: len,
+                }));
             }
             writer.write_all(&tmp[..n]).map_err(RetrieveError::Io)?;
             received += n as u64;
             progress.update(resume_from + received, Duration::ZERO);
         }
-        Ok(received)
+        Ok(BodyReadResult {
+            bytes: received,
+            connection_reusable: true,
+        })
         } else {
             read_until_eof(reader, writer, progress, resume_from)
         }
@@ -1932,12 +1964,15 @@ fn stream_response_body<R: Read, W: Write>(
 }
 
 /// Read the response body until EOF, writing each chunk to `writer`.
+///
+/// The body is terminated by the connection closing (close-delimited body),
+/// so the connection can never be reused afterwards.
 fn read_until_eof<R: Read, W: Write>(
     reader: &mut R,
     writer: &mut W,
     progress: &mut dyn ProgressDisplay,
     resume_from: u64,
-) -> Result<u64, RetrieveError> {
+) -> Result<BodyReadResult, RetrieveError> {
     let mut received = 0u64;
     let mut tmp = [0u8; IO_BUFFER_SIZE];
     loop {
@@ -1951,7 +1986,11 @@ fn read_until_eof<R: Read, W: Write>(
         received += n as u64;
         progress.update(resume_from + received, Duration::ZERO);
     }
-    Ok(received)
+    Ok(BodyReadResult {
+        bytes: received,
+        // EOF-terminated bodies mean the server closed the connection.
+        connection_reusable: false,
+    })
 }
 
 /// Reads only the HTTP response head (status line + headers), returning any
