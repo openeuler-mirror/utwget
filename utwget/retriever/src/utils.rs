@@ -314,7 +314,7 @@ pub(crate) fn parse_content_disposition(header: &str) -> Option<String> {
     let header_lower = header.to_lowercase();
 
     if let Some(pos) = header_lower.find("filename*") {
-        let rest = &header[pos + 9..];
+        let rest = &header_lower[pos + 9..];
         let rest = rest.trim_start_matches(|c: char| c.is_whitespace() || c == '=');
         if let Some(encoded) = parse_rfc5987_value(rest) {
             return Some(encoded);
@@ -322,7 +322,7 @@ pub(crate) fn parse_content_disposition(header: &str) -> Option<String> {
     }
 
     if let Some(pos) = header_lower.find("filename") {
-        let rest = &header[pos + 8..];
+        let rest = &header_lower[pos + 8..];
         if rest.starts_with('*') {
             return None;
         }
