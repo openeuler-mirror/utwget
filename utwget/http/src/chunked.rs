@@ -32,6 +32,10 @@ use std::io::{self, Read, Write};
 /// Maximum allowed chunk size (1 GB) to prevent OOM from malicious servers.
 const MAX_CHUNK_SIZE: usize = 1024 * 1024 * 1024;
 
+/// Maximum length of a chunk-size line (including extensions). Guards against
+/// a malicious server sending an endless line with no CRLF to exhaust memory.
+const MAX_CHUNK_LINE_LEN: usize = 8 * 1024;
+
 /// Internal state machine for chunk parsing.
 enum ChunkState {
     /// Waiting to read the next chunk size line.
@@ -136,6 +140,16 @@ impl<'a, T: Read> ChunkedReader<'a, T> {
                 let line: Vec<u8> = self.buffer[..pos].to_vec();
                 self.buffer.drain(..pos + 2);
                 return Ok(line);
+            }
+
+            // No CRLF found yet. Refuse to buffer an arbitrarily long line
+            // (a malicious server could send an endless chunk-size line to
+            // exhaust memory).
+            if self.buffer.len() > MAX_CHUNK_LINE_LEN {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "chunk size line too long",
+                ));
             }
 
             let mut tmp = [0u8; 64 * 1024];
@@ -299,3 +313,32 @@ impl<'a, T: Read> Iterator for ChunkedReader<'a, T> {
     }
 }
 
+
+#[cfg(test)]
+mod chunked_tests {
+    use super::ChunkedReader;
+    use std::io::Cursor;
+
+    #[test]
+    fn reads_simple_chunked_body() {
+        let data = b"5\r\nhello\r\n0\r\n\r\n";
+        let mut cursor = Cursor::new(&data[..]);
+        let mut reader = ChunkedReader::new(&mut cursor);
+        let mut out = Vec::new();
+        let n = reader.read_to_end(&mut out).unwrap();
+        assert_eq!(n, 5);
+        assert_eq!(out, b"hello");
+    }
+
+    #[test]
+    fn rejects_overlong_chunk_size_line() {
+        // A chunk-size line with no terminating CRLF that exceeds the cap
+        // must error instead of buffering forever (memory-exhaustion DoS).
+        let data = vec![b'A'; 16 * 1024];
+        let mut cursor = Cursor::new(data);
+        let mut reader = ChunkedReader::new(&mut cursor);
+        let err = reader.read_next_chunk().unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+        assert!(err.to_string().contains("too long"), "unexpected error: {}", err);
+    }
+}
