@@ -709,7 +709,16 @@ impl FtpsClient {
         // Send REST if resuming
         if let Some(pos) = resume_pos {
             self.send_cmd(&format!("REST {}", pos))?;
-            let _ = self.read_response();
+            let resp = self.read_response()?;
+            // RFC 959: REST is acknowledged with 350 (Ready for requested action).
+            // Some servers reply 2xx instead; anything else means the server
+            // does not support restart, so the transfer cannot resume.
+            if !resp.is_positive_preliminary && !resp.is_positive_completion {
+                return Err(FtpError::CommandFailed {
+                    code: resp.code,
+                    message: format!("REST {} failed: {}", pos, resp.text),
+                });
+            }
         }
 
         // Send RETR command
