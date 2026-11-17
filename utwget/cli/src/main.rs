@@ -325,6 +325,11 @@ fn main() -> ExitCode {
 fn load_wgetrc_paths(args: &Args) -> Vec<std::path::PathBuf> {
     let mut paths = Vec::new();
 
+    // --no-config: skip all configuration files (matches GNU wget behavior)
+    if args.no_config {
+        return paths;
+    }
+
     paths.push(std::path::PathBuf::from("/etc/wgetrc"));
 
     if let Some(home) = std::env::var_os("HOME") {
