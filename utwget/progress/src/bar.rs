@@ -311,21 +311,8 @@ impl ProgressDisplay for BarProgress {
             format!("{:.0}B/s", speed)
         };
 
-                // Format timestamp like wget: YYYY-MM-DD HH:MM:SS
-                let now = std::time::SystemTime::now();
-                let timestamp = now.duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| {
-                        let secs = d.as_secs();
-                        let days = secs / 86400;
-                        let time_of_day = secs % 86400;
-                        let hours = time_of_day / 3600;
-                        let minutes = (time_of_day % 3600) / 60;
-                        let seconds = time_of_day % 60;
-                        // Calculate year, month, day from days since epoch
-                        let (year, month, day) = days_to_ymd(days);
-                        format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", year, month, day, hours, minutes, seconds)
-                    })
-                    .unwrap_or_default();
+                // Format timestamp like wget: YYYY-MM-DD HH:MM:SS in local time
+                let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
                 eprintln!("{}", ut_core::i18n::translate_with_args("utwget.status_saved", &[
                     ("url", self.filename.clone()),
@@ -337,19 +324,8 @@ impl ProgressDisplay for BarProgress {
                 ]));
             }
             FinishStatus::Error(ref err) => {
-                let now = std::time::SystemTime::now();
-                let timestamp = now.duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| {
-                        let secs = d.as_secs();
-                        let days = secs / 86400;
-                        let time_of_day = secs % 86400;
-                        let hours = time_of_day / 3600;
-                        let minutes = (time_of_day % 3600) / 60;
-                        let seconds = time_of_day % 60;
-                        let (year, month, day) = days_to_ymd(days);
-                        format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", year, month, day, hours, minutes, seconds)
-                    })
-                    .unwrap_or_default();
+                // Format timestamp like wget: YYYY-MM-DD HH:MM:SS in local time
+                let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
                 eprintln!();
                 eprintln!("{} {}", timestamp, err);
             }
@@ -408,35 +384,3 @@ impl ProgressDisplay for BarProgress {
     }
 }
 
-fn is_leap_year(year: u32) -> bool {
-    (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
-}
-
-/// Converts days since Unix epoch to (year, month, day).
-fn days_to_ymd(days: u64) -> (u32, u32, u32) {
-    let mut y = 1970u32;
-    let mut remaining = days;
-    loop {
-        let days_in_year = if is_leap_year(y) { 366 } else { 365 };
-        if remaining < days_in_year as u64 {
-            break;
-        }
-        remaining -= days_in_year as u64;
-        y += 1;
-    }
-    let month_days = [
-        (31, false), (28, is_leap_year(y)), (31, false),
-        (30, false), (31, false), (30, false),
-        (31, false), (31, false), (30, false),
-        (31, false), (30, false), (31, false),
-    ];
-    let mut m = 1u32;
-    for (days, _) in &month_days {
-        if remaining < *days as u64 {
-            break;
-        }
-        remaining -= *days as u64;
-        m += 1;
-    }
-    (y, m, remaining as u32 + 1)
-}

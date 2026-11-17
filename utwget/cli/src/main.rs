@@ -446,6 +446,8 @@ fn print_wget_help() {
     println!();
 
     println!("{}:", t("utwget.help_http_options"));
+    println!("       --user=USER                  {}", t("utwget.help_user"));
+    println!("       --password=PASS              {}", t("utwget.help_password"));
     println!("       --http-user=USER            {}", t("utwget.help_http_user"));
     println!("       --http-password=PASS        {}", t("utwget.help_http_password"));
     println!("       --no-cache                  {}", t("utwget.help_no_cache"));
@@ -493,6 +495,11 @@ fn print_wget_help() {
     println!("       --private-key=FILE          {}", t("utwget.help_private_key"));
     println!("       --private-key-type=TYPE     {}", t("utwget.help_private_key_type"));
     println!("       --certificate-type=TYPE     {}", t("utwget.help_certificate_type"));
+    println!();
+
+    println!("{}:", t("utwget.help_hsts_options"));
+    println!("       --no-hsts                   {}", t("utwget.help_no_hsts"));
+    println!("       --hsts-file=FILE            {}", t("utwget.help_hsts_file"));
     println!();
 
     println!("{}:", t("utwget.help_ftp_options"));
