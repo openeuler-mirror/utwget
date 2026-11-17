@@ -115,33 +115,41 @@ impl WarcHeader {
     /// \r\n
     /// ```
     pub fn serialize(&self) -> Vec<u8> {
+        // WARC header values must not contain raw CR/LF, otherwise a
+        // malicious value (e.g. a target URI carrying a raw CR from a
+        // crafted command line / wgetrc) could inject extra header lines
+        // and forge records. Strip CR/LF from every interpolated value.
+        let sanitize = |v: &str| -> String {
+            v.chars().filter(|&c| c != '\r' && c != '\n').collect()
+        };
+
         let mut lines: Vec<String> = Vec::new();
 
         lines.push("WARC/1.1".to_string());
         lines.push(format!("WARC-Type: {}", self.record_type));
-        lines.push(format!("WARC-Date: {}", self.date));
-        lines.push(format!("WARC-Record-ID: {}", self.record_id));
-        lines.push(format!("Content-Type: {}", self.content_type));
+        lines.push(format!("WARC-Date: {}", sanitize(&self.date)));
+        lines.push(format!("WARC-Record-ID: {}", sanitize(&self.record_id)));
+        lines.push(format!("Content-Type: {}", sanitize(&self.content_type)));
         lines.push(format!("Content-Length: {}", self.content_length));
 
         if !self.target_uri.is_empty() {
-            lines.push(format!("WARC-Target-URI: {}", self.target_uri));
+            lines.push(format!("WARC-Target-URI: {}", sanitize(&self.target_uri)));
         }
 
         for ct in &self.concurrent_to {
-            lines.push(format!("WARC-Concurrent-To: {}", ct));
+            lines.push(format!("WARC-Concurrent-To: {}", sanitize(ct)));
         }
 
         if let Some(ref digest) = self.payload_digest {
-            lines.push(format!("WARC-Payload-Digest: {}", digest));
+            lines.push(format!("WARC-Payload-Digest: {}", sanitize(digest)));
         }
 
         if let Some(ref t) = self.truncated {
-            lines.push(format!("WARC-Truncated: {}", t));
+            lines.push(format!("WARC-Truncated: {}", sanitize(t)));
         }
 
         if let Some(ref w) = self.wagon {
-            lines.push(format!("WARC-Wagon: {}", w));
+            lines.push(format!("WARC-Wagon: {}", sanitize(w)));
         }
 
         let header_block: String = lines.into_iter().collect::<Vec<_>>().join("\r\n");

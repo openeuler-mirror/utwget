@@ -458,3 +458,32 @@ fn test_warc_header_serialize_complete() {
     assert!(text.contains("WARC-Wagon: test-wagon\r\n"));
     assert!(text.ends_with("\r\n\r\n"));
 }
+
+#[test]
+fn test_warc_header_strips_crlf_injection() {
+    // A target URI carrying a raw CR/LF (e.g. from a crafted command line
+    // or wgetrc) must not inject extra WARC header lines.
+    let header = format::WarcHeader {
+        record_type: format::WarcRecordType::Response,
+        record_id: "<urn:uuid:test>".to_string(),
+        date: "2025-06-17T00:00:00Z".to_string(),
+        content_length: 0,
+        concurrent_to: vec![],
+        content_type: "text/html".to_string(),
+        target_uri: "http://evil/\r\nWARC-Injected: forged".to_string(),
+        gzip_compressed: false,
+        truncated: Some("length\r\nWARC-Also: bad".to_string()),
+        wagon: None,
+        payload_digest: None,
+    };
+
+    let bytes = header.serialize();
+    let text = String::from_utf8(bytes).unwrap();
+
+    // The injected text must not start its own header line (i.e. it must not
+    // be preceded by CRLF). It may appear collapsed inside a value.
+    assert!(!text.contains("\r\nWARC-Injected: forged"), "CRLF injected a new WARC header line");
+    assert!(!text.contains("\r\nWARC-Also: bad"), "CRLF injected via truncated field");
+    // The target URI value is collapsed to a single line.
+    assert!(text.contains("WARC-Target-URI: http://evil/WARC-Injected: forged\r\n"));
+}
