@@ -780,6 +780,68 @@ impl FtpsClient {
         log::debug!("FTPS RETR {}: {} bytes", filename, total_bytes);
         Ok(total_bytes)
     }
+
+    /// List the names of files in a directory via `NLST`.
+    ///
+    /// Sends the `NLST` command over a (possibly encrypted) data connection
+    /// and returns the list of entry names (one per line). When `directory`
+    /// is `None`, the current directory is listed.
+    pub fn nlst(&mut self, directory: Option<&str>) -> Result<Vec<String>, FtpError> {
+        if let Some(dir) = directory {
+            validate_ftp_input(dir)?;
+        }
+        let (data_host, data_port) = self.enter_passive()?;
+        let cmd = match directory {
+            Some(dir) => format!("NLST {}", dir),
+            None => "NLST".to_string(),
+        };
+        self.send_cmd(&cmd)?;
+        let transfer_resp = self.read_response()?;
+        if !transfer_resp.is_positive_preliminary {
+            return Err(FtpError::DataConnectFailed(format!(
+                "expected 1xx for NLST, got {}: {}", transfer_resp.code, transfer_resp.text
+            )));
+        }
+
+        let mut data_tcp = TcpStream::connect(format!("{}:{}", data_host, data_port))
+            .map_err(|e| FtpError::DataConnectFailed(e.to_string()))?;
+
+        let mut data = Vec::new();
+        const MAX_NLST_SIZE: usize = 64 * 1024 * 1024; // 64MB limit
+        if self.config.require_data_tls {
+            let host = self.host.as_deref().unwrap_or("unknown");
+            let mut data_tls = self.wrap_tls(data_tcp, host)?;
+            let mut buf = [0u8; 64 * 1024];
+            loop {
+                let n = data_tls.read(&mut buf).map_err(|e| FtpError::TransferFailed(e.to_string()))?;
+                if n == 0 { break; }
+                data.extend_from_slice(&buf[..n]);
+                if data.len() > MAX_NLST_SIZE {
+                    return Err(FtpError::TransferFailed("NLST response too large (exceeds 64MB)".into()));
+                }
+            }
+        } else {
+            let mut buf = [0u8; 64 * 1024];
+            loop {
+                let n = std::io::Read::read(&mut data_tcp, &mut buf).map_err(|e| FtpError::TransferFailed(e.to_string()))?;
+                if n == 0 { break; }
+                data.extend_from_slice(&buf[..n]);
+                if data.len() > MAX_NLST_SIZE {
+                    return Err(FtpError::TransferFailed("NLST response too large (exceeds 64MB)".into()));
+                }
+            }
+        }
+
+        let done_resp = self.read_response()?;
+        if !done_resp.is_positive_completion {
+            return Err(FtpError::TransferFailed(format!(
+                "transfer not confirmed: {} {}", done_resp.code, done_resp.text
+            )));
+        }
+
+        let text = String::from_utf8_lossy(&data);
+        Ok(text.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
+    }
 }
 
 impl Default for FtpsClient {

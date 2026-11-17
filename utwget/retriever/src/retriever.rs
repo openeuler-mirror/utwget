@@ -410,7 +410,14 @@ impl Retriever {
                 self.retrieve_http(&effective_url, &mut opts, state, &output_path)
             }
             Scheme::Ftp | Scheme::Ftps => {
-                self.retrieve_ftp(&effective_url, &mut opts, state, &output_path)
+                // FTP glob expansion: when globbing is enabled and the URL's
+                // filename contains wildcard characters, list the directory and
+                // download each matching file individually.
+                if self.config.ftp.glob && ftp_url_has_glob(&effective_url) {
+                    self.retrieve_ftp_glob(&effective_url, referer)
+                } else {
+                    self.retrieve_ftp(&effective_url, &mut opts, state, &output_path)
+                }
             }
         }
     }
@@ -1212,6 +1219,115 @@ impl Retriever {
         Ok(RetrieveOutcome::Success(result))
     }
 
+    /// Download every file matching an FTP glob pattern.
+    ///
+    /// Connects (optionally via FTPS), CWDs to the directory portion of the
+    /// URL, lists it, and downloads each entry whose name matches the glob
+    /// pattern in the URL's filename component. `--no-glob` disables this.
+    fn retrieve_ftp_glob(
+        &mut self,
+        url: &ParsedUrl,
+        referer: Option<&str>,
+    ) -> Result<RetrieveOutcome, RetrieveError> {
+        let user = url.user.clone()
+            .or(self.config.ftp.user.clone())
+            .unwrap_or_else(|| "anonymous".to_string());
+        let password = url.password.clone()
+            .or(self.config.ftp.password.clone())
+            .unwrap_or_else(|| "wget-rs@".to_string());
+
+        let use_ftps = url.scheme == Scheme::Ftps || self.config.ftp.ftps_implicit;
+        let port = if url.scheme == Scheme::Ftps && url.port == 21 {
+            if self.config.ftp.ftps_implicit { 990 } else { 21 }
+        } else {
+            url.port
+        };
+
+        // Directory components (everything except the last segment, which is
+        // the glob pattern). CWD into each in turn.
+        let path_segments: Vec<&str> = url.path.trim_start_matches('/')
+            .split('/').filter(|s| !s.is_empty()).collect();
+        let glob_pattern = path_segments.last().map(|s| *s).unwrap_or("*");
+
+        // Collect matching filenames via a directory listing.
+        let matches: Vec<String> = if use_ftps {
+            let mut ftps = ut_ftp::FtpsClient::new();
+            if self.config.ftp.ftps_implicit {
+                ftps.connect_implicit(&url.host, port)
+                    .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("FTPS connect error: {}", e))))?;
+            } else {
+                ftps.connect_explicit(&url.host, port)
+                    .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("FTPS connect error: {}", e))))?;
+            }
+            ftps.login(&user, &password)
+                .map_err(|_| RetrieveError::Protocol(WgetError::FtpLoginRefused))?;
+            ftps.type_binary()
+                .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("FTP type error: {}", e))))?;
+            for dir in &path_segments[..path_segments.len().saturating_sub(1)] {
+                let _ = ftps.cwd(dir);
+            }
+            let entries = ftps.nlst(None)
+                .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("FTP NLST error: {}", e))))?;
+            let _ = ftps.quit();
+            filter_glob_entries(&entries, glob_pattern, self.config.ignore_case)
+        } else {
+            let mut ftp = ut_ftp::FtpClient::new().with_passive(self.config.ftp.passive);
+            ftp.connect(&url.host, url.port)
+                .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("FTP connect error: {}", e))))?;
+            ftp.login(&user, &password)
+                .map_err(|_| RetrieveError::Protocol(WgetError::FtpLoginRefused))?;
+            ftp.type_binary()
+                .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("FTP type error: {}", e))))?;
+            for dir in &path_segments[..path_segments.len().saturating_sub(1)] {
+                let _ = ftp.cwd(dir);
+            }
+            let entries = ftp.nlst(None)
+                .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("FTP NLST error: {}", e))))?;
+            let _ = ftp.quit();
+            filter_glob_entries(&entries, glob_pattern, self.config.ignore_case)
+        };
+
+        if matches.is_empty() {
+            warn!("no files matched FTP glob pattern '{}'", glob_pattern);
+            return Ok(RetrieveOutcome::SpiderOnly);
+        }
+
+        info!("FTP glob '{}' matched {} file(s)", glob_pattern, matches.len());
+
+        // Download each matched file by re-running the single-file retrieval
+        // path with a concrete URL (no glob characters).
+        let dir_part = if path_segments.len() > 1 {
+            format!("/{}", path_segments[..path_segments.len() - 1].join("/"))
+        } else {
+            String::new()
+        };
+        let mut worst: Option<RetrieveError> = None;
+        let mut last_outcome = RetrieveOutcome::SpiderOnly;
+        for name in matches {
+            let concrete = format!("{}://{}:{}{}{}",
+                url.scheme.as_str(), url.host, url.port, dir_part, name);
+            let parsed = match ParsedUrl::parse(&concrete) {
+                Ok(p) => p,
+                Err(e) => {
+                    warn!("skipping malformed expanded FTP URL '{}': {}", concrete, e);
+                    continue;
+                }
+            };
+            let mut state = ProtocolState::default();
+            match self.retrieve_inner(&parsed, &mut state, referer) {
+                Ok(o) => last_outcome = o,
+                Err(e) => {
+                    warn!("failed to download '{}': {}", name, e);
+                    worst = worst.or(Some(e));
+                }
+            }
+        }
+        match worst {
+            Some(e) => Err(e),
+            None => Ok(last_outcome),
+        }
+    }
+
     /// Create a TCP connection with optional timeout, bind address, and address family restrictions.
     ///
     /// Resolves the hostname (with optional DNS timeout), filters addresses by
@@ -1720,6 +1836,29 @@ type ReturnInfo = (String, u16); // (host, port)
 /// significantly improving throughput for large file downloads.
 /// 64KB is a good balance between memory usage and syscall reduction.
 const IO_BUFFER_SIZE: usize = 64 * 1024;
+
+/// Returns true if the URL's filename component contains glob wildcard
+/// characters (`*`, `?`, `[`), indicating FTP glob expansion is needed.
+fn ftp_url_has_glob(url: &ParsedUrl) -> bool {
+    url.file.contains('*') || url.file.contains('?') || url.file.contains('[')
+}
+
+/// Filter a list of directory entry names against a glob pattern, honoring
+/// `--ignore-case`. Sorted for deterministic download order.
+fn filter_glob_entries(entries: &[String], pattern: &str, ignore_case: bool) -> Vec<String> {
+    let mut matched: Vec<String> = entries.iter()
+        .filter(|name| {
+            if ignore_case {
+                ut_core::regex_filter::glob_match(&name.to_ascii_lowercase(), &pattern.to_ascii_lowercase())
+            } else {
+                ut_core::regex_filter::glob_match(name, pattern)
+            }
+        })
+        .cloned()
+        .collect();
+    matched.sort();
+    matched
+}
 
 /// Returns true if the IP address is in a private (RFC 1918) or link-local
 /// range, used for SSRF awareness on redirects.
