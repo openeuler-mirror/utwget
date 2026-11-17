@@ -249,6 +249,27 @@ impl ParsedUrl {
         encode_request_target(&result)
     }
 
+    /// Build the `Host` header value (and CONNECT target) for this URL.
+    ///
+    /// - IPv6 address literals are re-wrapped in `[...]` (the parser stores
+    ///   them without brackets so they can be fed directly to the resolver).
+    /// - The port is appended when it differs from the scheme default.
+    /// - CR/LF and other ASCII control characters are stripped as
+    ///   defense-in-depth against request-line / header splitting.
+    pub fn host_header(&self) -> String {
+        let clean: String = self.host.chars()
+            .filter(|&c| c != '\r' && c != '\n' && !c.is_ascii_control())
+            .collect();
+        let is_ipv6 = clean.contains(':');
+        let default_port = self.scheme.default_port();
+        if self.port == default_port {
+            if is_ipv6 { format!("[{}]", clean) } else { clean }
+        } else if is_ipv6 {
+            format!("[{}]:{}", clean, self.port)
+        } else {
+            format!("{}:{}", clean, self.port)
+        }
+    }
 
     /// Convert URL to a local filename.
     ///
@@ -710,5 +731,40 @@ mod request_target_tests {
     #[test]
     fn control_chars_are_encoded() {
         assert_eq!(encode_request_target("/a\tb\x00c"), "/a%09b%00c");
+    }
+}
+
+#[cfg(test)]
+mod host_header_tests {
+    use super::ParsedUrl;
+
+    #[test]
+    fn plain_host_default_port() {
+        let url = ParsedUrl::parse("http://example.com/path").unwrap();
+        assert_eq!(url.host_header(), "example.com");
+    }
+
+    #[test]
+    fn plain_host_nondefault_port() {
+        let url = ParsedUrl::parse("http://example.com:8080/path").unwrap();
+        assert_eq!(url.host_header(), "example.com:8080");
+    }
+
+    #[test]
+    fn ipv6_default_port_is_bracketed() {
+        let url = ParsedUrl::parse("http://[::1]/path").unwrap();
+        assert_eq!(url.host_header(), "[::1]");
+    }
+
+    #[test]
+    fn ipv6_nondefault_port_is_bracketed() {
+        let url = ParsedUrl::parse("http://[::1]:8080/path").unwrap();
+        assert_eq!(url.host_header(), "[::1]:8080");
+    }
+
+    #[test]
+    fn ipv6_https_default_port() {
+        let url = ParsedUrl::parse("https://[2001:db8::1]/path").unwrap();
+        assert_eq!(url.host_header(), "[2001:db8::1]");
     }
 }
