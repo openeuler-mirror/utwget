@@ -334,12 +334,14 @@ impl App {
                         eprintln!("{}", crate::i18n::translate_with_args("utwget.status_redirected_to", &[("url", new_url.clone())]));
                     }
                     let mut redirect_url = new_url;
-                    let mut redirect_count = 0u32;
+                    // The first redirect already occurred in the initial request,
+                    // so start counting from 1.
+                    let mut redirect_count = 1u32;
                     let max_redirects = self.config.max_redirect;
                     loop {
                         // Check redirect limit BEFORE incrementing count
                         // This ensures max_redirects=0 prevents any redirects
-                        if max_redirects > 0 && redirect_count >= max_redirects {
+                        if redirect_count >= max_redirects {
                             if self.config.verbose >= 1 {
                                 eprintln!("{}", crate::i18n::translate("utwget.error_too_many_redirects"));
                             }
