@@ -90,7 +90,18 @@ impl RobotParser {
 
             match directive_lc.as_str() {
                 "user-agent" => {
-                    // Consecutive User-agent lines should be merged into one group
+                    // Consecutive User-agent lines are merged into one group.
+                    // A User-agent line after any rule directive (Disallow,
+                    // Allow, etc.) starts a NEW group (RFC 9309).
+                    if current_group.is_some()
+                        && (current_group.as_ref().unwrap().rules.len() > 0
+                            || current_group.as_ref().unwrap().crawl_delay.is_some()
+                            || current_group.as_ref().unwrap().sitemaps.len() > 0)
+                    {
+                        if let Some(g) = current_group.take() {
+                            groups.push(g);
+                        }
+                    }
                     match &mut current_group {
                         Some(ref mut group) => {
                             group.user_agents.push(value.to_string());
