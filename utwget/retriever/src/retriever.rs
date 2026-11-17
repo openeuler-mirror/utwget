@@ -579,7 +579,9 @@ impl Retriever {
 
         // Spider mode: if response is successful, report file exists and return
         // without downloading the body (matches wget --spider behavior).
-        if self.config.recursive.spider {
+        // Redirects are handled in the redirect block below so the spider does
+        // follow the chain (wget --spider follows redirects too).
+        if self.config.recursive.spider && !response.is_redirect() {
             if response.status_code >= 200 && response.status_code < 300 {
                 eprintln!("存在远程文件。");
                 return Ok(RetrieveOutcome::SpiderOnly);
