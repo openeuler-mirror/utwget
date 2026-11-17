@@ -46,9 +46,9 @@ const MAX_IDLE_AGE: Duration = Duration::from_secs(120);
 /// # Example
 ///
 /// ```ignore
-/// use utwget_net::connection::ConnectionManager;
-/// use utwget_net::dns::StdResolver;
-/// use utwget_net::tls::RustlsConnector;
+/// use ut_net::connection::ConnectionManager;
+/// use ut_net::dns::StdResolver;
+/// use ut_net::tls::RustlsConnector;
 ///
 /// let resolver = StdResolver::new();
 /// let tls = RustlsConnector::new();

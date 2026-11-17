@@ -15,7 +15,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use utwget_net::tls::{TlsConnector, TlsConfig, RustlsConnector};
+//! use ut_net::tls::{TlsConnector, TlsConfig, RustlsConnector};
 //!
 //! let connector = RustlsConnector::new();
 //! let config = TlsConfig::default();

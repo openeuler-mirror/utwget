@@ -73,11 +73,13 @@ fn dns_cache() -> &'static std::sync::Mutex<std::collections::HashMap<(String, u
 /// # Example
 ///
 /// ```
+/// use std::sync::Arc;
 /// use ut_retriever::Retriever;
 /// use ut_core::Config;
 ///
 /// let config = Arc::new(Config::default());
-/// let retriever = Retriever::new(config, progress);
+/// let progress = ut_progress::create_progress_display(ut_core::ProgressStyle::Silent, true);
+/// let mut retriever = Retriever::new(config, progress);
 /// let result = retriever.retrieve("https://example.com/file.txt");
 /// ```
 pub struct Retriever {

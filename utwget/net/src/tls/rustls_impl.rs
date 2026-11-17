@@ -53,7 +53,7 @@ fn config_cache() -> &'static Mutex<std::collections::HashMap<String, Arc<Client
 /// # Example
 ///
 /// ```ignore
-/// use utwget_net::tls::{TlsConnector, TlsConfig, RustlsConnector};
+/// use ut_net::tls::{TlsConnector, TlsConfig, RustlsConnector};
 ///
 /// let connector = RustlsConnector::new();
 /// let config = TlsConfig::default();
@@ -67,7 +67,7 @@ impl RustlsConnector {
     /// # Example
     ///
     /// ```
-    /// use utwget_net::tls::rustls_impl::RustlsConnector;
+    /// use ut_net::tls::rustls_impl::RustlsConnector;
     ///
     /// let connector = RustlsConnector::new();
     /// ```

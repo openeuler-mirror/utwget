@@ -7,7 +7,7 @@
 //! # Example
 //!
 //! ```no_run
-//! use utwget_ftp::client::FtpClient;
+//! use ut_ftp::client::FtpClient;
 //!
 //! let mut client = FtpClient::new();
 //! client.connect("ftp.example.com", 21).unwrap();

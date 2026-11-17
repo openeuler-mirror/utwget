@@ -31,8 +31,8 @@ use super::{AuthChallenge, AuthError, AuthScheme, Authenticator};
 /// # Example
 ///
 /// ```ignore
-/// use utwget_http::auth::ntlm::NtlmAuthenticator;
-/// use utwget_http::auth::{Authenticator, AuthChallenge, AuthScheme};
+/// use ut_http::auth::ntlm::NtlmAuthenticator;
+/// use ut_http::auth::{Authenticator, AuthChallenge, AuthScheme};
 ///
 /// // Create NTLMv2 authenticator (default, more secure)
 /// let mut auth = NtlmAuthenticator::new();

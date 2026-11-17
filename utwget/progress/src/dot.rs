@@ -68,7 +68,7 @@ impl DotProgress {
     /// # Example
     ///
     /// ```
-    /// use utwget_progress::DotProgress;
+    /// use ut_progress::DotProgress;
     /// let progress = DotProgress::new(1024, 50, 10);
     /// ```
     pub fn new(bytes_per_dot: usize, dots_per_line: usize, spacing: usize) -> Self {

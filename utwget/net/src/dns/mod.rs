@@ -10,7 +10,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use utwget_net::dns::{DnsResolver, StdResolver};
+//! use ut_net::dns::{DnsResolver, StdResolver};
 //! use ut_core::AddressFamily;
 //! use std::time::Duration;
 //!
@@ -35,7 +35,7 @@ pub mod std_resolver;
 /// # Example Implementation
 ///
 /// ```ignore
-/// use utwget_net::dns::{DnsResolver, DnsError};
+/// use ut_net::dns::{DnsResolver, DnsError};
 /// use ut_core::AddressFamily;
 /// use std::net::SocketAddr;
 /// use std::time::Duration;

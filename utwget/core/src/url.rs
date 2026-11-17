@@ -20,8 +20,9 @@ use std::path::PathBuf;
 ///
 /// ```
 /// use ut_core::url::ParsedUrl;
+/// use ut_core::types::Scheme;
 ///
-/// let url = ParsedUrl::parse("https://example.com:8080/path?query=1#frag")?;
+/// let url = ParsedUrl::parse("https://example.com:8080/path?query=1#frag").unwrap();
 /// assert_eq!(url.scheme, Scheme::Https);
 /// assert_eq!(url.host, "example.com");
 /// assert_eq!(url.port, 8080);
@@ -77,7 +78,9 @@ impl ParsedUrl {
     /// # Example
     ///
     /// ```
-    /// let url = ParsedUrl::parse("https://example.com/path")?;
+    /// use ut_core::url::ParsedUrl;
+    ///
+    /// let url = ParsedUrl::parse("https://example.com/path").unwrap();
     /// ```
     pub fn parse(input: &str) -> Result<Self> {
         let input = input.trim();
@@ -150,10 +153,12 @@ impl ParsedUrl {
     /// # Example
     ///
     /// ```
-    /// let base = ParsedUrl::parse("https://example.com/page")?;
-    /// let merged = base.merge("/other")?;
-    /// assert_eq!(merged.path, "/other");
-    /// ```
+    /// use ut_core::url::ParsedUrl;
+    ///
+/// let base = ParsedUrl::parse("https://example.com/page").unwrap();
+/// let merged = base.merge("/other").unwrap();
+/// assert_eq!(merged.path, "/other");
+/// ```
     pub fn merge(&self, relative: &str) -> Result<Self> {
         let relative = relative.trim();
 
@@ -396,6 +401,8 @@ impl fmt::Display for ParsedUrl {
 /// # Example
 ///
 /// ```
+/// use ut_core::url::encode_iri;
+///
 /// let encoded = encode_iri("https://example.com/文档");
 /// assert!(encoded.contains("%"));
 /// ```
@@ -431,6 +438,8 @@ pub fn encode_iri(url: &str) -> String {
 /// # Example
 ///
 /// ```
+/// use ut_core::url::decode_iri;
+///
 /// let decoded = decode_iri("https://example.com/%E6%96%87%E6%A1%A3");
 /// ```
 pub fn decode_iri(url: &str) -> String {

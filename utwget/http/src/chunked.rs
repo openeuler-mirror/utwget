@@ -13,7 +13,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use utwget_http::chunked::ChunkedReader;
+//! use ut_http::chunked::ChunkedReader;
 //! use std::io::Cursor;
 //!
 //! // HTTP chunked response body: "5\r\nhello\r\n0\r\n\r\n"

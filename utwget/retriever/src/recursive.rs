@@ -61,7 +61,8 @@ pub enum ExitStatus {
 /// use std::sync::Arc;
 ///
 /// let config = Arc::new(Config::default());
-/// let retriever = RecursiveRetriever::new(config, progress);
+/// let progress = ut_progress::create_progress_display(ut_core::ProgressStyle::Silent, true);
+/// let mut retriever = RecursiveRetriever::new(config, progress);
 /// let result = retriever.retrieve_tree("http://example.com/");
 /// ```
 pub struct RecursiveRetriever {

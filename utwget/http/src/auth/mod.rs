@@ -8,7 +8,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use utwget_http::auth::{AuthDispatcher, AuthChallenge, AuthScheme};
+//! use ut_http::auth::{AuthDispatcher, AuthChallenge, AuthScheme};
 //!
 //! // Create a dispatcher with all available authenticators
 //! let mut dispatcher = AuthDispatcher::new();
