@@ -115,6 +115,39 @@ impl HttpResponse {
         self.status_code == 304
     }
 
+    /// Returns whether the response is "Partial Content" (206).
+    ///
+    /// A 206 response confirms the server honored our Range request.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the status code is 206.
+    pub fn is_partial_content(&self) -> bool {
+        self.status_code == 206
+    }
+
+    /// Returns the start offset of a 206 response from Content-Range.
+    ///
+    /// Parses `Content-Range: bytes <start>-<end>/<total>` and returns
+    /// `<start>`. Returns `None` if the header is missing or malformed.
+    ///
+    /// # Returns
+    ///
+    /// The start byte offset, or `None` if not present or invalid.
+    pub fn content_range_start(&self) -> Option<u64> {
+        let value = self.headers.get(headers::CONTENT_RANGE)?;
+        // Format: bytes <start>-<end>/<total> (e.g. "bytes 10-25/100")
+        let value = value.trim();
+        let after_unit = value
+            .strip_prefix("bytes")
+            .or_else(|| value.strip_prefix("Bytes"))
+            .or_else(|| value.strip_prefix("BYTES"))?
+            .trim_start();
+        let (range, _total) = after_unit.split_once('/')?;
+        let (start, _end) = range.split_once('-')?;
+        start.trim().parse::<u64>().ok()
+    }
+
     /// Returns the Location header value for redirects.
     ///
     /// # Returns
