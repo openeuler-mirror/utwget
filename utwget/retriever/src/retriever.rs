@@ -115,6 +115,9 @@ pub struct Retriever {
     pending_return_info: Option<ReturnInfo>,
     /// Whether the current pending response allows keep-alive connection reuse.
     pending_keep_alive: bool,
+    /// URLs that were redirected from a POST/非GET request with 301/302/303,
+    /// and therefore must be fetched with GET (and without body), per RFC 9110.
+    redirect_get_method_urls: std::collections::HashSet<String>,
 }
 
 impl Retriever {
@@ -197,6 +200,7 @@ impl Retriever {
             pending_body_reader: None,
             pending_return_info: None,
             pending_keep_alive: false,
+            redirect_get_method_urls: std::collections::HashSet::new(),
         };
 
         #[cfg(feature = "warc")]
@@ -686,6 +690,23 @@ impl Retriever {
             }
             if let Some(location) = response.location() {
                 let redirect_url = url.merge(location).map_err(RetrieveError::Protocol)?;
+
+                // RFC 9110: when a POST (or any method other than GET/HEAD) is
+                // redirected with 301/302/303, the follow-up request must be a
+                // GET without a body. Record the target so build_request_options
+                // downgrades the method for the follow-up request.
+                let method_is_get = opts.method == ut_core::types::HttpMethod::Get
+                    || opts.method == ut_core::types::HttpMethod::Head;
+                if !method_is_get && (response.status_code == 301
+                    || response.status_code == 302
+                    || response.status_code == 303)
+                {
+                    debug!(
+                        "{} redirect for {}: follow-up will use GET without body",
+                        response.status_code, opts.method
+                    );
+                    self.redirect_get_method_urls.insert(redirect_url.display());
+                }
 
                 // Security: block HTTPS -> HTTP downgrade when --https-only is set
                 if self.config.http.https_only && !redirect_url.scheme.is_secure() {
@@ -2122,6 +2143,15 @@ impl Retriever {
     ) -> RequestOptions {
         let mut opts = RequestOptions::default();
         opts.method = self.config.http.method.unwrap_or(ut_core::types::HttpMethod::Get);
+        // RFC 9110: after a 301/302/303 redirect of a POST (or other unsafe
+        // method), the client must follow up with GET and no body. Such target
+        // URLs are recorded in redirect_get_method_urls when the redirect is
+        // processed, and enforced here for the follow-up request.
+        if self.redirect_get_method_urls.contains(&url.display()) {
+            opts.method = ut_core::types::HttpMethod::Get;
+            opts.post_data = None;
+            opts.body_data = None;
+        }
         opts.use_proxy = self.config.proxy.use_proxy;
         opts.auth_without_challenge = self.config.auth_without_challenge;
         opts.save_headers = self.config.http.save_headers;
