@@ -1273,8 +1273,16 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
     {
         if args.no_compression {
             config.compression = ut_core::types::CompressionMode::None;
-        } else if args.compression {
-            config.compression = ut_core::types::CompressionMode::Auto;
+        } else if let Some(ref mode) = args.compression {
+            config.compression = match mode.to_ascii_lowercase().as_str() {
+                "auto" => ut_core::types::CompressionMode::Auto,
+                "gzip" => ut_core::types::CompressionMode::Gzip,
+                "none" => ut_core::types::CompressionMode::None,
+                _ => {
+                    eprintln!("utwget: unrecognized compression type '{}'", mode);
+                    std::process::exit(2);
+                }
+            };
         }
     }
 
