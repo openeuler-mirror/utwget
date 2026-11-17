@@ -239,9 +239,16 @@ impl ParsedUrl {
             result.push_str(q);
         }
         // Note: fragment (#) is NOT included as it's client-side only
-        // and should not be sent to the server
-        result
+        // and should not be sent to the server.
+        //
+        // Percent-encode characters that must not appear raw in an HTTP
+        // request target (spaces, control chars, DEL, raw non-ASCII bytes)
+        // so they cannot break out of the request line or smuggle extra
+        // requests. Existing percent-encodings (e.g. "%20") are preserved
+        // because '%' is not in the encoded set, so this never double-encodes.
+        encode_request_target(&result)
     }
+
 
     /// Convert URL to a local filename.
     ///
@@ -655,4 +662,53 @@ fn normalize_dot_segments(path: &str) -> String {
         result.push('/');
     }
     result
+}
+
+/// Percent-encode characters that must not appear raw in an HTTP request
+/// target (RFC 9110): ASCII spaces, C0 control characters (0x00-0x1F), DEL
+/// (0x7F), and raw non-ASCII bytes (0x80-0xFF). Already-percent-encoded
+/// sequences such as `%20` are preserved because `%` is ASCII and outside the
+/// encoded set, so this never double-encodes.
+pub fn encode_request_target(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for &b in s.as_bytes() {
+        match b {
+            b' ' => out.push_str("%20"),
+            0x00..=0x1f | 0x7f | 0x80..=0xff => out.push_str(&format!("%{:02X}", b)),
+            _ => out.push(b as char),
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod request_target_tests {
+    use super::encode_request_target;
+
+    #[test]
+    fn normal_path_is_unchanged() {
+        assert_eq!(encode_request_target("/path/to/file"), "/path/to/file");
+        assert_eq!(encode_request_target("/path;params?q=1&a=b"), "/path;params?q=1&a=b");
+    }
+
+    #[test]
+    fn existing_percent_encoding_is_preserved() {
+        assert_eq!(encode_request_target("/a%20b"), "/a%20b");
+        assert_eq!(encode_request_target("/%0d%0a"), "/%0d%0a");
+    }
+
+    #[test]
+    fn raw_space_is_encoded() {
+        assert_eq!(encode_request_target("/a b"), "/a%20b");
+    }
+
+    #[test]
+    fn raw_crlf_is_encoded() {
+        assert_eq!(encode_request_target("/a\r\nb"), "/a%0D%0Ab");
+    }
+
+    #[test]
+    fn control_chars_are_encoded() {
+        assert_eq!(encode_request_target("/a\tb\x00c"), "/a%09b%00c");
+    }
 }
