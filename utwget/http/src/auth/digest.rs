@@ -52,9 +52,9 @@ impl DigestAlgorithm {
     /// # Returns
     ///
     /// A lowercase hex-encoded digest string.
-    fn hash_func(&self, data: &[u8]) -> String {
+    fn hash_func(&self, data: &[u8]) -> Result<String, AuthError> {
         match self {
-            DigestAlgorithm::Md5 | DigestAlgorithm::Md5Sess => md5_hex(data),
+            DigestAlgorithm::Md5 | DigestAlgorithm::Md5Sess => Ok(md5_hex(data)),
             DigestAlgorithm::Sha256 | DigestAlgorithm::Sha256Sess => sha256_hex(data),
         }
     }
@@ -81,8 +81,10 @@ fn md5_hex(data: &[u8]) -> String {
 
 /// Computes the SHA-256 digest of `data` and returns it as a 64-character lowercase hex string.
 ///
-/// Delegates to `ut_core::hash::sha256_reader`.  Falls back to a hexadecimal
-/// representation of the raw bytes on error.
+/// Delegates to `ut_core::hash::sha256_reader`.  Unlike the old
+/// fall-back behaviour, errors are propagated instead of panicking, so a
+/// hashing failure aborts authentication cleanly rather than crashing the
+/// whole download.
 ///
 /// # Arguments
 ///
@@ -90,12 +92,13 @@ fn md5_hex(data: &[u8]) -> String {
 ///
 /// # Returns
 ///
-/// A 64-character hex-encoded SHA-256 digest.
-fn sha256_hex(data: &[u8]) -> String {
+/// `Ok` with a 64-character hex-encoded SHA-256 digest, or an `AuthError`
+/// if the hash could not be computed.
+fn sha256_hex(data: &[u8]) -> Result<String, AuthError> {
     // SHA-256 must not silently fall back to raw hex on failure,
     // as that would produce wrong Digest auth responses.
     ut_core::hash::sha256_reader(&mut data.as_ref())
-        .expect("SHA-256 computation failed — this should never happen")
+        .map_err(|e| AuthError::Io(format!("SHA-256 computation failed: {}", e)))
 }
 
 /// Authenticator that implements HTTP Digest Access Authentication (RFC 7616).
@@ -165,12 +168,12 @@ impl DigestAuthenticator {
         realm: &str,
         nonce: &str,
         cnonce: &str,
-    ) -> String {
+    ) -> Result<String, AuthError> {
         let base = format!("{}:{}:{}", credentials.username, realm, credentials.password);
-        let ha1_base = algorithm.hash_func(base.as_bytes());
+        let ha1_base = algorithm.hash_func(base.as_bytes())?;
 
         match algorithm {
-            DigestAlgorithm::Md5 | DigestAlgorithm::Sha256 => ha1_base,
+            DigestAlgorithm::Md5 | DigestAlgorithm::Sha256 => Ok(ha1_base),
             DigestAlgorithm::Md5Sess | DigestAlgorithm::Sha256Sess => {
                 let session_input = format!("{}:{}:{}", ha1_base, nonce, cnonce);
                 algorithm.hash_func(session_input.as_bytes())
@@ -209,14 +212,14 @@ impl DigestAuthenticator {
         cnonce: &str,
         qop: Option<&str>,
         body: Option<&[u8]>,
-    ) -> String {
+    ) -> Result<String, AuthError> {
         let ha2 = if let Some("auth-int") = qop {
-            let body_hash = algorithm.hash_func(body.unwrap_or(b""));
+            let body_hash = algorithm.hash_func(body.unwrap_or(b""))?;
             format!("{}:{}:{}", method, uri, body_hash)
         } else {
             format!("{}:{}", method, uri)
         };
-        let ha2_hex = algorithm.hash_func(ha2.as_bytes());
+        let ha2_hex = algorithm.hash_func(ha2.as_bytes())?;
 
         let response_input = match qop {
             Some(q) => format!("{}:{}:{:08x}:{}:{}:{}", ha1, nonce, nc, cnonce, q, ha2_hex),
@@ -280,7 +283,7 @@ impl Authenticator for DigestAuthenticator {
         let cnonce = Self::generate_cnonce();
 
         let realm = challenge.realm.as_deref().unwrap_or("");
-        let ha1 = self.compute_ha1(algorithm, credentials, realm, nonce, &cnonce);
+        let ha1 = self.compute_ha1(algorithm, credentials, realm, nonce, &cnonce)?;
 
         let qop_value = challenge.qop.as_ref().and_then(|qops| {
             qops.split(',')
@@ -298,7 +301,7 @@ impl Authenticator for DigestAuthenticator {
             &cnonce,
             qop_value,
             body,
-        );
+        )?;
 
         let mut parts = Vec::new();
 
@@ -307,7 +310,7 @@ impl Authenticator for DigestAuthenticator {
         if use_userhash {
             let userhash = algorithm.hash_func(
                 format!("{}:{}", credentials.username, challenge.realm.as_deref().unwrap_or("")).as_bytes(),
-            );
+            )?;
             // MD5 truncates to 32 chars, SHA-256 uses full 64 chars
             let hash_str = match algorithm {
                 DigestAlgorithm::Md5 | DigestAlgorithm::Md5Sess => &userhash[..32],
