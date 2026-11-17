@@ -1788,9 +1788,20 @@ impl Retriever {
             format!("{}:{}", clean_host, port)
         };
         let connect_req = format!(
-            "CONNECT {} HTTP/1.1\r\nHost: {}\r\n\r\n",
+            "CONNECT {} HTTP/1.1\r\nHost: {}\r\n",
             target, target
         );
+        let mut connect_req = connect_req;
+        // Send proxy credentials when configured (--proxy-user/--proxy-password);
+        // some proxies require Basic auth before they accept the CONNECT tunnel.
+        if let (Some(user), Some(pass)) =
+            (&self.config.proxy.proxy_user, &self.config.proxy.proxy_password)
+        {
+            let credentials = format!("{}:{}", user, pass);
+            let encoded = crate::utils::base64_encode(&credentials);
+            connect_req.push_str(&format!("Proxy-Authorization: Basic {}\r\n", encoded));
+        }
+        connect_req.push_str("\r\n");
         debug!("CONNECT request: {}", connect_req);
         stream.write_all(connect_req.as_bytes()).map_err(RetrieveError::Io)?;
         stream.flush().map_err(RetrieveError::Io)?;

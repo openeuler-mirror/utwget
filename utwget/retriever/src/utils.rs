@@ -470,7 +470,7 @@ pub(crate) fn build_proxy_request(
 }
 
 /// Simple base64 encoding for proxy authentication.
-fn base64_encode(input: &str) -> String {
+pub(crate) fn base64_encode(input: &str) -> String {
     const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let bytes = input.as_bytes();
     let mut result = String::with_capacity((bytes.len() + 2) / 3 * 4);
