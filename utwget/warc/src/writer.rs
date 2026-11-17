@@ -454,6 +454,7 @@ impl WarcWriterImpl {
         content_type: &str,
         content_length: u64,
         date: String,
+        payload_digest: Option<String>,
     ) -> Result<WarcHeader> {
         Ok(WarcHeader {
             record_type,
@@ -466,8 +467,20 @@ impl WarcWriterImpl {
             gzip_compressed: self.gzip_enabled,
             truncated: None,
             wagon: None,
-            payload_digest: None,
+            payload_digest,
         })
+    }
+    /// Compute the `WARC-Payload-Digest` header value for a payload.
+    ///
+    /// Returns `Some("sha1:<hex>")` when digest computation is enabled, or
+    /// `None` otherwise. The digest is computed over the *uncompressed*
+    /// payload (the original content), matching WARC §5.10.
+    fn payload_digest_for(&self, payload: &[u8]) -> Option<String> {
+        if self.digest_enabled {
+            Some(format!("sha1:{}", compute_sha1(payload)))
+        } else {
+            None
+        }
     }
 }
 
@@ -522,6 +535,7 @@ impl WarcWriter for WarcWriterImpl {
             default_content_type(self.gzip_enabled),
             content.len() as u64,
             format_date(date),
+            self.payload_digest_for(&payload),
         )?;
 
         self.write_record(&header, &content)?;
@@ -572,6 +586,7 @@ impl WarcWriter for WarcWriterImpl {
             content_type,
             content.len() as u64,
             format_date(date),
+            self.payload_digest_for(&payload),
         )?;
 
         self.write_record(&header, &content)?;
@@ -617,6 +632,7 @@ impl WarcWriter for WarcWriterImpl {
             content_type,
             content.len() as u64,
             format_date(date),
+            self.payload_digest_for(body),
         )?;
 
         self.write_record(&header, &content)?;
@@ -662,6 +678,7 @@ impl WarcWriter for WarcWriterImpl {
             "application/warc-fields",
             content.len() as u64,
             format_date(date),
+            None,
         )?;
         header.concurrent_to = concurrent_to.to_vec();
 
@@ -737,6 +754,7 @@ impl WarcWriter for WarcWriterImpl {
             content_type,
             content.len() as u64,
             format_date(date),
+            self.payload_digest_for(&data),
         )?;
 
         self.write_record(&header, &content)?;
