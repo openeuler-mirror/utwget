@@ -43,6 +43,90 @@ impl Default for FtpsConfig {
     }
 }
 
+/// Try to parse a complete FTP response (RFC 959) from a byte buffer.
+///
+/// Returns `Some((response, consumed))` if the buffer contains a full
+/// response (single- or multi-line), where `consumed` is the number of
+/// bytes that make up the response. Returns `None` if more data is needed.
+///
+/// - Single-line: `"NNN text\r\n"`
+/// - Multi-line: `"NNN-text\r\n...NNN text\r\n"` where intermediate lines use
+///   `NNN-` and the final line uses `NNN ` (code + space).
+fn parse_complete_response(data: &[u8]) -> Option<(FtpResponse, usize)> {
+    let s = std::str::from_utf8(data).ok()?;
+    let first_line_end = s.find('\n')?;
+    let first_line = s[..first_line_end].trim_end_matches('\r');
+    if first_line.len() < 3 {
+        return None;
+    }
+    let code: u16 = first_line[..3].parse().ok()?;
+
+    let classify = |code: u16| -> (bool, bool, bool, bool, bool) {
+        (
+            code >= 100 && code < 200,
+            code >= 200 && code < 300,
+            code >= 300 && code < 400,
+            code >= 400 && code < 500,
+            code >= 500 && code < 600,
+        )
+    };
+
+    // Single-line response: "NNN ..." (no '-' after code, or line too short)
+    if first_line.len() < 4 || first_line.as_bytes()[3] != b'-' {
+        let text = if first_line.len() > 4 {
+            first_line[4..].trim().to_string()
+        } else {
+            String::new()
+        };
+        let text_clone = text.clone();
+        let (ppc, pco, pi, tn, pn) = classify(code);
+        return Some((
+            FtpResponse {
+                code,
+                text,
+                lines: vec![text_clone],
+                is_positive_preliminary: ppc,
+                is_positive_completion: pco,
+                is_positive_intermediate: pi,
+                is_transient_negative: tn,
+                is_permanent_negative: pn,
+            },
+            first_line_end + 1,
+        ));
+    }
+
+    // Multi-line response: first line is "NNN-..."
+    let mut lines = vec![first_line[4..].to_string()];
+    let end_marker = format!("{} ", code);
+    let mut pos = first_line_end + 1;
+    loop {
+        let rest = &s[pos..];
+        let line_end = rest.find('\n')?;
+        let line = rest[..line_end].trim_end_matches('\r');
+        pos += line_end + 1;
+        if line.len() >= 4 && line[..4] == end_marker {
+            lines.push(line[4..].to_string());
+            break;
+        }
+        lines.push(line.to_string());
+    }
+    let text = lines.join("\n");
+    let (ppc, pco, pi, tn, pn) = classify(code);
+    Some((
+        FtpResponse {
+            code,
+            text,
+            lines,
+            is_positive_preliminary: ppc,
+            is_positive_completion: pco,
+            is_positive_intermediate: pi,
+            is_transient_negative: tn,
+            is_permanent_negative: pn,
+        },
+        pos,
+    ))
+}
+
 /// FTPS client supporting FTP over TLS/SSL
 pub struct FtpsClient {
     /// Raw TCP stream (before TLS upgrade)
@@ -206,67 +290,95 @@ impl FtpsClient {
     /// - Intermediate lines start with "NNN-" (code + dash)
     /// - Final line starts with "NNN " (code + space)
     fn read_response_from_stream(&self, stream: &TcpStream) -> Result<FtpResponse, FtpError> {
-        let mut data = String::new();
-        let mut buf = [0u8; 1];
-        let mut found_code: Option<u16> = None;
-
-        loop {
-            let n = (&*stream).read(&mut buf)
-                .map_err(FtpError::Io)?;
-            if n == 0 {
-                if data.is_empty() {
-                    return Err(FtpError::Connect("connection closed".into()));
-                }
-                break;
-            }
-            data.push(buf[0] as char);
-
-            // Check for complete response line
-            if buf[0] == b'\n' {
-                if let Some(pos) = data.find("\r\n") {
-                    let line = &data[..pos];
-                    if line.len() >= 4 {
-                        if let Ok(code) = line[..3].parse::<u16>() {
-                            let fourth = line.as_bytes()[3];
-                            if fourth == b' ' {
-                                // Final line - complete response
-                                found_code = Some(code);
-                                break;
-                            }
-                            // fourth == b'-' means multi-line intermediate, keep reading
-                            found_code = Some(code);
-                        }
+        // Helper: read one line (terminated by \n) from the TCP stream byte-by-byte
+        // to avoid buffering data that belongs to the next response.
+        fn read_line(stream: &TcpStream) -> Result<String, FtpError> {
+            let mut bytes = Vec::new();
+            let mut buf = [0u8; 1];
+            loop {
+                let n = (&*stream).read(&mut buf).map_err(FtpError::Io)?;
+                if n == 0 {
+                    if bytes.is_empty() {
+                        return Err(FtpError::Connect("connection closed".into()));
                     }
+                    break; // EOF mid-line: return what we have
+                }
+                bytes.push(buf[0]);
+                if buf[0] == b'\n' {
+                    break;
                 }
             }
+            String::from_utf8(bytes)
+                .map_err(|e| FtpError::ParseError(format!("invalid UTF-8 in response: {}", e)))
         }
 
-        if found_code.is_none() && !data.is_empty() {
-            // Fallback: try to parse whatever we got
+        // First line: must contain at least the 3-digit code.
+        let first_line = read_line(stream)?;
+        let trimmed = first_line.trim_end_matches(|c| c == '\r' || c == '\n');
+        if trimmed.len() < 3 {
+            return Err(FtpError::ParseError(format!("response too short: {}", trimmed)));
         }
+        let code: u16 = trimmed[..3].parse().map_err(|_| {
+            FtpError::ParseError(format!("invalid code: {}", &trimmed[..3]))
+        })?;
+        log::debug!("FTPS < {}", trimmed);
 
-        // Extract the final line for parsing
-        let line = if let Some(pos) = data.rfind("\r\n") {
-            &data[..pos]
-        } else {
-            data.trim()
+        let classify = |code: u16| -> (bool, bool, bool, bool, bool) {
+            (
+                code >= 100 && code < 200,
+                code >= 200 && code < 300,
+                code >= 300 && code < 400,
+                code >= 400 && code < 500,
+                code >= 500 && code < 600,
+            )
         };
-        let line = line.trim();
-        let code: u16 = line.get(..3)
-            .and_then(|s| s.parse().ok())
-            .ok_or_else(|| FtpError::ParseError(format!("invalid response: {}", line)))?;
 
-        let text = line.get(4..).unwrap_or("").to_string();
+        // Multi-line response: first line is "NNN-..."
+        if trimmed.len() >= 4 && trimmed.as_bytes()[3] == b'-' {
+            let mut lines = vec![trimmed[4..].to_string()];
+            let end_marker = format!("{} ", code);
+            loop {
+                let line = read_line(stream)?;
+                let t = line.trim_end_matches(|c| c == '\r' || c == '\n');
+                log::debug!("FTPS < {}", t);
+                // Final line starts with "<code> "
+                if t.len() >= 4 && t[..4] == end_marker {
+                    lines.push(t[4..].to_string());
+                    break;
+                }
+                lines.push(t.to_string());
+            }
+            let text = lines.join("\n");
+            let (ppc, pco, pi, tn, pn) = classify(code);
+            return Ok(FtpResponse {
+                code,
+                text,
+                lines,
+                is_positive_preliminary: ppc,
+                is_positive_completion: pco,
+                is_positive_intermediate: pi,
+                is_transient_negative: tn,
+                is_permanent_negative: pn,
+            });
+        }
 
+        // Single-line response
+        let text = if trimmed.len() > 4 {
+            trimmed[4..].trim().to_string()
+        } else {
+            String::new()
+        };
+        let text_clone = text.clone();
+        let (ppc, pco, pi, tn, pn) = classify(code);
         Ok(FtpResponse {
             code,
             text,
-            lines: vec![],
-            is_positive_preliminary: code >= 100 && code < 200,
-            is_positive_completion: code >= 200 && code < 300,
-            is_positive_intermediate: code >= 300 && code < 400,
-            is_transient_negative: code >= 400 && code < 500,
-            is_permanent_negative: code >= 500 && code < 600,
+            lines: vec![text_clone],
+            is_positive_preliminary: ppc,
+            is_positive_completion: pco,
+            is_positive_intermediate: pi,
+            is_transient_negative: tn,
+            is_permanent_negative: pn,
         })
     }
 
@@ -409,82 +521,55 @@ impl FtpsClient {
     /// Handles multi-line FTP responses (RFC 959):
     /// - Intermediate lines start with "NNN-" (code + dash)
     /// - Final line starts with "NNN " (code + space)
+    ///
+    /// Accumulates decrypted plaintext from TLS records into a buffer and
+    /// delegates to [`parse_complete_response`] to detect a full response.
+    /// This avoids the previous bug where `data.find("\r\n")` always matched
+    /// the first line, causing multi-line responses to hang indefinitely.
     fn read_response(&mut self) -> Result<FtpResponse, FtpError> {
-        let mut data = String::new();
+        let mut data: Vec<u8> = Vec::new();
 
-        if let Some(ref mut tls) = self.ctrl_tls {
-            let mut found_code: Option<u16> = None;
+        let tls = self.ctrl_tls.as_mut()
+            .ok_or_else(|| FtpError::Connect("not connected (TLS required)".into()))?;
 
-            // Outer loop: keep reading TLS records until we have a complete response.
-            // A multi-line FTP response may span multiple TLS records.
+        loop {
+            // Read more ciphertext from the TCP stream into the TLS state machine.
+            // `read_tls` blocks (blocking socket) until data or EOF.
+            let n = tls.conn.read_tls(&mut tls.stream).map_err(FtpError::Io)?;
+            tls.conn.process_new_packets()
+                .map_err(|e| FtpError::Connect(format!("TLS error: {}", e)))?;
+
+            // Drain newly produced plaintext into our buffer.
+            let mut reader = tls.conn.reader();
+            let mut buf = [0u8; 1024];
             loop {
-                tls.conn.read_tls(&mut tls.stream)
-                    .map_err(FtpError::Io)?;
-                tls.conn.process_new_packets()
-                    .map_err(|e| FtpError::Connect(format!("TLS error: {}", e)))?;
-
-                let mut reader = tls.conn.reader();
-                let mut buf = [0u8; 1024];
-                loop {
-                    let n = reader.read(&mut buf).map_err(FtpError::Io)?;
-                    if n == 0 {
-                        break;
-                    }
-                    data.push_str(&String::from_utf8_lossy(&buf[..n]));
-
-                    if let Some(pos) = data.find("\r\n") {
-                        let line = &data[..pos];
-                        if line.len() >= 4 {
-                            if let Ok(code) = line[..3].parse::<u16>() {
-                                let fourth = line.as_bytes()[3];
-                                if fourth == b' ' {
-                                    found_code = Some(code);
-                                    break;
-                                }
-                                found_code = Some(code);
-                            }
-                        }
-                    }
-                }
-
-                if found_code.is_some() || data.is_empty() {
+                let rn = reader.read(&mut buf).map_err(FtpError::Io)?;
+                if rn == 0 {
                     break;
                 }
-                // TLS reader exhausted but no complete response yet — read more TLS records.
+                data.extend_from_slice(&buf[..rn]);
             }
 
-            if found_code.is_none() && !data.is_empty() {
-                // Fallback: try to parse whatever we got
+            // Try to parse a complete FTP response from the accumulated bytes.
+            if let Some((response, _consumed)) = parse_complete_response(&data) {
+                log::debug!(
+                    "FTPS < {} {}",
+                    response.code,
+                    response.lines.last().map(|s| s.as_str()).unwrap_or("")
+                );
+                return Ok(response);
             }
-        } else {
-            return Err(FtpError::Connect("not connected (TLS required)".into()));
+
+            // No complete response yet.
+            if n == 0 {
+                // TLS stream hit EOF without a complete response.
+                return Err(FtpError::ParseError(format!(
+                    "connection closed; partial response: {} bytes",
+                    data.len()
+                )));
+            }
+            // Otherwise loop to read more TLS records.
         }
-
-        // Extract the final line for parsing
-        let line = if let Some(pos) = data.rfind("\r\n") {
-            &data[..pos]
-        } else {
-            data.trim()
-        };
-        let line = line.trim();
-        log::debug!("FTPS < {}", line);
-
-        let code: u16 = line.get(..3)
-            .and_then(|s| s.parse().ok())
-            .ok_or_else(|| FtpError::ParseError(format!("invalid response: {}", line)))?;
-
-        let text = line.get(4..).unwrap_or("").to_string();
-
-        Ok(FtpResponse {
-            code,
-            text,
-            lines: vec![],
-            is_positive_preliminary: code >= 100 && code < 200,
-            is_positive_completion: code >= 200 && code < 300,
-            is_positive_intermediate: code >= 300 && code < 400,
-            is_transient_negative: code >= 400 && code < 500,
-            is_permanent_negative: code >= 500 && code < 600,
-        })
     }
 
     /// Login to the FTPS server.
@@ -916,5 +1001,81 @@ impl ServerCertVerifier for SkipServerVerification {
             SignatureScheme::RSA_PSS_SHA512,
             SignatureScheme::ED25519,
         ]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_complete_response;
+
+    #[test]
+    fn parses_single_line_response() {
+        let data = b"220 Service ready\r\n";
+        let (resp, consumed) = parse_complete_response(data).expect("single-line should parse");
+        assert_eq!(resp.code, 220);
+        assert_eq!(resp.text, "Service ready");
+        assert_eq!(consumed, data.len());
+        assert!(resp.is_positive_completion);
+    }
+
+    #[test]
+    fn parses_multi_line_response() {
+        // Classic multi-line FTP welcome: 220-Welcome\n220-Second line\n220 Ready
+        let data = b"220-Welcome to the FTP server\r\n220-Second line of greeting\r\n220 Ready\r\n";
+        let (resp, consumed) = parse_complete_response(data).expect("multi-line should parse");
+        assert_eq!(resp.code, 220);
+        assert_eq!(resp.lines.len(), 3);
+        // First line: prefix "NNN-" stripped, content only
+        assert_eq!(resp.lines[0], "Welcome to the FTP server");
+        // Intermediate lines: original form retained (matches command.rs behavior)
+        assert_eq!(resp.lines[1], "220-Second line of greeting");
+        // Final line: prefix "NNN " stripped, content only
+        assert_eq!(resp.lines[2], "Ready");
+        assert_eq!(consumed, data.len());
+        assert!(resp.is_positive_completion);
+    }
+
+    #[test]
+    fn returns_none_for_incomplete_multi_line() {
+        // No final "220 " line present → must return None (was the bug causing hang)
+        let data = b"220-Welcome\r\n220-Still going\r\n";
+        assert!(parse_complete_response(data).is_none(),
+            "incomplete multi-line response must not parse (regression check for hang bug)");
+    }
+
+    #[test]
+    fn returns_none_for_truncated_first_line() {
+        // No newline yet → cannot determine first line
+        let data = b"220 Ready";
+        assert!(parse_complete_response(data).is_none());
+    }
+
+    #[test]
+    fn parses_multi_line_with_blank_intermediate_line() {
+        let data = b"220-First\r\n220-\r\n220 Final\r\n";
+        let (resp, consumed) = parse_complete_response(data).expect("blank intermediate line should parse");
+        assert_eq!(resp.code, 220);
+        assert_eq!(resp.lines.len(), 3);
+        assert_eq!(resp.lines[1], "220-");  // intermediate line kept as-is (blank content after dash)
+        assert_eq!(consumed, data.len());
+    }
+
+    #[test]
+    fn parses_error_response() {
+        let data = b"530 Not logged in\r\n";
+        let (resp, _) = parse_complete_response(data).expect("error response should parse");
+        assert_eq!(resp.code, 530);
+        assert!(resp.is_permanent_negative);
+        assert!(!resp.is_positive_completion);
+    }
+
+    #[test]
+    fn handles_lf_only_line_endings() {
+        // Some servers may use bare LF; we should still find the line via '\n'
+        let data = b"331 User name okay, need password\n";
+        let (resp, consumed) = parse_complete_response(data).expect("LF-only line should parse");
+        assert_eq!(resp.code, 331);
+        assert!(resp.is_positive_intermediate);
+        assert_eq!(consumed, data.len());
     }
 }
