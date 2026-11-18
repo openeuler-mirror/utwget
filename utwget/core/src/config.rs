@@ -96,6 +96,10 @@ pub struct Config {
     pub auth_without_challenge: bool,
     /// Use .netrc file for credentials (--no-netrc disables)
     pub use_netrc: bool,
+    /// Trust server names when redirecting (--trust-server-names)
+    pub trust_server_names: bool,
+    /// Report bandwidth in bits/s (--report-speed=bits)
+    pub report_bps: bool,
 
     /// HTTP-specific configuration
     pub http: HttpConfig,
@@ -220,6 +224,8 @@ impl Default for Config {
             content_disposition: false,
             auth_without_challenge: false,
             use_netrc: true, // Default: use .netrc
+            trust_server_names: false,
+            report_bps: false,
 
             http: HttpConfig::default(),
             ftp: FtpConfig::default(),
