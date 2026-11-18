@@ -19,8 +19,6 @@ pub struct RobotGroup {
     pub rules: Vec<RobotRule>,
     /// The crawl delay (in seconds) required by this group, if any.
     pub crawl_delay: Option<f64>,
-    /// Links to sitemaps declared in this group.
-    pub sitemaps: Vec<String>,
 }
 
 /// The complete set of parsed directives from a robots.txt file.
@@ -28,6 +26,9 @@ pub struct RobotGroup {
 pub struct RobotSpecs {
     /// The groups (User-agent blocks) parsed from the file.
     pub groups: Vec<RobotGroup>,
+    /// Global Sitemap directives (RFC 9309: Sitemap is not tied to any
+    /// User-agent group).
+    pub sitemaps: Vec<String>,
 }
 
 /// Parses robots.txt content and caches the results per host.
@@ -74,6 +75,8 @@ impl RobotParser {
     pub fn parse(&mut self, content: &str) -> RobotSpecs {
         let mut groups: Vec<RobotGroup> = Vec::new();
         let mut current_group: Option<RobotGroup> = None;
+        // Sitemap is a global directive, collected outside any group.
+        let mut global_sitemaps: Vec<String> = Vec::new();
 
         for line in content.lines() {
             let line = line.trim();
@@ -95,8 +98,7 @@ impl RobotParser {
                     // Allow, etc.) starts a NEW group (RFC 9309).
                     if current_group.is_some()
                         && (current_group.as_ref().unwrap().rules.len() > 0
-                            || current_group.as_ref().unwrap().crawl_delay.is_some()
-                            || current_group.as_ref().unwrap().sitemaps.len() > 0)
+                            || current_group.as_ref().unwrap().crawl_delay.is_some())
                     {
                         if let Some(g) = current_group.take() {
                             groups.push(g);
@@ -111,7 +113,6 @@ impl RobotParser {
                                 user_agents: vec![value.to_string()],
                                 rules: Vec::new(),
                                 crawl_delay: None,
-                                sitemaps: Vec::new(),
                             });
                         }
                     }
@@ -148,9 +149,10 @@ impl RobotParser {
                     }
                 }
                 "sitemap" => {
-                    if let Some(ref mut group) = current_group {
-                        group.sitemaps.push(value.to_string());
-                    }
+                    // Sitemap is a global directive (RFC 9309), not tied to
+                    // any User-agent group. Collect it regardless of whether
+                    // a group is currently open.
+                    global_sitemaps.push(value.to_string());
                 }
                 _ => {}
             }
@@ -165,11 +167,13 @@ impl RobotParser {
                 user_agents: vec!["*".to_string()],
                 rules: Vec::new(),
                 crawl_delay: None,
-                sitemaps: Vec::new(),
             });
         }
 
-        RobotSpecs { groups }
+        RobotSpecs {
+            groups,
+            sitemaps: global_sitemaps,
+        }
     }
 
     /// Parses the robots.txt content for the given host and caches the result.
@@ -294,17 +298,17 @@ impl RobotParser {
     /// A vector of sitemap URL strings (empty if none are declared or not cached).
     pub fn sitemaps(&self, host: &str) -> Vec<String> {
         let host_lc = host.to_ascii_lowercase();
-        let mut result = Vec::new();
         if let Some(specs) = self.specs_cache.get(&host_lc) {
-            for group in &specs.groups {
-                for sitemap in &group.sitemaps {
-                    if !result.contains(sitemap) {
-                        result.push(sitemap.clone());
-                    }
-                }
-            }
+            // Deduplicate while preserving order.
+            let mut seen = std::collections::HashSet::new();
+            return specs
+                .sitemaps
+                .iter()
+                .filter(|s| seen.insert(s.clone()))
+                .cloned()
+                .collect();
         }
-        result
+        Vec::new()
     }
 }
 
