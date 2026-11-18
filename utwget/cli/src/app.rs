@@ -1126,8 +1126,8 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
         config.http.default_page = page.clone();
     }
 
-    config.ftp.user = args.ftp_user.clone();
-    config.ftp.password = args.ftp_password.clone();
+    config.ftp.user = args.ftp_user.clone().or(args.user.clone());
+    config.ftp.password = args.ftp_password.clone().or(args.password.clone());
 
     if args.no_passive_ftp {
         config.ftp.passive = false;
@@ -1280,6 +1280,20 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
     config.proxy.proxy_password = args.proxy_password.clone();
     if args.no_proxy {
         config.proxy.use_proxy = false;
+    }
+
+    // Read the no_proxy environment variable (comma-separated list of hosts
+    // to bypass proxy), matching GNU wget init.c:416-418.
+    if config.proxy.no_proxy.is_empty() {
+        if let Ok(np) = std::env::var("no_proxy") {
+            if !np.is_empty() && np != "*" {
+                config.proxy.no_proxy = np
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+            }
+        }
     }
 
     config.no_host_directories = args.no_host_directories;
@@ -1507,9 +1521,15 @@ fn resolve_askpass(explicit: Option<&str>) -> Option<String> {
 /// `Ok(SecureProtocol)` on a known value, `Err(())` otherwise.
 fn parse_secure_protocol_arg(s: &str) -> Result<ut_core::SecureProtocol, ()> {
     match s.to_ascii_lowercase().as_str() {
-        "auto" | "pfs" => Ok(ut_core::SecureProtocol::Auto),
-        "tlsv1_2" | "tlsv1.2" | "tls1.2" => Ok(ut_core::SecureProtocol::TlsV1_2),
+        "auto" => Ok(ut_core::SecureProtocol::Auto),
+        "pfs" => Ok(ut_core::SecureProtocol::Pfs),
+        "tlsv1_2" | "tlsv1.2" | "tls1.2" | "tlsv1" | "tlsv1.1" | "tls1.1" => {
+            // TLSv1 and TLSv1_1 are mapped to TLSv1_2 (the minimum supported
+            // by rustls; TLS 1.0/1.1 are deprecated and unsupported).
+            Ok(ut_core::SecureProtocol::TlsV1_2)
+        }
         "tlsv1_3" | "tlsv1.3" | "tls1.3" => Ok(ut_core::SecureProtocol::TlsV1_3),
+        "sslv2" | "sslv3" => Err(()), // Deprecated/unsafe, reject explicitly
         _ => Err(()),
     }
 }
@@ -1530,11 +1550,13 @@ fn parse_secure_protocol_arg(s: &str) -> Result<ut_core::SecureProtocol, ()> {
 /// # Returns
 /// The resolved `AddressFamily` variant.
 fn parse_address_family_arg(s: &str) -> ut_core::AddressFamily {
+    // GNU wget accepts "IPv4", "IPv6", and "none" (case-insensitive).
+    // "IPv4" means *prefer* IPv4 (not IPv4-only); "IPv6" means *prefer* IPv6.
+    // "none" disables the preference.
     match s.to_ascii_lowercase().as_str() {
-        "ipv4" | "4" => ut_core::AddressFamily::Ipv4,
-        "ipv6" | "6" => ut_core::AddressFamily::Ipv6,
-        "prefer_ipv4" | "prefer-ipv4" => ut_core::AddressFamily::PreferIpv4,
-        "prefer_ipv6" | "prefer-ipv6" => ut_core::AddressFamily::PreferIpv6,
+        "ipv4" | "4" | "ipv4-only" => ut_core::AddressFamily::PreferIpv4,
+        "ipv6" | "6" | "ipv6-only" => ut_core::AddressFamily::PreferIpv6,
+        "none" => ut_core::AddressFamily::Unspecified,
         _ => ut_core::AddressFamily::Unspecified,
     }
 }
