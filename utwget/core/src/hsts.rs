@@ -191,6 +191,22 @@ impl HstsStore {
         if !path.exists() {
             return Ok(());
         }
+
+        // Security check: refuse to load HSTS data from a world-writable file
+        // (matches GNU wget hsts.c:344-361 hsts_file_access_valid). A
+        // world-writable file can be tampered with by any user, which could
+        // inject false HSTS entries or delete legitimate ones.
+        if let Ok(metadata) = fs::metadata(path) {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = metadata.permissions().mode();
+            if mode & 0o002 != 0 {
+                return Err(WgetError::Other(format!(
+                    "HSTS file {} is world-writable; refusing to load (security)",
+                    path.display()
+                )));
+            }
+        }
+
         let data = fs::read_to_string(path).map_err(|e| WgetError::Other(e.to_string()))?;
 
         // GNU wget tab-separated format:
