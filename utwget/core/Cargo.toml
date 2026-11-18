@@ -7,7 +7,7 @@ license = "LGPL-3.0-or-later"
 
 [features]
 default = ["hsts", "compression", "idn"]
-hsts = ["serde_json"]
+hsts = []
 compression = []
 idn = ["dep:idna"]
 
@@ -24,4 +24,3 @@ sha2 = "0.10"
 base64 = "0.22"
 log = "0.4"
 env_logger = "0.11"
-serde_json = { version = "1", optional = true }
