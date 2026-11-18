@@ -378,7 +378,7 @@ impl Default for FtpConfig {
             password: None,
             passive: true,
             glob: true,
-            retrieve_symlinks: false,
+            retrieve_symlinks: true,
             follow_ftp: false,
             remove_listing: false,
             htmlify: true,
