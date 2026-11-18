@@ -952,20 +952,34 @@ fn create_des_key(key7: &[u8]) -> [u8; 8] {
     key
 }
 
-/// Performs DES encryption (placeholder implementation).
+/// Performs DES encryption of a single 8-byte block.
 ///
-/// Note: This is a simplified placeholder. In production, use a proper DES crate.
+/// Uses the RustCrypto `des` crate (ECB mode, single block) to encrypt
+/// `plaintext` under `key`. Both `plaintext` and `key` must be exactly 8
+/// bytes; `output` must be at least 8 bytes long.
 ///
 /// # Arguments
 ///
 /// * `plaintext` - The 8-byte plaintext block.
-/// * `key` - The 8-byte DES key.
+/// * `key` - The 8-byte DES key (parity bits are conventionally set by
+///   the caller; the `des` crate ignores them).
 /// * `output` - The output buffer for the 8-byte ciphertext.
 fn des_encrypt(plaintext: &[u8], key: &[u8], output: &mut [u8]) {
-    // This is a simplified placeholder
-    // In production, you'd use the `des` crate
-    // For now, just XOR with key (NOT secure, but allows compilation)
-    for (i, o) in output.iter_mut().enumerate() {
-        *o = if i < 8 { plaintext[i] ^ key[i] } else { 0 };
-    }
+    use des::cipher::{generic_array::GenericArray, BlockEncrypt, KeyInit};
+
+    // Truncate/pad to exactly 8 bytes defensively; callers always pass 8.
+    let mut k = [0u8; 8];
+    let n = key.len().min(8);
+    k[..n].copy_from_slice(&key[..n]);
+    let mut p = [0u8; 8];
+    let n = plaintext.len().min(8);
+    p[..n].copy_from_slice(&plaintext[..n]);
+
+    let key_ga = GenericArray::from_slice(&k);
+    let cipher = des::Des::new(key_ga);
+    let mut block = des::cipher::generic_array::GenericArray::from_mut_slice(&mut p);
+    cipher.encrypt_block(&mut block);
+
+    let n = output.len().min(8);
+    output[..n].copy_from_slice(&p[..n]);
 }
