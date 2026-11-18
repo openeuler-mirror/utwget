@@ -92,6 +92,26 @@ pub struct Cookie {
     pub httponly: bool,
     /// Whether the cookie should be persisted across sessions.
     pub persistent: bool,
+    /// SameSite attribute (RFC 6265bis). Defaults to Lax per modern
+    /// browsers; wget as a CLI tool sends SameSite=None cookies on all
+    /// requests (no cross-site context), so this is primarily stored for
+    /// cookie file compatibility.
+    pub samesite: SameSite,
+}
+
+/// SameSite cookie attribute values (RFC 6265bis §5.3.7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SameSite {
+    /// `SameSite=Strict` — cookie only sent on same-site requests.
+    Strict,
+    /// `SameSite=Lax` — cookie sent on top-level navigations (default).
+    #[default]
+    Lax,
+    /// `SameSite=None` — cookie sent on all requests (requires Secure).
+    None,
+    /// Attribute not present in Set-Cookie (treated as Lax by modern
+    /// browsers, but stored distinctly for cookie file compatibility).
+    Unspecified,
 }
 
 impl Cookie {
@@ -238,6 +258,7 @@ impl CookieJar {
         let mut secure = false;
         let mut httponly = false;
         let mut persistent = false;
+        let mut samesite = SameSite::Unspecified;
 
         for attr in attrs.split(';') {
             let attr = attr.trim();
@@ -289,6 +310,16 @@ impl CookieJar {
                 }
                 "secure" => secure = true,
                 "httponly" => httponly = true,
+                "samesite" => {
+                    if let Some(v) = val {
+                        samesite = match v.trim().to_ascii_lowercase().as_str() {
+                            "strict" => SameSite::Strict,
+                            "lax" => SameSite::Lax,
+                            "none" => SameSite::None,
+                            _ => SameSite::Unspecified,
+                        };
+                    }
+                }
                 _ => {}
             }
         }
@@ -318,6 +349,7 @@ impl CookieJar {
             secure,
             httponly,
             persistent,
+            samesite,
         };
 
         let key = (cookie.domain.clone(), cookie.path.clone(), cookie.name.clone());
@@ -481,6 +513,7 @@ impl CookieJar {
                 secure,
                 httponly,
                 persistent: expires.is_some(),
+                samesite: SameSite::Unspecified,
             };
             self.store(cookie);
         }
