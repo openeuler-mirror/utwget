@@ -84,7 +84,26 @@ pub fn connect_via_proxy(
         .set_read_timeout(Some(read_timeout))
         .map_err(ProxyError::Io)?;
 
-    // Build CONNECT request
+    // Build CONNECT request.
+    // Sanitize target host and proxy credentials against CRLF/header injection:
+    // any CR, LF or NUL byte would let the attacker smuggle additional request
+    // lines into the CONNECT request. Reject outright instead of silently
+    // stripping, since legitimate hostnames/credentials never contain them.
+    fn reject_crlf(label: &str, s: &str) -> Result<(), ProxyError> {
+        if s.as_bytes().iter().any(|&b| b == b'\r' || b == b'\n' || b == 0) {
+            return Err(ProxyError::InvalidConfig(format!(
+                "{} contains invalid control character (CR/LF/NUL)",
+                label
+            )));
+        }
+        Ok(())
+    }
+    reject_crlf("target_host", target_host)?;
+    if let (Some(u), Some(p)) = (proxy_user, proxy_password) {
+        reject_crlf("proxy_user", u)?;
+        reject_crlf("proxy_password", p)?;
+    }
+
     let target = format!("{}:{}", target_host, target_port);
     let mut request = format!("CONNECT {} HTTP/1.0\r\nHost: {}\r\n", target, target);
 
@@ -333,4 +352,9 @@ pub enum ProxyError {
         /// The response body (if any).
         body: String,
     },
+
+    /// Invalid proxy configuration (e.g. target host or credentials contain
+    /// control characters that would enable header/request smuggling).
+    #[error("invalid proxy config: {0}")]
+    InvalidConfig(String),
 }
