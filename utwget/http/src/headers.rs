@@ -164,9 +164,12 @@ pub fn parse_status_line(line: &str) -> Option<(String, u16, String)> {
     let line = line.trim_end_matches(|c| c == '\r' || c == '\n');
     let space_idx = line.find(' ')?;
     let version = line[..space_idx].to_string();
-    let rest = &line[space_idx + 1..];
+    // Skip any additional whitespace between version and status code
+    // (tolerant of "HTTP/1.1  200 OK" with double spaces, matching GNU
+    // wget's sscanf behavior which skips multiple whitespace).
+    let rest = line[space_idx + 1..].trim_start();
     let (code_str, reason) = match rest.find(' ') {
-        Some(idx) => (&rest[..idx], rest[idx + 1..].to_string()),
+        Some(idx) => (&rest[..idx], rest[idx + 1..].trim_start().to_string()),
         None => (rest, String::new()),
     };
     let status_code: u16 = code_str.parse().ok()?;
