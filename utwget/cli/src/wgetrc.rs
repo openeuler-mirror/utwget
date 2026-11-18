@@ -986,7 +986,7 @@ fn normalize_wgetrc_key(key: &str) -> String {
         "rejectregex" => "reject-regex".to_string(),
         "relativeonly" => "relative".to_string(),
         "remoteencoding" => "remote-encoding".to_string(),
-        "removelisting" => "no-remove-listing".to_string(),
+        "removelisting" => "remove-listing".to_string(),
         "reportspeed" => "report-speed".to_string(),
         "restrictfilenames" => "restrict-file-names".to_string(),
         "retrsymlinks" => "retr-symlinks".to_string(),
