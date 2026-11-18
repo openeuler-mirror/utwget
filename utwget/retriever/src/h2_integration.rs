@@ -444,9 +444,38 @@ impl H2Retriever {
             }
         }
 
+        // Pre-check Content-Length (when present) against the in-memory cap.
+        // The HTTP/2 path buffers the entire body before writing to disk, so for
+        // large downloads we refuse to read the body and return an error. The
+        // caller (retriever.rs) then transparently falls back to the HTTP/1.1
+        // path, which streams the body to disk chunk-by-chunk and has no
+        // memory ceiling. This keeps the H2 fast path for small resources
+        // while still allowing multi-GB downloads (over HTTP/1.1).
+        //
+        // Skip the check for responses that have no body (HEAD, 1xx, 204, 304).
+        let has_no_body = status == 304
+            || status == 204
+            || (100..200).contains(&status)
+            || request.method == ut_http::request::HttpMethod::Head;
+        if !has_no_body {
+            if let Some(cl_str) = headers.get("content-length") {
+                if let Ok(cl) = cl_str.trim().parse::<usize>() {
+                    if cl > self.max_body_size {
+                        self.reusable = false;
+                        return Err(RetrieveError::Protocol(WgetError::Other(format!(
+                            "HTTP/2 response body is {} bytes (exceeds in-memory cap of {} bytes); falling back to HTTP/1.1 for streaming download",
+                            cl, self.max_body_size
+                        ))));
+                    }
+                }
+            }
+        }
+
         // Read response body with a size cap to prevent OOM on huge downloads
         // (HTTP/2 path buffers the entire body, unlike HTTP/1.x which streams
-        // to disk). If --quota is set we honor it; otherwise default to 512MB.
+        // to disk). The Content-Length pre-check above handles the common
+        // large-download case; this read_body_limited is a backstop for
+        // responses without Content-Length (e.g. server-closed stream).
         let body = client.read_body_limited(&mut response.into_body(), self.max_body_size)
             .map_err(|e| {
                 self.reusable = false;
@@ -604,7 +633,15 @@ pub async fn download_with_http2(
 /// exceeds this limit, `read_body_limited` returns an error and the caller
 /// should fall back to HTTP/1.1.
 fn max_body_size_for(config: &Config) -> usize {
-    const DEFAULT_MAX_BODY_BYTES: usize = 512 * 1024 * 1024;
+    // The HTTP/2 path buffers the whole body before writing to disk (unlike
+    // HTTP/1.x which streams), so we cap it to bound memory use. Downloads
+    // larger than this cap transparently fall back to HTTP/1.1 streaming via
+    // the Content-Length pre-check in send_request, so users can still
+    // download multi-GB files — they just use HTTP/1.1 for those.
+    //
+    // Default: 64 MiB (covers most web resources; large downloads fall back
+    // to streaming). Honor --quota if set.
+    const DEFAULT_MAX_BODY_BYTES: usize = 64 * 1024 * 1024;
     if let Some(q) = config.quota {
         // quota is in bytes; clamp to a reasonable minimum of 1 KiB.
         q.max(1024) as usize
