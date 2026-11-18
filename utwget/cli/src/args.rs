@@ -722,7 +722,7 @@ pub struct Args {
     pub robots: Option<String>,
 
     /// Log reasons for URL rejection to FILE.
-    #[arg(long = "rejected-log", alias = "reject-log")]
+    #[arg(long = "rejected-log")]
     pub reject_log: Option<PathBuf>,
 
     /// Ignore 'Content-Length' header field.
