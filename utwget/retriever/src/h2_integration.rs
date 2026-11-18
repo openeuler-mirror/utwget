@@ -235,7 +235,7 @@ impl H2Retriever {
             connect_req.push_str(&format!("Proxy-Authorization: Basic {}\r\n", encoded));
         }
         connect_req.push_str("\r\n");
-        debug!("CONNECT request: {}", connect_req.trim());
+        debug!("CONNECT request: {}", crate::utils::redact_sensitive_headers(connect_req.trim()));
         stream.write_all(connect_req.as_bytes())
             .map_err(|e| RetrieveError::Protocol(WgetError::Other(
                 format!("failed to send CONNECT request: {}", e)
