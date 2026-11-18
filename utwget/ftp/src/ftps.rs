@@ -15,6 +15,7 @@ use rustls::{ClientConfig, ClientConnection, DigitallySignedStruct, RootCertStor
 
 use crate::command::FtpResponse;
 use crate::client::{FtpError, validate_ftp_input};
+use ut_core::types::SecureProtocol;
 
 /// FTPS configuration
 #[derive(Debug, Clone)]
@@ -29,6 +30,8 @@ pub struct FtpsConfig {
     pub client_key: Option<std::path::PathBuf>,
     /// Whether to require TLS for data connection
     pub require_data_tls: bool,
+    /// Minimum/maximum TLS protocol version (mirrors --secure-protocol).
+    pub secure_protocol: SecureProtocol,
 }
 
 impl Default for FtpsConfig {
@@ -39,6 +42,7 @@ impl Default for FtpsConfig {
             client_cert: None,
             client_key: None,
             require_data_tls: false,
+            secure_protocol: SecureProtocol::Auto,
         }
     }
 }
@@ -482,16 +486,34 @@ impl FtpsClient {
                 root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
             }
 
-            Ok(Arc::new(ClientConfig::builder()
-                .with_root_certificates(root_store)
-                .with_no_client_auth()))
+            // Select TLS protocol versions based on --secure-protocol, mirroring
+            // the HTTPS path in net/src/tls/rustls_impl.rs:175-185.
+            let versions: &[&'static rustls::SupportedProtocolVersion] = match self.config.secure_protocol {
+                SecureProtocol::TlsV1_2 => &[&rustls::version::TLS12],
+                SecureProtocol::TlsV1_3 => &[&rustls::version::TLS13],
+                SecureProtocol::Auto | SecureProtocol::Pfs => rustls::ALL_VERSIONS,
+            };
+
+            Ok(Arc::new(
+                ClientConfig::builder_with_protocol_versions(versions)
+                    .with_root_certificates(root_store)
+                    .with_no_client_auth(),
+            ))
         } else {
             // Skip certificate verification
             let verifier: Arc<dyn ServerCertVerifier> = Arc::new(SkipServerVerification);
-            Ok(Arc::new(ClientConfig::builder()
-                .dangerous()
-                .with_custom_certificate_verifier(verifier)
-                .with_no_client_auth()))
+            // Still honor --secure-protocol even when verification is skipped.
+            let versions: &[&'static rustls::SupportedProtocolVersion] = match self.config.secure_protocol {
+                SecureProtocol::TlsV1_2 => &[&rustls::version::TLS12],
+                SecureProtocol::TlsV1_3 => &[&rustls::version::TLS13],
+                SecureProtocol::Auto | SecureProtocol::Pfs => rustls::ALL_VERSIONS,
+            };
+            Ok(Arc::new(
+                ClientConfig::builder_with_protocol_versions(versions)
+                    .dangerous()
+                    .with_custom_certificate_verifier(verifier)
+                    .with_no_client_auth(),
+            ))
         }
     }
 
