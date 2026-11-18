@@ -8,6 +8,48 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 
+/// Check whether `cookie_domain` is acceptable as a cookie Domain attribute
+/// value for a request to `request_host`, using the Mozilla Public Suffix List.
+///
+/// Mirrors GNU wget's `psl_is_cookie_domain_acceptable` (cookies.c:584). The
+/// rule (per RFC 6265 §5.3 step 6 + PSL best practice):
+/// 1. Reject if `cookie_domain` is itself a listed public suffix (e.g. "com",
+///    "co.uk", "github.io") — a server cannot set a cookie for an entire
+///    public suffix.
+/// 2. Accept otherwise (including unknown single-label hosts, which have a
+///    default-rule suffix but are not "listed" public suffixes).
+///
+/// Returns `true` if the domain is acceptable, `false` to reject the cookie.
+fn is_cookie_domain_acceptable(request_host: &str, cookie_domain: &str) -> bool {
+    // IP addresses are exempt from PSL checks (RFC 6265 §5.1.3).
+    if request_host.parse::<std::net::IpAddr>().is_ok()
+        || cookie_domain.parse::<std::net::IpAddr>().is_ok()
+    {
+        return true;
+    }
+    // Normalize: strip leading dot, lowercase.
+    let cd = cookie_domain.trim_start_matches('.').to_ascii_lowercase();
+    if cd.is_empty() {
+        return false;
+    }
+    // Look up the public suffix of the cookie domain. If the suffix is
+    // explicitly listed in the PSL (ICANN or Private type) AND it equals the
+    // entire cookie domain, the domain IS a public suffix and must be
+    // rejected. A `typ` of `None` means the default rule applied (unknown
+    // TLD), which is not a "listed" public suffix and should be accepted.
+    use psl::Psl;
+    let list = psl::List;
+    match list.suffix(cd.as_bytes()) {
+        Some(suffix) => {
+            let is_listed = matches!(suffix.typ(), Some(psl::Type::Icann) | Some(psl::Type::Private));
+            let suffix_is_whole_domain = suffix.as_bytes() == cd.as_bytes();
+            !(is_listed && suffix_is_whole_domain)
+        }
+        // No suffix found → treat as acceptable.
+        None => true,
+    }
+}
+
 /// Represents an HTTP cookie.
 ///
 /// Contains all cookie attributes as defined in RFC 6265, including
@@ -229,6 +271,18 @@ impl CookieJar {
         }
 
         if !Cookie::domain_matches(request_host, &domain) {
+            return;
+        }
+
+        // Public Suffix List check: reject cookies whose Domain attribute is
+        // itself a public suffix (e.g. "com", "co.uk"), which would let a
+        // server set cookies for an entire public suffix and leak them to
+        // unrelated subdomains. Mirrors GNU wget's libpsl usage (cookies.c:584).
+        if !is_cookie_domain_acceptable(request_host, &domain) {
+            log::warn!(
+                "cookie with Domain='{}' rejected: domain is a public suffix",
+                domain
+            );
             return;
         }
 
