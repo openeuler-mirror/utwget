@@ -306,6 +306,12 @@ pub fn build_request(
     }
 
     if let Some(ref data) = body {
+        // GNU wget sets Content-Type: application/x-www-form-urlencoded
+        // for --post-data/--post-file and --body-data/--body-file
+        // (http.c:1991-1992). Don't override a user-supplied Content-Type.
+        if req.get_header("Content-Type").is_none() {
+            req.header(crate::headers::CONTENT_TYPE, "application/x-www-form-urlencoded");
+        }
         if req.get_header("Content-Length").is_none() {
             req.header(crate::headers::CONTENT_LENGTH, data.len().to_string());
         }

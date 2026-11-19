@@ -1109,6 +1109,45 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
         }
     }
 
+    // --post-data / --post-file and --body-data / --body-file validation
+    // and auto-method-setting, mirroring GNU wget main.c:1833-1893.
+    //
+    // post_data/post_file are mutually exclusive with each other and with
+    // --method. They auto-set method=POST and feed the body.
+    // body_data/body_file are mutually exclusive with each other and require
+    // --method to be set explicitly.
+    let has_post = args.post_data.is_some() || args.post_file.is_some();
+    let has_body = args.body_data.is_some() || args.body_file.is_some();
+
+    if has_post {
+        if args.post_data.is_some() && args.post_file.is_some() {
+            eprintln!("utwget: 不能同时指定 --post-data 和 --post-file");
+            std::process::exit(2);
+        }
+        if config.http.method.is_some() {
+            eprintln!(
+                "utwget: 不能同时使用 --post-data/--post-file 和 --method。\
+                 --method 通过 --body-data 和 --body-file 选项发送数据"
+            );
+            std::process::exit(2);
+        }
+        // Auto-set method=POST (main.c:1879)
+        config.http.method = Some(ut_core::types::HttpMethod::Post);
+    }
+
+    if has_body {
+        if config.http.method.is_none() {
+            eprintln!(
+                "utwget: 必须通过 --method=HTTP方法 指定方法才能使用 --body-data 或 --body-file"
+            );
+            std::process::exit(2);
+        }
+        if args.body_data.is_some() && args.body_file.is_some() {
+            eprintln!("utwget: 不能同时指定 --body-data 和 --body-file");
+            std::process::exit(2);
+        }
+    }
+
     if let Some(ref post_data) = args.post_data {
         config.http.post_data = Some(post_data.as_bytes().to_vec());
     }

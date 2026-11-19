@@ -2211,6 +2211,29 @@ impl Retriever {
             }
         }
 
+        // Populate request body from config.
+        // --post-data/--post-file auto-set method=POST in the CLI layer
+        // (see app.rs); --body-data/--body-file require --method.
+        // Both feed into opts.post_data/opts.body_data which build_request
+        // passes to the wire (see http/src/request.rs).
+        if let Some(ref data) = self.config.http.post_data {
+            opts.post_data = Some(data.clone());
+        } else if let Some(ref path) = self.config.http.post_file {
+            match fs::read(path) {
+                Ok(data) => opts.post_data = Some(data),
+                Err(e) => log::warn!("post-file {:?} read error: {}", path, e),
+            }
+        }
+
+        if let Some(ref data) = self.config.http.body_data {
+            opts.body_data = Some(data.clone());
+        } else if let Some(ref path) = self.config.http.body_file {
+            match fs::read(path) {
+                Ok(data) => opts.body_data = Some(data),
+                Err(e) => log::warn!("body-file {:?} read error: {}", path, e),
+            }
+        }
+
         opts
     }
 
