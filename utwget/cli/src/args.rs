@@ -118,7 +118,7 @@ pub struct Args {
     pub recursive: bool,
 
     /// Maximum recursion depth (0 or 'inf' for infinite).
-    #[arg(short = 'l', long = "level", default_value = "5")]
+    #[arg(short = 'l', long = "level", default_value = "5", value_parser = parse_level)]
     pub level: u32,
 
     /// Download all page requisites (images, stylesheets, etc.).
@@ -818,4 +818,15 @@ pub struct Args {
     /// Multiple URLs can be specified. Options can appear anywhere
     /// on the command line, not just before URLs.
     pub urls: Vec<String>,
+}
+
+/// Parse the `--level` argument: accepts a number or "inf" (which maps to 0
+/// for unlimited depth, matching GNU wget's `cmd_number_inf`).
+fn parse_level(input: &str) -> Result<u32, String> {
+    if input.eq_ignore_ascii_case("inf") {
+        return Ok(0);
+    }
+    input
+        .parse::<u32>()
+        .map_err(|_| format!("invalid level '{}' (expected a number or 'inf')", input))
 }
