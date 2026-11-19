@@ -394,12 +394,16 @@ impl WgetrcParser {
                 config.wait_retry = parse_duration(value)?;
             }
             "level" => {
-                let level: u32 = value.parse().map_err(|_| ConfigError::InvalidValue {
-                    option: key.to_string(),
-                    reason: "not a number".to_string(),
-                })?;
-                // -l 0 means unlimited depth (like original wget)
-                config.recursive.max_level = if level == 0 { None } else { Some(level) };
+                // GNU wget accepts "inf" or 0 for unlimited depth
+                if value.eq_ignore_ascii_case("inf") || value == "0" {
+                    config.recursive.max_level = None;
+                } else {
+                    let level: u32 = value.parse().map_err(|_| ConfigError::InvalidValue {
+                        option: key.to_string(),
+                        reason: "not a number (use 0 or inf for unlimited)".to_string(),
+                    })?;
+                    config.recursive.max_level = Some(level);
+                }
             }
             "cut_dirs" | "cut-dirs" => {
                 config.cut_dirs = value.parse().map_err(|_| ConfigError::InvalidValue {
@@ -489,6 +493,9 @@ impl WgetrcParser {
             "post_data" | "post-data" => {
                 config.http.post_data = Some(value.as_bytes().to_vec());
             }
+            "post_file" | "post-file" => {
+                config.http.post_file = Some(PathBuf::from(value));
+            }
             "method" => {
                 config.http.method = Some(value.parse().map_err(|_| ConfigError::InvalidValue {
                     option: key.to_string(),
@@ -497,6 +504,68 @@ impl WgetrcParser {
             }
             "body_data" | "body-data" => {
                 config.http.body_data = Some(value.as_bytes().to_vec());
+            }
+            "body_file" | "body-file" => {
+                config.http.body_file = Some(PathBuf::from(value));
+            }
+            "referer" => {
+                config.http.referer = Some(value.to_string());
+            }
+            "user" => {
+                // Sets both HTTP and FTP user (GNU wget init.c:339)
+                config.http.user = Some(value.to_string());
+                config.ftp.user = Some(value.to_string());
+            }
+            "password" => {
+                // Sets both HTTP and FTP password (GNU wget init.c:274)
+                config.http.password = Some(value.to_string());
+                config.ftp.password = Some(value.to_string());
+            }
+            "backups" => {
+                let n: u32 = value.parse().map_err(|_| ConfigError::InvalidValue {
+                    option: key.to_string(),
+                    reason: "not a number".to_string(),
+                })?;
+                config.backups = Some(n);
+            }
+            "base" => {
+                config.base_url = Some(value.to_string());
+            }
+            "compression" => {
+                #[cfg(feature = "compression")]
+                {
+                    config.compression = match value.to_ascii_lowercase().as_str() {
+                        "auto" => ut_core::CompressionMode::Auto,
+                        "gzip" => ut_core::CompressionMode::Gzip,
+                        "none" => ut_core::CompressionMode::None,
+                        _ => return Err(ConfigError::InvalidValue {
+                            option: key.to_string(),
+                            reason: "must be auto, gzip, or none".to_string(),
+                        }),
+                    };
+                }
+            }
+            "progress" => {
+                config.progress.style = match value.to_ascii_lowercase().as_str() {
+                    "bar" => ut_core::ProgressStyle::Bar,
+                    "dot" => ut_core::ProgressStyle::Dot { bytes_per_dot: 1024, dots_per_line: 50, spacing: 1 },
+                    _ => config.progress.style,
+                };
+            }
+            "report_speed" => {
+                config.report_bps = value.eq_ignore_ascii_case("bits");
+            }
+            "use_askpass" | "use-askpass" => {
+                config.http.use_askpass = Some(value.to_string());
+            }
+            "local_encoding" => {
+                config.iri.locale = Some(value.to_string());
+            }
+            "remote_encoding" => {
+                config.iri.remote_encoding = Some(value.to_string());
+            }
+            "restrict_file_names" | "restrict-file-names" => {
+                config.restrict_file_names = Some(value.to_string());
             }
             _ => {
                 log::warn!("unknown wgetrc option: {}", key);
@@ -669,13 +738,53 @@ impl WgetrcParser {
             "htmlify" => {
                 config.ftp.htmlify = flag;
             }
-            "use_proxy" | "use-proxy" => {
+            "use_proxy" | "useproxy" => {
                 config.proxy.use_proxy = flag;
             }
-            "dns_cache" => {
-                if !flag {
-                    // no_dns_cache handled at app level
+            "netrc" => {
+                config.use_netrc = flag;
+            }
+            "mirror" => {
+                // GNU wget cmd_spec_mirror: -N -r -l inf --no-remove-listing
+                if flag {
+                    config.recursive.enabled = true;
+                    config.timestamping = true;
+                    config.recursive.max_level = None;
+                    config.ftp.remove_listing = false;
                 }
+            }
+            "unlink" => {
+                config.unlink = flag;
+            }
+            "xattr" => {
+                config.xattr = flag;
+            }
+            "iri" => {
+                // --iri / --no-iri toggle (default is on)
+            }
+            "cache" => {
+                config.http.no_cache = !flag;
+            }
+            "dirstruct" | "dir_struct" => {
+                // dirstruct on = create directories (default), off = --no-directories
+                if !flag {
+                    config.no_directories = true;
+                }
+            }
+            "inet4only" | "inet4-only" => {
+                if flag { config.force_ipv4 = true; }
+            }
+            "inet6only" | "inet6-only" => {
+                if flag { config.force_ipv6 = true; }
+            }
+            "hsts" => {
+                #[cfg(feature = "hsts")]
+                {
+                    config.hsts.enabled = flag;
+                }
+            }
+            "dns_cache" => {
+                config.no_dns_cache = !flag;
             }
             "no_hsts" | "no-hsts" => {
                 #[cfg(feature = "hsts")]
