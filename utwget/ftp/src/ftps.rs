@@ -393,7 +393,8 @@ impl FtpsClient {
             .map_err(FtpError::Io)?;
         (&*stream).flush()
             .map_err(FtpError::Io)?;
-        log::debug!("FTPS > {}", cmd);
+        let log_cmd = if cmd.starts_with("PASS ") { "PASS <redacted>" } else { cmd };
+        log::debug!("FTPS > {}", log_cmd);
         Ok(())
     }
 
@@ -540,7 +541,8 @@ impl FtpsClient {
             return Err(FtpError::Connect("not connected (TLS required)".into()));
         }
 
-        log::debug!("FTPS > {}", cmd);
+        let log_cmd = if cmd.starts_with("PASS ") { "PASS <redacted>" } else { cmd };
+        log::debug!("FTPS > {}", log_cmd);
         Ok(())
     }
 

@@ -83,7 +83,13 @@ impl FtpCommand {
         }
         transport.write_all(full.as_bytes()).map_err(FtpCommandError::Io)?;
         transport.flush().map_err(FtpCommandError::Io)?;
-        log::debug!("FTP CMD: {}", cmd.trim_end());
+        // Redact FTP password in debug logs to prevent credential exposure.
+        let log_cmd = if cmd.starts_with("PASS ") {
+            "PASS <redacted>"
+        } else {
+            cmd.trim_end()
+        };
+        log::debug!("FTP CMD: {}", log_cmd);
         Ok(())
     }
 }
