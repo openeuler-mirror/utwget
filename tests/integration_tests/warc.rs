@@ -33,6 +33,7 @@ fn test_warc_header_serialize_all_types() {
             truncated: None,
             wagon: None,
             payload_digest: None,
+            block_digest: None,
         };
         let bytes = header.serialize();
         let text = String::from_utf8(bytes).unwrap();
@@ -55,6 +56,7 @@ fn test_warc_header_with_target_uri() {
         truncated: None,
         wagon: None,
             payload_digest: None,
+            block_digest: None,
     };
     let bytes = header.serialize();
     let text = String::from_utf8(bytes).unwrap();
@@ -80,6 +82,7 @@ fn test_warc_header_with_concurrent_to() {
         truncated: Some("time".into()),
         wagon: None,
             payload_digest: None,
+            block_digest: None,
     };
     let bytes = header.serialize();
     let text = String::from_utf8(bytes).unwrap();
@@ -102,7 +105,8 @@ fn test_warc_header_gzip_compressed() {
         gzip_compressed: true,
         truncated: None,
         wagon: None,
-            payload_digest: None,
+            payload_digest: Some("sha1:abc123".into()),
+            block_digest: None,
     };
     let bytes = header.serialize();
     let text = String::from_utf8(bytes).unwrap();
@@ -124,6 +128,7 @@ fn test_warc_header_terminates_with_double_crlf() {
         truncated: None,
         wagon: None,
             payload_digest: None,
+            block_digest: None,
     };
     let bytes = header.serialize();
     assert!(bytes.ends_with(b"\r\n\r\n"));
