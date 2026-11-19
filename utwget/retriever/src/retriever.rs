@@ -183,6 +183,38 @@ impl Retriever {
                 config.recursive.exclude_domains.clone(),
             ));
         }
+        // Accept/reject pattern filters (-A / -R / --accept-regex / --reject-regex)
+        if !config.recursive.accept_patterns.is_empty() {
+            url_filter.add(ut_core::regex_filter::PatternAcceptFilter::new(
+                config.recursive.accept_patterns.clone(),
+            ));
+        }
+        if !config.recursive.reject_patterns.is_empty() {
+            url_filter.add(ut_core::regex_filter::PatternRejectFilter::new(
+                config.recursive.reject_patterns.clone(),
+            ));
+        }
+        if let Some(ref re) = config.recursive.accept_regex {
+            if let Ok(filter) = ut_core::regex_filter::RegexAcceptFilter::new(re) {
+                url_filter.add(filter);
+            }
+        }
+        if let Some(ref re) = config.recursive.reject_regex {
+            if let Ok(filter) = ut_core::regex_filter::RegexRejectFilter::new(re) {
+                url_filter.add(filter);
+            }
+        }
+        // Include/exclude directory filters (-I / -X)
+        if !config.recursive.include_directories.is_empty() {
+            url_filter.add(ut_core::regex_filter::IncludeDirectoryFilter::new(
+                config.recursive.include_directories.clone(),
+            ));
+        }
+        if !config.recursive.exclude_directories.is_empty() {
+            url_filter.add(ut_core::regex_filter::ExcludeDirectoryFilter::new(
+                config.recursive.exclude_directories.clone(),
+            ));
+        }
 
         let mut retriever = Retriever {
             config,

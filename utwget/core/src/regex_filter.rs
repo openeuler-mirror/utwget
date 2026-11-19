@@ -477,6 +477,201 @@ impl Default for BlacklistFilter {
     }
 }
 
+/// Check if `d2` is a subdirectory of `d1` (prefix match, matching GNU
+/// wget's `subdir_p` in utils.c:1090).
+///
+/// Returns `true` if `d2` starts with `d1` and is either exactly `d1` or
+/// continues with a `/` separator.
+fn subdir_p(d1: &str, d2: &str) -> bool {
+    if d1.is_empty() {
+        return true;
+    }
+    let (mut i1, mut i2) = (0usize, 0usize);
+    while i1 < d1.len() && i2 < d2.len() && d1.as_bytes()[i1] == d2.as_bytes()[i2] {
+        i1 += 1;
+        i2 += 1;
+    }
+    i1 == d1.len() && (i2 == d2.len() || d2.as_bytes().get(i2) == Some(&b'/'))
+}
+
+/// Check if a pattern contains glob metacharacters (`*`, `?`, `[`).
+fn has_wildcards(p: &str) -> bool {
+    p.contains('*') || p.contains('?') || p.contains('[')
+}
+
+/// Match a directory pattern against a directory path, matching GNU wget's
+/// `dir_matches_p` in utils.c:1108.
+///
+/// If the pattern has wildcards, uses glob matching with `FNM_PATHNAME`
+/// semantics (i.e., `*` does not cross `/` boundaries).  Otherwise, uses
+/// `subdir_p` prefix matching.
+fn dir_matches(pattern: &str, dir: &str) -> bool {
+    // Remove leading '/' from both pattern and dir (GNU wget does this).
+    let p = pattern.strip_prefix('/').unwrap_or(pattern);
+    let d = dir.strip_prefix('/').unwrap_or(dir);
+
+    if has_wildcards(p) {
+        // Glob match with FNM_PATHNAME: '*' does not cross '/'
+        glob_match_pathname(d, p)
+    } else {
+        subdir_p(p, d)
+    }
+}
+
+/// Glob matching with FNM_PATHNAME semantics: `*` does not cross `/`,
+/// `?` does not match `/`.  This mirrors `fnmatch(..., FNM_PATHNAME)`.
+fn glob_match_pathname(text: &str, pattern: &str) -> bool {
+    glob_match_pathname_bytes(text.as_bytes(), pattern.as_bytes(), 0, 0)
+}
+
+fn glob_match_pathname_bytes(t: &[u8], p: &[u8], ti: usize, pi: usize) -> bool {
+    let mut ti = ti;
+    let mut pi = pi;
+
+    loop {
+        if pi >= p.len() {
+            return ti >= t.len();
+        }
+        match p[pi] {
+            b'*' => {
+                // Skip consecutive '*'
+                let mut next_pi = pi + 1;
+                while next_pi < p.len() && p[next_pi] == b'*' {
+                    next_pi += 1;
+                }
+                if next_pi >= p.len() {
+                    return true; // trailing '*' matches everything
+                }
+                // '*' does not cross '/' in FNM_PATHNAME mode
+                let mut backtrack_ti = ti;
+                loop {
+                    if glob_match_pathname_bytes(t, p, backtrack_ti, next_pi) {
+                        return true;
+                    }
+                    if backtrack_ti >= t.len() || t[backtrack_ti] == b'/' {
+                        return false;
+                    }
+                    backtrack_ti += 1;
+                }
+            }
+            b'?' => {
+                // '?' matches any single char except '/' in FNM_PATHNAME
+                if ti >= t.len() || t[ti] == b'/' {
+                    return false;
+                }
+                ti += 1;
+                pi += 1;
+            }
+            b'[' => {
+                if ti >= t.len() || t[ti] == b'/' {
+                    return false;
+                }
+                if let Some((matched, consumed)) = match_class(t[ti], p, pi) {
+                    if !matched {
+                        return false;
+                    }
+                    pi = consumed;
+                    ti += 1;
+                } else {
+                    // Malformed class — treat '[' literally
+                    if ti >= t.len() || t[ti] != b'[' {
+                        return false;
+                    }
+                    ti += 1;
+                    pi += 1;
+                }
+            }
+            c => {
+                if ti >= t.len() || t[ti] != c {
+                    return false;
+                }
+                ti += 1;
+                pi += 1;
+            }
+        }
+    }
+}
+
+/// Include directory filter (--include-directories / -I).
+///
+/// A URL is accepted if its path matches (or is a subdirectory of) any
+/// pattern in the include list.  If the list is empty, all directories
+/// are accepted.
+pub struct IncludeDirectoryFilter {
+    /// Patterns to match (glob or prefix).
+    patterns: Vec<String>,
+}
+
+impl IncludeDirectoryFilter {
+    /// Creates a new include directory filter.
+    pub fn new(patterns: Vec<String>) -> Self {
+        IncludeDirectoryFilter { patterns }
+    }
+}
+
+impl UrlFilter for IncludeDirectoryFilter {
+    fn is_accepted(&self, url: &str, _filename: &str) -> bool {
+        if self.patterns.is_empty() {
+            return true;
+        }
+        let dir = url_to_path(url);
+        self.patterns.iter().any(|p| dir_matches(p, &dir))
+    }
+}
+
+/// Exclude directory filter (--exclude-directories / -X).
+///
+/// A URL is rejected if its path matches (or is a subdirectory of) any
+/// pattern in the exclude list.  If the list is empty, all directories
+/// are accepted.
+pub struct ExcludeDirectoryFilter {
+    /// Patterns to match (glob or prefix).
+    patterns: Vec<String>,
+}
+
+impl ExcludeDirectoryFilter {
+    /// Creates a new exclude directory filter.
+    pub fn new(patterns: Vec<String>) -> Self {
+        ExcludeDirectoryFilter { patterns }
+    }
+}
+
+impl UrlFilter for ExcludeDirectoryFilter {
+    fn is_accepted(&self, url: &str, _filename: &str) -> bool {
+        if self.patterns.is_empty() {
+            return true;
+        }
+        let dir = url_to_path(url);
+        !self.patterns.iter().any(|p| dir_matches(p, &dir))
+    }
+}
+
+/// Extracts the directory path from a URL string (everything except the
+/// filename, the query, and the fragment).
+fn url_to_path(url: &str) -> String {
+    // Strip scheme://host
+    let path = if let Some(pos) = url.find("://") {
+        let after_scheme = &url[pos + 3..];
+        // Find the first '/' after the host
+        if let Some(slash) = after_scheme.find('/') {
+            &after_scheme[slash..]
+        } else {
+            "/"
+        }
+    } else {
+        url
+    };
+    // Strip query and fragment
+    let path = path.split(['?', '#']).next().unwrap_or(path);
+    // Remove trailing filename (last path component) to get the directory
+    if let Some(pos) = path.rfind('/') {
+        &path[..pos]
+    } else {
+        path
+    }
+    .to_string()
+}
+
 /// Extracts the host from a URL string.
 ///
 /// # Arguments
