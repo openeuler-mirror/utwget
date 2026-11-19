@@ -1,5 +1,6 @@
 use crate::url::ParsedUrl;
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 /// A single rule from a robots.txt file, specifying whether a path is allowed or disallowed.
 #[derive(Debug, Clone)]
@@ -31,6 +32,16 @@ pub struct RobotSpecs {
     pub sitemaps: Vec<String>,
 }
 
+/// Cached robots.txt entry with fetch timestamp.
+#[derive(Debug, Clone)]
+struct CachedSpecs {
+    specs: RobotSpecs,
+    fetched_at: Instant,
+}
+
+/// Default TTL for cached robots.txt entries (1 hour).
+const ROBOTS_CACHE_TTL: Duration = Duration::from_secs(3600);
+
 /// Parses robots.txt content and caches the results per host.
 ///
 /// Supports the following directives:
@@ -41,8 +52,8 @@ pub struct RobotSpecs {
 /// - `Sitemap`
 #[derive(Debug, Clone, Default)]
 pub struct RobotParser {
-    /// Cache mapping hostnames (lowercased) to their parsed `RobotSpecs`.
-    specs_cache: HashMap<String, RobotSpecs>,
+    /// Cache mapping hostnames (lowercased) to cached specs + fetch time.
+    specs_cache: HashMap<String, CachedSpecs>,
     /// The user agent string used when matching agent-specific groups.
     user_agent: String,
 }
@@ -59,6 +70,25 @@ impl RobotParser {
     /// Sets the user agent string used for matching agent-specific groups.
     pub fn set_user_agent(&mut self, agent: &str) {
         self.user_agent = agent.to_string();
+    }
+
+    /// Check if the cached robots.txt for `host` is stale (expired TTL).
+    ///
+    /// Returns `true` if the host has a cache entry that has exceeded the
+    /// TTL, or `false` if the entry is fresh or doesn't exist. Callers can
+    /// use this to decide whether to re-fetch robots.txt.
+    pub fn is_stale(&self, host: &str) -> bool {
+        let host_lc = host.to_ascii_lowercase();
+        match self.specs_cache.get(&host_lc) {
+            Some(c) => c.fetched_at.elapsed() > ROBOTS_CACHE_TTL,
+            None => false,
+        }
+    }
+
+    /// Invalidate the cached robots.txt entry for a host, forcing a re-fetch
+    /// on the next `load`.
+    pub fn invalidate(&mut self, host: &str) {
+        self.specs_cache.remove(&host.to_ascii_lowercase());
     }
 
     /// Parses the raw text of a robots.txt file into a `RobotSpecs`.
@@ -183,7 +213,13 @@ impl RobotParser {
     /// * `content` - The raw text content of the host's robots.txt file
     pub fn load(&mut self, host: &str, content: &str) {
         let specs = self.parse(content);
-        self.specs_cache.insert(host.to_ascii_lowercase(), specs);
+        self.specs_cache.insert(
+            host.to_ascii_lowercase(),
+            CachedSpecs {
+                specs,
+                fetched_at: Instant::now(),
+            },
+        );
     }
 
     /// Returns whether the given URL is allowed for the specified host according to
@@ -203,7 +239,12 @@ impl RobotParser {
     /// * `None` if no cached rules exist for the host
     pub fn is_allowed(&self, host: &str, url: &str) -> Option<bool> {
         let host_lc = host.to_ascii_lowercase();
-        let specs = self.specs_cache.get(&host_lc)?;
+        let cached = self.specs_cache.get(&host_lc)?;
+        // Return None if cache entry is stale (expired TTL).
+        if cached.fetched_at.elapsed() > ROBOTS_CACHE_TTL {
+            return None;
+        }
+        let specs = &cached.specs;
 
         let parsed = ParsedUrl::parse(url).ok()?;
         let path = &parsed.path;
@@ -264,7 +305,11 @@ impl RobotParser {
     /// The crawl delay in seconds, or `None` if not specified or not cached.
     pub fn crawl_delay(&self, host: &str) -> Option<f64> {
         let host_lc = host.to_ascii_lowercase();
-        let specs = self.specs_cache.get(&host_lc)?;
+        let cached = self.specs_cache.get(&host_lc)?;
+        if cached.fetched_at.elapsed() > ROBOTS_CACHE_TTL {
+            return None;
+        }
+        let specs = &cached.specs;
 
         let mut best_group: Option<&RobotGroup> = None;
         let mut best_specificity: i32 = -1;
@@ -298,15 +343,17 @@ impl RobotParser {
     /// A vector of sitemap URL strings (empty if none are declared or not cached).
     pub fn sitemaps(&self, host: &str) -> Vec<String> {
         let host_lc = host.to_ascii_lowercase();
-        if let Some(specs) = self.specs_cache.get(&host_lc) {
-            // Deduplicate while preserving order.
-            let mut seen = std::collections::HashSet::new();
-            return specs
-                .sitemaps
-                .iter()
-                .filter(|s| seen.insert(s.clone()))
-                .cloned()
-                .collect();
+        if let Some(cached) = self.specs_cache.get(&host_lc) {
+            if cached.fetched_at.elapsed() <= ROBOTS_CACHE_TTL {
+                let mut seen = std::collections::HashSet::new();
+                return cached
+                    .specs
+                    .sitemaps
+                    .iter()
+                    .filter(|s| seen.insert(s.clone()))
+                    .cloned()
+                    .collect();
+            }
         }
         Vec::new()
     }
