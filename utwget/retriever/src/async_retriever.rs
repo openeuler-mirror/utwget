@@ -1,9 +1,16 @@
-//! Async file retriever implementation.
+//! Concurrent file retriever implementation.
 //!
-//! This module provides async versions of the `Retriever` methods using tokio.
-//! The async methods use `tokio::task::spawn_blocking` to run the synchronous
-//! I/O operations in a dedicated thread pool, allowing the tokio runtime to
-//! manage concurrent downloads efficiently.
+//! This module provides a concurrent wrapper around the synchronous
+//! `Retriever` using `tokio::task::spawn_blocking`. Each "async" download
+//! runs the fully blocking synchronous I/O path on a dedicated tokio
+//! blocking thread. This gives thread-level parallelism (equivalent to
+//! `std::thread::spawn` with a bounded pool) rather than true async I/O.
+//!
+//! The download path uses `std::net::TcpStream` and blocking `read`/`write`.
+//! A future rewrite to `tokio::net::TcpStream` + async TLS would convert
+//! these to true async I/O. Until then, `-j N` provides N parallel OS
+//! threads blocked on synchronous I/O, which is adequate for the CLI
+//! download use case.
 
 use std::sync::Arc;
 
