@@ -163,10 +163,15 @@ impl Cookie {
         }
 
         if domain_lc.starts_with('.') {
-            if let Some(suffix) = host_lc.strip_suffix(&domain_lc) {
-                if suffix.ends_with('.') || suffix.is_empty() {
-                    return true;
-                }
+            // Domain has a leading dot (e.g. ".example.com"). The host
+            // matches if it ends with the domain (the dot serves as the
+            // subdomain separator). E.g. domain=".example.com" matches
+            // host="www.example.com" (ends with ".example.com").
+            // The previous code checked `suffix.ends_with('.')` which was
+            // wrong — for "www.example.com" the suffix is "www" (no dot),
+            // so it would incorrectly return false.
+            if host_lc.ends_with(&domain_lc) {
+                return true;
             }
         } else {
             if host_lc.len() > domain_lc.len() {

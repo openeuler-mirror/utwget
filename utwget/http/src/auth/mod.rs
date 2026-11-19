@@ -268,19 +268,37 @@ fn parse_auth_params(input: &str) -> (Vec<(String, String)>, &str) {
         rest = &rest[1..];
 
         let (value, next) = if rest.starts_with('"') {
-            match rest[1..].find('"') {
-                Some(end_idx) => {
-                    let val = rest[1..1 + end_idx].to_string();
-                    let after = &rest[2 + end_idx..];
-                    let after = after.trim_start();
-                    let after = if after.starts_with(',') { &after[1..] } else { after };
-                    (val, after)
-                }
-                None => {
-                    let val = rest[1..].to_string();
-                    (val, "")
+            // RFC 7235 quoted-string: may contain escaped characters
+            // (quoted-pair = "\" ( DQUOTE / "\" )). We need to handle
+            // backslash escapes to avoid treating an escaped DQUOTE as the
+            // end of the string.
+            let bytes = rest.as_bytes();
+            let mut val = String::new();
+            let mut i = 1; // skip opening quote
+            let mut closed = false;
+            while i < bytes.len() {
+                let b = bytes[i];
+                if b == b'\\' && i + 1 < bytes.len() {
+                    // Escaped character: include literally
+                    val.push(bytes[i + 1] as char);
+                    i += 2;
+                } else if b == b'"' {
+                    // End of quoted string
+                    closed = true;
+                    i += 1;
+                    break;
+                } else {
+                    val.push(b as char);
+                    i += 1;
                 }
             }
+            let after = if closed {
+                let after = &rest[i..].trim_start();
+                if after.starts_with(',') { &after[1..] } else { after }
+            } else {
+                ""
+            };
+            (val, after)
         } else {
             let token_end = rest
                 .find(|c: char| c == ',' || c.is_whitespace())

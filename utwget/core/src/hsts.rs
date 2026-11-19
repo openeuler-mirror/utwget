@@ -104,12 +104,27 @@ impl HstsStore {
                 return Some(entry.include_subdomains);
             }
         }
+        // Subdomain matching: walk all entries with include_subdomains.
+        // Avoid allocating a String via format!(".{}", ...) in the hot loop;
+        // use a stack buffer and ends_with on byte slices instead.
         for entry in self.entries.values() {
             if entry.include_subdomains && !entry.is_expired() {
-                if host_lc.ends_with(&format!(".{}", entry.host))
-                    || host_lc == entry.host
-                {
+                // host must end with ".<entry.host>" or equal entry.host
+                // (already covered by the direct get above, but check again
+                // for safety in case the direct entry was expired).
+                if host_lc == entry.host {
                     return Some(true);
+                }
+                // Build ".host" comparison without heap allocation
+                let eh = entry.host.as_bytes();
+                if host_lc.len() > eh.len() + 1 {
+                    let suffix_start = host_lc.len() - eh.len() - 1;
+                    // Check: host[suffix_start] == '.' and host[suffix_start+1..] == entry.host
+                    if host_lc.as_bytes().get(suffix_start) == Some(&b'.')
+                        && &host_lc.as_bytes()[suffix_start + 1..] == eh
+                    {
+                        return Some(true);
+                    }
                 }
             }
         }

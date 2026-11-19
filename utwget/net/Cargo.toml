@@ -20,3 +20,4 @@ native-tls = { version = "0.2", optional = true }
 libc = "0.2"
 log = "0.4"
 thiserror = "2"
+base64 = { workspace = true }
