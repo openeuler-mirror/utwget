@@ -1049,7 +1049,7 @@ impl Retriever {
         self.apply_server_timestamp(&output_path, &resp_meta);
 
         #[cfg(feature = "warc")]
-        self.write_warc_record(&url.display(), &response, &resp_meta);
+        self.write_warc_record(&url.display(), &response, &resp_meta, &output_path);
 
         // Set extended attributes if enabled
         if self.config.xattr {
@@ -2585,18 +2585,28 @@ impl Retriever {
         url: &str,
         response: &HttpResponse,
         meta: &ResponseMeta,
+        output_path: &std::path::Path,
     ) {
         if let Some(ref mut warc) = self.warc {
             let date = Utc::now();
             let header_bytes = serialize_headers(&response.headers);
-            // NOTE: The response body is streamed via pending_body_reader and
-            // never stored in HttpResponse.body.  We record an empty payload so
-            // that WARC headers (URL, status, Content-Type) are preserved.  A
-            // future enhancement can tee the body stream into a buffer for
-            // full-content WARC records.
-            let body_bytes: &[u8] = &[];
+            // Read the response body from the downloaded file so the WARC
+            // record contains the full response (GNU wget writes the full
+            // response body to WARC).  If the file is not available or too
+            // large, record an empty payload with the headers preserved.
+            let body_bytes = if output_path.exists() {
+                match std::fs::read(output_path) {
+                    Ok(data) => data,
+                    Err(e) => {
+                        warn!("WARC: failed to read body from {}: {}", output_path.display(), e);
+                        Vec::new()
+                    }
+                }
+            } else {
+                Vec::new()
+            };
             let ct = meta.content_type.as_deref().unwrap_or("application/octet-stream");
-            if let Err(e) = warc.write_response(url, response.status_code, &header_bytes, body_bytes, ct, date) {
+            if let Err(e) = warc.write_response(url, response.status_code, &header_bytes, &body_bytes, ct, date) {
                 warn!("WARC write failed: {}", e);
             }
         }
