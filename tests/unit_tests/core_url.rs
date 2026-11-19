@@ -314,8 +314,11 @@ fn test_url_display_with_fragment() {
 
 #[test]
 fn test_url_display_with_user_info() {
+    // Display masks credentials to prevent leaking in logs/stderr.
     let url = ParsedUrl::parse("http://user:pass@example.com/path").unwrap();
-    assert_eq!(url.to_string(), "http://user:pass@example.com/path#");
+    assert_eq!(url.to_string(), "http://***:***@example.com/path#");
+    // display_with_credentials returns the full URL with credentials.
+    assert_eq!(url.display_with_credentials(), "http://user:pass@example.com/path#");
 }
 
 // ============================================================================

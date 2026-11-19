@@ -324,11 +324,45 @@ impl ParsedUrl {
 
     /// Get a displayable string representation of the URL.
     ///
-    /// # Returns
-    ///
-    /// A string representation suitable for display.
+    /// Credentials are masked to prevent leaking in logs/stderr.
+    /// Use `display_with_credentials()` if you need the full URL with
+    /// credentials (e.g. for internal HTTP request construction).
     pub fn display(&self) -> String {
-        self.to_string()
+        self.display_safe()
+    }
+
+    /// Get the full URL with credentials included (no masking).
+    ///
+    /// This should only be used where the raw URL with credentials is
+    /// genuinely needed (e.g. HTTP request-target, proxy connections).
+    /// For all user-visible output (logs, stderr, progress), use
+    /// `display()` or `display_safe()` instead.
+    pub fn display_with_credentials(&self) -> String {
+        let mut result = format!("{}://", self.scheme);
+        if let Some(ref user) = self.user {
+            result.push_str(user);
+            if let Some(ref pass) = self.password {
+                result.push(':');
+                result.push_str(pass);
+            }
+            result.push('@');
+        }
+        result.push_str(&self.host);
+        let default_port = self.scheme.default_port();
+        if self.port != default_port {
+            result.push_str(&format!(":{}", self.port));
+        }
+        result.push_str(&self.path);
+        if let Some(ref p) = self.params {
+            result.push_str(&format!(";{}", p));
+        }
+        if let Some(ref q) = self.query {
+            result.push_str(&format!("?{}", q));
+        }
+        if let Some(ref fr) = self.fragment {
+            result.push_str(&format!("#{}", fr));
+        }
+        result
     }
 
     /// Get a log-safe string representation with credentials masked.
@@ -358,13 +392,11 @@ impl ParsedUrl {
 
 impl fmt::Display for ParsedUrl {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Display masks credentials to prevent leaking in logs/stderr.
+        // Use display_with_credentials() for internal HTTP request construction.
         write!(f, "{}://", self.scheme)?;
-        if let Some(ref user) = self.user {
-            write!(f, "{}", user)?;
-            if let Some(ref pass) = self.password {
-                write!(f, ":{}", pass)?;
-            }
-            write!(f, "@")?;
+        if self.user.is_some() {
+            write!(f, "***:***@")?;
         }
         write!(f, "{}", self.host)?;
         let default_port = self.scheme.default_port();
