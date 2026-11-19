@@ -7,14 +7,12 @@
 //! - Connection pooling and management
 //! - Proxy support
 
-pub mod connection;
 pub mod dns;
 pub mod proxy;
 pub mod tcp;
 pub mod tls;
 pub mod transport;
 
-pub use connection::{ConnectionKey, ConnectionManager, ManagedConnection};
 pub use dns::{DnsError, DnsResolver};
 pub use tcp::connect_to_host;
 pub use tls::{TlsConfig, TlsConnector};
