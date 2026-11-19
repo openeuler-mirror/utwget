@@ -1157,8 +1157,10 @@ impl Retriever {
                 ca_cert: self.config.tls.ca_cert.clone(),
                 client_cert: self.config.tls.cert_file.clone(),
                 client_key: self.config.tls.private_key.clone(),
-                require_data_tls: true,
+                require_data_tls: !self.config.ftp.ftps_clear_data,
                 secure_protocol: self.config.tls.secure_protocol,
+                clear_data_connection: self.config.ftp.ftps_clear_data,
+                resume_ssl: self.config.ftp.ftps_resume_ssl,
             };
             let mut ftps_client = ut_ftp::FtpsClient::with_config(ftps_cfg);
 
@@ -1408,8 +1410,10 @@ impl Retriever {
                 ca_cert: self.config.tls.ca_cert.clone(),
                 client_cert: self.config.tls.cert_file.clone(),
                 client_key: self.config.tls.private_key.clone(),
-                require_data_tls: true,
+                require_data_tls: !self.config.ftp.ftps_clear_data,
                 secure_protocol: self.config.tls.secure_protocol,
+                clear_data_connection: self.config.ftp.ftps_clear_data,
+                resume_ssl: self.config.ftp.ftps_resume_ssl,
             };
             let mut ftps = ut_ftp::FtpsClient::with_config(ftps_cfg);
             if self.config.ftp.ftps_implicit {
