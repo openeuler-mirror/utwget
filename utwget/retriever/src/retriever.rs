@@ -610,6 +610,17 @@ impl Retriever {
             eprintln!("---响应头结束---");
         }
 
+        // Show server response headers if --server-response is enabled.
+        // This must come BEFORE the spider early-return so that
+        // `wget -S --spider` prints the headers (matching GNU wget).
+        if self.config.server_response && !self.config.quiet {
+            eprintln!("{} {} {}", response.version, response.status_code, response.reason);
+            for (key, value) in response.headers.iter() {
+                eprintln!("  {}: {}", key, value);
+            }
+            eprintln!();
+        }
+
         // Spider mode: if response is successful, report file exists and return
         // without downloading the body (matches wget --spider behavior).
         // Redirects are handled in the redirect block below so the spider does
@@ -624,15 +635,6 @@ impl Retriever {
                     message: response.reason.clone(),
                 }));
             }
-        }
-
-        // Only show full HTTP headers if --server-response is enabled
-        if self.config.server_response && !self.config.quiet {
-            eprintln!("{} {} {}", response.version, response.status_code, response.reason);
-            for (key, value) in response.headers.iter() {
-                eprintln!("  {}: {}", key, value);
-            }
-            eprintln!();
         }
 
         // Always show content length
