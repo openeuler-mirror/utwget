@@ -153,6 +153,10 @@ pub struct Args {
     #[arg(long = "no-clobber")]
     pub no_clobber: bool,
 
+    /// Allow downloads that would overwrite existing files (default).
+    #[arg(long = "clobber")]
+    pub clobber: bool,
+
     /// Remove file before overwriting (unlink instead of truncate).
     #[arg(long = "unlink")]
     pub unlink: bool,
@@ -289,6 +293,10 @@ pub struct Args {
     #[arg(long = "no-netrc")]
     pub no_netrc: bool,
 
+    /// Try to obtain credentials from .netrc file (default).
+    #[arg(long = "netrc")]
+    pub netrc: bool,
+
     /// Identify as AGENT instead of Wget/VERSION.
     #[arg(short = 'U', long = "user-agent")]
     pub user_agent: Option<String>,
@@ -296,6 +304,10 @@ pub struct Args {
     /// Disable IRI (Internationalized Resource Identifier) support.
     #[arg(long = "no-iri")]
     pub no_iri: bool,
+
+    /// Enable IRI support (default).
+    #[arg(long = "iri")]
+    pub iri: bool,
 
     /// Set local encoding for IRI (e.g., UTF-8).
     #[arg(long = "local-encoding")]
@@ -309,9 +321,17 @@ pub struct Args {
     #[arg(long = "no-if-modified-since")]
     pub no_if_modified_since: bool,
 
+    /// Use conditional If-Modified-Since GET requests (with -N).
+    #[arg(long = "if-modified-since")]
+    pub if_modified_since: bool,
+
     /// Don't set local file timestamp from server's Last-Modified.
     #[arg(long = "no-use-server-timestamps")]
     pub no_use_server_timestamps: bool,
+
+    /// Set local file timestamp from server's Last-Modified (default).
+    #[arg(long = "use-server-timestamps")]
+    pub use_server_timestamps: bool,
 
     /// Print server response headers.
     #[arg(short = 'S', long = "server-response")]
@@ -419,6 +439,10 @@ pub struct Args {
     #[arg(long = "no-parent")]
     pub no_parent: bool,
 
+    /// Ascend to the parent directory when recursing (default).
+    #[arg(long = "parent")]
+    pub parent: bool,
+
     /// Comma-separated list of directories to include when recursing.
     #[arg(short = 'I', long = "include-directories")]
     pub include_directories: Option<String>,
@@ -431,6 +455,10 @@ pub struct Args {
     #[arg(long = "no-host-directories")]
     pub no_host_directories: bool,
 
+    /// Create host-prefixed directories (default).
+    #[arg(long = "host-directories")]
+    pub host_directories: bool,
+
     /// Use protocol name in directory path (http/, https/).
     #[arg(long = "protocol-directories")]
     pub protocol_directories: bool,
@@ -439,6 +467,10 @@ pub struct Args {
     #[arg(long = "no-directories")]
     pub no_directories: bool,
 
+    /// Create a directory hierarchy (default).
+    #[arg(long = "directories")]
+    pub directories: bool,
+
     /// Force creation of directory hierarchy.
     #[arg(long = "force-directories")]
     pub force_directories: bool,
@@ -446,6 +478,10 @@ pub struct Args {
     /// Don't validate the server's SSL/TLS certificate.
     #[arg(long = "no-check-certificate")]
     pub no_check_certificate: bool,
+
+    /// Validate the server's SSL/TLS certificate (default).
+    #[arg(long = "check-certificate")]
+    pub check_certificate: bool,
 
     /// Client certificate file for SSL/TLS authentication.
     #[arg(long = "certificate")]
@@ -511,13 +547,25 @@ pub struct Args {
     #[arg(long = "no-remove-listing")]
     pub no_remove_listing: bool,
 
+    /// Remove temporary '.listing' files after FTP transfers (default).
+    #[arg(long = "remove-listing")]
+    pub remove_listing: bool,
+
     /// Turn off FTP file name globbing (wildcard expansion).
     #[arg(long = "no-glob")]
     pub no_glob: bool,
 
+    /// Enable FTP file name globbing (default).
+    #[arg(long = "glob")]
+    pub glob: bool,
+
     /// Disable passive FTP transfer mode (use active mode).
     #[arg(long = "no-passive-ftp")]
     pub no_passive_ftp: bool,
+
+    /// Enable passive FTP transfer mode (default).
+    #[arg(long = "passive-ftp")]
+    pub passive_ftp: bool,
 
     /// Use implicit FTPS (SSL/TLS from start, default port 990).
     #[arg(long = "ftps-implicit")]
@@ -543,9 +591,17 @@ pub struct Args {
     #[arg(long = "no-http-keep-alive")]
     pub no_http_keep_alive: bool,
 
+    /// Enable HTTP keep-alive (default).
+    #[arg(long = "http-keep-alive")]
+    pub http_keep_alive: bool,
+
     /// Don't use HTTP cookies.
     #[arg(long = "no-cookies")]
     pub no_cookies: bool,
+
+    /// Use HTTP cookies (default).
+    #[arg(long = "cookies")]
+    pub cookies: bool,
 
     /// Load cookies from FILE before the session.
     #[arg(long = "load-cookies")]
@@ -562,6 +618,10 @@ pub struct Args {
     /// Disable HTTP Strict Transport Security (HSTS).
     #[arg(long = "no-hsts")]
     pub no_hsts: bool,
+
+    /// Enable HTTP Strict Transport Security (HSTS, default).
+    #[arg(long = "hsts")]
+    pub hsts: bool,
 
     /// Path of HSTS database file (overrides default).
     #[arg(long = "hsts-file")]
@@ -598,6 +658,10 @@ pub struct Args {
     /// Disable proxy completely.
     #[arg(long = "no-proxy")]
     pub no_proxy: bool,
+
+    /// Enable proxy (default).
+    #[arg(long = "proxy")]
+    pub proxy: bool,
 
     /// Save request/response data to WARC file (.warc.gz).
     #[arg(long = "warc-file")]
@@ -677,9 +741,17 @@ pub struct Args {
     #[arg(long = "no-dns-cache")]
     pub no_dns_cache: bool,
 
+    /// Enable caching of DNS lookups (default).
+    #[arg(long = "dns-cache")]
+    pub dns_cache: bool,
+
     /// Disable server-side cache (send Cache-Control: no-cache).
     #[arg(long = "no-cache")]
     pub no_cache: bool,
+
+    /// Enable server-side cache (default).
+    #[arg(long = "cache")]
+    pub cache: bool,
 
     /// Bind to ADDRESS (hostname or IP) on local host for outgoing connections.
     #[arg(long = "bind-address")]
