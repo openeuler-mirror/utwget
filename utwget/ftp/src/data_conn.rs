@@ -5,9 +5,9 @@
 //! active mode (PORT/EPRT) for IPv4 and IPv6.
 
 use std::io;
-use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, TcpStream};
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, TcpListener, TcpStream};
 
-use crate::command::{FtpCommand, FtpCommandError, FtpResponse, Transport};
+use crate::command::{FtpCommand, FtpCommandError, FtpResponse, IntoTcpStream, Transport};
 
 /// The mode for establishing FTP data connections.
 pub enum DataConnectionMode {
@@ -20,6 +20,11 @@ pub enum DataConnectionMode {
 /// An established FTP data connection.
 ///
 /// This wraps a transport that can be used for file transfers.
+/// In active mode, the transport is a [`LazyActiveTransport`] that defers
+/// `accept()` until the first `read()` call, so the data transfer command
+/// (LIST/RETR) can be sent on the control connection before the server
+/// initiates the data connection — matching RFC 959 and GNU wget's
+/// `ftp.c:1383-1389` behavior.
 pub struct DataConnection {
     /// The underlying transport for data transfer.
     pub stream: Box<dyn Transport<Error = io::Error>>,
@@ -33,6 +38,95 @@ impl DataConnection {
     /// * `stream` - The transport to wrap.
     pub fn new(stream: Box<dyn Transport<Error = io::Error>>) -> Self {
         DataConnection { stream }
+    }
+
+    /// Create a new active-mode data connection from a listener.
+    ///
+    /// The listener's `accept()` is deferred until the first `read()` call,
+    /// so the caller can send the data transfer command (LIST/RETR) on the
+    /// control connection before the server initiates the data connection.
+    pub fn new_active(listener: TcpListener) -> Self {
+        DataConnection {
+            stream: Box::new(LazyActiveTransport::new(listener)),
+        }
+    }
+}
+
+/// A transport adapter for active-mode FTP that lazily accepts the server's
+/// data connection on the first `read()` or `write_all()` call.
+///
+/// This is necessary because in active mode the client must send the
+/// transfer command (LIST/RETR) on the control connection *before* the
+/// server will initiate the data connection.  If `accept()` is called
+/// before the transfer command, the connection deadlocks.
+struct LazyActiveTransport {
+    listener: Option<TcpListener>,
+    stream: Option<TcpStream>,
+}
+
+impl LazyActiveTransport {
+    fn new(listener: TcpListener) -> Self {
+        LazyActiveTransport {
+            listener: Some(listener),
+            stream: None,
+        }
+    }
+
+    /// Lazily accept the incoming data connection if not already done.
+    fn ensure_accepted(&mut self) -> io::Result<&mut TcpStream> {
+        if self.stream.is_none() {
+            let listener = self.listener
+                .take()
+                .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "listener already consumed"))?;
+            let (stream, addr) = listener.accept()?;
+            stream.set_nonblocking(false).ok();
+            stream.set_read_timeout(Some(std::time::Duration::from_secs(60))).ok();
+            stream.set_write_timeout(Some(std::time::Duration::from_secs(60))).ok();
+            log::debug!("FTP active mode data connection accepted from {}", addr);
+            self.stream = Some(stream);
+        }
+        Ok(self.stream.as_mut().unwrap())
+    }
+}
+
+impl Transport for LazyActiveTransport {
+    type Error = io::Error;
+
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
+        let stream = self.ensure_accepted()?;
+        stream.read(buf)
+    }
+
+    fn write_all(&mut self, buf: &[u8]) -> Result<(), Self::Error> {
+        let stream = self.ensure_accepted()?;
+        stream.write_all(buf)
+    }
+
+    fn flush(&mut self) -> Result<(), Self::Error> {
+        if let Some(ref mut stream) = self.stream {
+            return stream.flush();
+        }
+        Ok(())
+    }
+
+    fn peer_addr(&self) -> Result<std::net::SocketAddr, Self::Error> {
+        if let Some(ref stream) = self.stream {
+            return stream.peer_addr();
+        }
+        Err(io::Error::new(io::ErrorKind::NotConnected, "connection not yet accepted"))
+    }
+}
+
+impl IntoTcpStream for LazyActiveTransport {
+    fn into_tcp_stream(self: Box<Self>) -> Result<std::net::TcpStream, io::Error> {
+        match (self.listener, self.stream) {
+            (_, Some(stream)) => Ok(stream),
+            (Some(listener), None) => {
+                let (stream, _) = listener.accept()?;
+                Ok(stream)
+            }
+            (None, None) => Err(io::Error::new(io::ErrorKind::Other, "no listener or stream")),
+        }
     }
 }
 
