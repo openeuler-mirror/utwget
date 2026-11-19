@@ -361,7 +361,25 @@ impl HstsStore {
                 entry.host, port, inc_sub, created_ts, entry.max_age
             ));
         }
-        fs::write(path, content).map_err(WgetError::WriteError)?;
+        // Write HSTS file with 0600 permissions (owner-only) to protect
+        // the user's browsing history, matching GNU wget behavior.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            let mut file = std::fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(path)
+                .map_err(WgetError::WriteError)?;
+            use std::io::Write;
+            file.write_all(content.as_bytes()).map_err(WgetError::WriteError)?;
+        }
+        #[cfg(not(unix))]
+        {
+            fs::write(path, content).map_err(WgetError::WriteError)?;
+        }
         Ok(())
     }
 
