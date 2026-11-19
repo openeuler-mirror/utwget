@@ -242,11 +242,29 @@ impl RecursiveRetriever {
                         any_downloaded = true;
                         let local = body_result.local_file.as_ref().map(|p| p.as_path());
 
-                        if !page_requisites && entry.depth < max_depth.unwrap_or(u32::MAX) {
+                        // Determine whether to descend into children.
+                        // GNU wget (recur.c:390-408) allows -p to exceed the
+                        // maximum depth by up to 2 pseudo-levels for inline
+                        // links (dash_p_leaf_HTML).
+                        let depth_limit = max_depth.unwrap_or(u32::MAX);
+                        let at_or_beyond_limit = entry.depth >= depth_limit;
+                        let dash_p_leaf = page_requisites && at_or_beyond_limit
+                            && (entry.depth == depth_limit || entry.depth == depth_limit + 1);
+
+                        // Descend if we haven't hit the depth limit, or if -p
+                        // allows inline links at the leaf level.
+                        let descend = entry.depth < depth_limit || dash_p_leaf;
+
+                        if descend {
                             if let Some(lpath) = local {
                                 if let Some(links) = self.extract_links(lpath, &url_str, &entry) {
                                     for link in links {
                                         if link.meta_disallow_follow {
+                                            continue;
+                                        }
+                                        // At dash_p_leaf level, only follow
+                                        // inline links (GNU wget recur.c:470).
+                                        if dash_p_leaf && !link.inline {
                                             continue;
                                         }
                                         self.enqueue_child(&link, &url_str, entry.depth, &mut queue);
@@ -254,26 +272,24 @@ impl RecursiveRetriever {
                                 }
                             }
                         }
-
-                        if page_requisites {
-                            if let Some(lpath) = local {
-                                if let Some(links) = self.extract_links(lpath, &url_str, &entry) {
-                                    for link in links {
-                                        if link.inline {
-                                            self.enqueue_child(&link, &url_str, entry.depth, &mut queue);
-                                        }
-                                    }
-                                }
-                            }
-                        }
                     }
                     Ok(RetrieveOutcome::NotModified) => {
-                        if !page_requisites && entry.depth < max_depth.unwrap_or(u32::MAX) {
+                        // Same descend logic as Success branch above.
+                        let depth_limit = max_depth.unwrap_or(u32::MAX);
+                        let at_or_beyond_limit = entry.depth >= depth_limit;
+                        let dash_p_leaf = page_requisites && at_or_beyond_limit
+                            && (entry.depth == depth_limit || entry.depth == depth_limit + 1);
+                        let descend = entry.depth < depth_limit || dash_p_leaf;
+
+                        if descend {
                             let local_path = self.retriever.download_registry().get_local(&url_str).cloned();
                             if let Some(lpath) = local_path {
                                 if let Some(links) = self.extract_links(&lpath, &url_str, &entry) {
                                     for link in links {
                                         if link.meta_disallow_follow {
+                                            continue;
+                                        }
+                                        if dash_p_leaf && !link.inline {
                                             continue;
                                         }
                                         self.enqueue_child(&link, &url_str, entry.depth, &mut queue);

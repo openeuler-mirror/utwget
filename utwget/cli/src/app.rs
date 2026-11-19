@@ -291,7 +291,10 @@ impl App {
         }
 
         // Check if recursive mode is enabled
-        if self.config.recursive.enabled {
+        // GNU wget enters retrieve_tree when either -r or -p is set
+        // (main.c:2147). With -p alone, recursive stays false but
+        // page_requisites triggers the tree path.
+        if self.config.recursive.enabled || self.config.page_requisites {
             return self.run_recursive(&all_urls);
         }
 
@@ -1229,6 +1232,16 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
     // -l 0 means unlimited depth (like original wget), so set to None
     config.recursive.max_level = if args.level == 0 { None } else { Some(args.level) };
     config.page_requisites = args.page_requisites;
+
+    // GNU wget (main.c:1620-1626): when -p is given without -r, set
+    // reclevel=0 (only download the starting page and its inline
+    // requisites).  The recursive flag itself is NOT set (to avoid
+    // confusing the FTP code), but retrieve_tree is still called.
+    // We handle this by checking page_requisites in the run dispatch.
+    if args.page_requisites && !args.recursive {
+        config.recursive.max_level = Some(0);
+    }
+
     config.recursive.span_hosts = args.span_hosts;
     config.recursive.no_parent = args.no_parent;
     config.recursive.relative_only = args.relative;
