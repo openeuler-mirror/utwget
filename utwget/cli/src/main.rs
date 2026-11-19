@@ -342,9 +342,12 @@ fn main() -> ExitCode {
 ///
 /// Returns a prioritized list of configuration file paths to load. The order is:
 ///
-/// 1. `/etc/wgetrc` - system-wide configuration
-/// 2. `~/.wgetrc` - user-specific configuration (if `HOME` environment variable is set)
+/// 1. `$SYSTEMRC` or `/etc/wgetrc` - system-wide configuration
+/// 2. `$WGETRC` or `~/.wgetrc` - user-specific configuration
 /// 3. Custom config file specified via `--config` argument
+///
+/// `$WGETRC` overrides `~/.wgetrc` (GNU wget init.c:575-590). If `$WGETRC`
+/// points to a non-existent file, GNU wget prints an error and exits.
 ///
 /// # Arguments
 ///
@@ -362,9 +365,22 @@ fn load_wgetrc_paths(args: &Args) -> Vec<std::path::PathBuf> {
         return paths;
     }
 
-    paths.push(std::path::PathBuf::from("/etc/wgetrc"));
+    // System wgetrc: $SYSTEMRC env var overrides the default /etc/wgetrc
+    // (GNU wget init.c:754)
+    let system_rc = std::env::var_os("SYSTEMRC")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("/etc/wgetrc"));
+    paths.push(system_rc);
 
-    if let Some(home) = std::env::var_os("HOME") {
+    // User wgetrc: $WGETRC overrides ~/.wgetrc (GNU wget init.c:575-590)
+    if let Some(wgetrc) = std::env::var_os("WGETRC") {
+        let path = std::path::PathBuf::from(wgetrc);
+        if !path.exists() {
+            eprintln!("utwget: WGETRC points to {:?} which does not exist", path);
+            std::process::exit(1);
+        }
+        paths.push(path);
+    } else if let Some(home) = std::env::var_os("HOME") {
         paths.push(std::path::PathBuf::from(home).join(".wgetrc"));
     }
 

@@ -1354,17 +1354,22 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
         config.hsts.file = args.hsts_file.clone();
     }
 
-    if args.use_proxy == Some(false) {
+    if args.use_proxy == Some(false) || args.no_proxy {
         config.proxy.use_proxy = false;
     }
-    config.proxy.http_proxy = args.http_proxy.clone();
-    config.proxy.https_proxy = args.https_proxy.clone();
-    config.proxy.ftp_proxy = args.ftp_proxy.clone();
+    // CLI args take precedence; fall back to environment variables (GNU wget
+    // retr.c:1475-1486 reads http_proxy/https_proxy/ftp_proxy env vars).
+    config.proxy.http_proxy = args.http_proxy.clone()
+        .or_else(|| std::env::var("http_proxy").ok())
+        .or_else(|| std::env::var("HTTP_PROXY").ok());
+    config.proxy.https_proxy = args.https_proxy.clone()
+        .or_else(|| std::env::var("https_proxy").ok())
+        .or_else(|| std::env::var("HTTPS_PROXY").ok());
+    config.proxy.ftp_proxy = args.ftp_proxy.clone()
+        .or_else(|| std::env::var("ftp_proxy").ok())
+        .or_else(|| std::env::var("FTP_PROXY").ok());
     config.proxy.proxy_user = args.proxy_user.clone();
     config.proxy.proxy_password = args.proxy_password.clone();
-    if args.no_proxy {
-        config.proxy.use_proxy = false;
-    }
 
     // Read the no_proxy environment variable (comma-separated list of hosts
     // to bypass proxy), matching GNU wget init.c:416-418.
