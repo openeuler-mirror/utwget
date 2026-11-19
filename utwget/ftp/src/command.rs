@@ -148,17 +148,26 @@ impl FtpResponse {
     ///
     /// Returns `FtpCommandError::Io` on read failure or unexpected EOF.
     pub fn read_line_from(transport: &mut dyn Transport<Error = io::Error>) -> Result<String, FtpCommandError> {
+        // Use a larger buffer for efficient reads, especially over TLS where
+        // each read() call may trigger a TLS record decryption. The previous
+        // single-byte read was correct but slow on high-latency connections.
         let mut line_bytes = Vec::new();
-        let mut buf = [0u8; 1];
+        let mut buf = [0u8; 256];
         loop {
             let n = transport.read(&mut buf).map_err(FtpCommandError::Io)?;
             if n == 0 {
-                return Err(FtpCommandError::Io(io::Error::new(io::ErrorKind::UnexpectedEof, "connection closed")));
+                if line_bytes.is_empty() {
+                    return Err(FtpCommandError::Io(io::Error::new(io::ErrorKind::UnexpectedEof, "connection closed")));
+                }
+                break; // EOF mid-line: return what we have
             }
-            line_bytes.push(buf[0]);
-            if buf[0] == b'\n' {
+            // Append read bytes, check for newline
+            let read = &buf[..n];
+            if let Some(pos) = read.iter().position(|&b| b == b'\n') {
+                line_bytes.extend_from_slice(&read[..=pos]);
                 break;
             }
+            line_bytes.extend_from_slice(read);
         }
         String::from_utf8(line_bytes).map_err(|e| FtpCommandError::Io(io::Error::new(io::ErrorKind::InvalidData, e.to_string())))
     }
