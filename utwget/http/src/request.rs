@@ -305,6 +305,13 @@ pub fn build_request(
         req.header(crate::headers::CONNECTION, "close");
     }
 
+    // --no-cache: send Cache-Control: no-cache + Pragma: no-cache
+    // (GNU wget http.c:1903-1910 SEND_NOCACHE)
+    if config.http.no_cache {
+        req.header(crate::headers::CACHE_CONTROL, "no-cache");
+        req.header(crate::headers::PRAGMA, "no-cache");
+    }
+
     if let Some(ref data) = body {
         // GNU wget sets Content-Type: application/x-www-form-urlencoded
         // for --post-data/--post-file and --body-data/--body-file

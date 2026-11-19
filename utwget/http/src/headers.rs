@@ -90,6 +90,9 @@ pub const EXPIRES: &str = "Expires";
 /// Cache-Control header - specifies caching directives.
 pub const CACHE_CONTROL: &str = "Cache-Control";
 
+/// Pragma header - HTTP/1.0 cache control directive.
+pub const PRAGMA: &str = "Pragma";
+
 /// Proxy-Authorization header - contains credentials for proxy authentication.
 pub const PROXY_AUTHORIZATION: &str = "Proxy-Authorization";
 

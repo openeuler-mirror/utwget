@@ -1139,8 +1139,14 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
     config.http.force_http2 = args.http2;
     config.http.force_http1_1 = args.http1_1;
 
-    if args.no_http_keep_alive {
-        config.http.keep_alive = false;
+    if args.no_http_keep_alive || args.http_keep_alive {
+        if args.no_http_keep_alive { config.http.keep_alive = false; }
+        if args.http_keep_alive { config.http.keep_alive = true; }
+    }
+
+    // --no-cache: send Cache-Control: no-cache + Pragma: no-cache
+    if args.no_cache {
+        config.http.no_cache = true;
     }
 
     if let Some(ref method) = args.method {
