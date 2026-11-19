@@ -88,7 +88,8 @@ impl ExitStatus {
 
             WgetError::Http { status: 400..=599, .. }
             | WgetError::FtpServerError(_)
-            | WgetError::FtpFileNotFound(_) => ExitStatus::ServerError,
+            | WgetError::FtpFileNotFound(_)
+            | WgetError::TooManyRedirects { .. } => ExitStatus::ServerError,
 
             WgetError::TooManyRedirects { .. }
             | WgetError::UnsupportedMethod(_)
@@ -387,13 +388,17 @@ impl App {
                     let mut redirect_count = 1u32;
                     let max_redirects = self.config.max_redirect;
                     loop {
-                        // Check redirect limit BEFORE incrementing count
-                        // This ensures max_redirects=0 prevents any redirects
-                        if redirect_count >= max_redirects {
+                        // GNU wget (retr.c:1061): ++count > max_redirect.
+                        // With max=0: count(1) > 0 → true → stop.
+                        // With max=1: count(1) > 1 → false → follow, then count(2) > 1 → stop.
+                        if redirect_count > max_redirects {
                             if self.config.verbose >= 1 {
                                 eprintln!("{}", crate::i18n::translate("utwget.error_too_many_redirects"));
                             }
-                            self.worst_status = ExitStatus::ProtocolError;
+                            self.worst_status = ExitStatus::aggregate(
+                                self.worst_status,
+                                ExitStatus::ServerError,
+                            );
                             break;
                         }
                         redirect_count += 1;
