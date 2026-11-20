@@ -370,6 +370,11 @@ impl App {
 
             self.urls_attempted += 1;
 
+            // Clear redirect GET-method set before each independent download
+            // so a URL downgraded in a previous download doesn't bleed into
+            // an unrelated download that targets the same URL.
+            self.retriever.clear_redirect_state();
+
             let result = self.retriever.retrieve_with_retry(&parsed.display_with_credentials());
 
             match result {

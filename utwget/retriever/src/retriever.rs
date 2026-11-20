@@ -290,10 +290,12 @@ impl Retriever {
     ///
     /// Returns `RetrieveError` if the URL cannot be parsed or the download fails.
     pub fn retrieve(&mut self, url: &str) -> Result<RetrieveOutcome, RetrieveError> {
-        // Clear redirect method-downgrade set to prevent cross-request state
-        // contamination. A URL downgraded to GET in a previous download should
-        // not affect an unrelated download that happens to target the same URL.
-        self.redirect_get_method_urls.clear();
+        // Do NOT clear redirect_get_method_urls here — it must persist
+        // across the redirect chain (retrieve → RetrieveOutcome::Redirected
+        // → retrieve again) so that build_request_options sees the URL
+        // marked for GET method downgrade. The set is cleared in the
+        // public entry points (run/run_all) before a new independent
+        // download starts.
         let parsed = ParsedUrl::parse(url).map_err(RetrieveError::Protocol)?;
         self.retrieve_parsed(&parsed, None)
     }
@@ -316,9 +318,8 @@ impl Retriever {
     ///
     /// Returns the last `RetrieveError` encountered after all retries are exhausted.
     pub fn retrieve_with_retry(&mut self, url: &str) -> Result<RetrieveOutcome, RetrieveError> {
-        // Clear redirect method-downgrade set to prevent cross-request state
-        // contamination between independent downloads.
-        self.redirect_get_method_urls.clear();
+        // Do NOT clear redirect_get_method_urls here — same reason as
+        // retrieve(): the set must persist across redirect chains.
         let parsed = ParsedUrl::parse(url).map_err(RetrieveError::Protocol)?;
         let max_tries = self.config.tries;
 
@@ -2908,6 +2909,15 @@ impl Retriever {
     /// Get a reference to the URL filter.
     pub fn url_filter(&self) -> &CompositeFilter {
         &self.url_filter
+    }
+
+    /// Clear per-download redirect state.
+    ///
+    /// Should be called before starting an independent download (not a
+    /// redirect follow-up) to prevent the `redirect_get_method_urls` set
+    /// from a previous download bleeding into a new one.
+    pub fn clear_redirect_state(&mut self) {
+        self.redirect_get_method_urls.clear();
     }
 
     /// Get a reference to the application configuration.
