@@ -1023,7 +1023,15 @@ impl Retriever {
             );
             // Flush the (possibly decompressing) writer before dropping, so all
             // pending decompressed bytes are written to the underlying file.
-            let _ = writer.flush();
+            // A flush failure (e.g. disk full) means the file on disk is
+            // truncated. Propagate this as an error so the caller doesn't
+            // report a "successful" download with a truncated file.
+            if let Err(e) = writer.flush() {
+                log::warn!("flush error after body write: {}", e);
+                self.pending_return_info = None;
+                self.pending_keep_alive = false;
+                return Err(RetrieveError::Io(e));
+            }
             // On success, try to return the connection to the pool for Keep-Alive.
             // On error, drop the connection (do not reuse potentially-broken connections).
             match stream_result {
