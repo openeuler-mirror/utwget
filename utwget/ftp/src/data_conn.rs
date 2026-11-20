@@ -432,6 +432,11 @@ fn parse_pasv_response(text: &str) -> Result<SocketAddr, FtpCommandError> {
     let end = text.find(')').ok_or_else(|| {
         FtpCommandError::MalformedResponse("PASV: no closing parenthesis".into())
     })?;
+    if start + 1 >= end {
+        return Err(FtpCommandError::MalformedResponse(
+            "PASV: empty or inverted parenthesis range".into(),
+        ));
+    }
     let inner = &text[start + 1..end];
     let parts: Vec<&str> = inner.split(',').collect();
     if parts.len() != 6 {
@@ -473,6 +478,11 @@ fn parse_epsv_response(text: &str) -> Result<EpsvAddr, FtpCommandError> {
     let end = text.find(')').ok_or_else(|| {
         FtpCommandError::MalformedResponse("EPSV: no closing parenthesis".into())
     })?;
+    if start + 1 >= end {
+        return Err(FtpCommandError::MalformedResponse(
+            "EPSV: empty or inverted parenthesis range".into(),
+        ));
+    }
     let inner = &text[start + 1..end];
     let parts: Vec<&str> = inner.split('|').collect();
     if parts.len() < 4 {
