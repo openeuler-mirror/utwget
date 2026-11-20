@@ -19,7 +19,7 @@
 
 use std::io::{self, Read, Write};
 
-use crate::command::{FtpCommand, FtpCommandError, FtpResponse, Transport};
+use crate::command::{FtpCommand, FtpCommandError, FtpResponse, Transport, BufferedTransport};
 use crate::data_conn::{self, DataConnection};
 use crate::listing::{parse_listing, FtpEntry};
 
@@ -203,7 +203,8 @@ impl FtpClient {
             self.is_ipv6 = true;
         }
 
-        let mut transport: Box<dyn Transport<Error = io::Error>> = Box::new(stream);
+        let mut transport: Box<dyn Transport<Error = io::Error>> =
+            Box::new(BufferedTransport::new(Box::new(stream)));
         let welcome = FtpResponse::read(transport.as_mut())?;
 
         if !welcome.is_positive_completion {
@@ -244,7 +245,8 @@ impl FtpClient {
         stream: Box<dyn Transport<Error = io::Error>>,
         host: &str,
     ) -> Result<FtpResponse, FtpError> {
-        let mut transport = stream;
+        let mut transport: Box<dyn Transport<Error = io::Error>> =
+            Box::new(BufferedTransport::new(stream));
         let welcome = FtpResponse::read(transport.as_mut())?;
 
         if !welcome.is_positive_completion {

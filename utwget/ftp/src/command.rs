@@ -26,6 +26,99 @@ pub trait Transport {
 
     /// Return the remote peer address, if available.
     fn peer_addr(&self) -> Result<std::net::SocketAddr, Self::Error>;
+
+    /// Provide a mutable reference as `&mut dyn Any` for downcasting.
+    /// This allows `read_line_from` to detect and use `BufferedTransport`
+    /// for line-aware reads that preserve leftover bytes.
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        unimplemented!("as_any_mut not implemented for this Transport")
+    }
+}
+
+/// A transport wrapper that retains leftover bytes from `read()` calls.
+///
+/// When a single `read()` returns data spanning multiple FTP response lines
+/// (common when servers send multi-line 220/230/229 greetings in one TCP
+/// segment), the raw `read_line_from` function discards everything after
+/// the first `\n` because it uses a local buffer that is not retained across
+/// calls. This wrapper keeps a persistent internal buffer so that leftover
+/// bytes are preserved for the next `read()` call, matching the behavior of
+/// `std::io::BufReader`.
+pub struct BufferedTransport {
+    inner: Box<dyn Transport<Error = io::Error>>,
+    buf: Vec<u8>,
+}
+
+impl BufferedTransport {
+    /// Wrap a transport in a buffered reader.
+    pub fn new(inner: Box<dyn Transport<Error = io::Error>>) -> Self {
+        Self {
+            inner,
+            buf: Vec::new(),
+        }
+    }
+
+    /// Read a complete line (up to and including `\n`) from the buffered
+    /// transport, fetching more data from the underlying transport as needed.
+    /// Leftover bytes after the line are retained in the internal buffer.
+    fn read_line_buffered(&mut self) -> Result<Vec<u8>, FtpCommandError> {
+        const MAX_FTP_LINE_LEN: usize = 8 * 1024;
+        loop {
+            if let Some(pos) = self.buf.iter().position(|&b| b == b'\n') {
+                let line: Vec<u8> = self.buf.drain(..=pos).collect();
+                return Ok(line);
+            }
+            if self.buf.len() > MAX_FTP_LINE_LEN {
+                return Err(FtpCommandError::MalformedResponse(
+                    format!("FTP response line too long (exceeds {} bytes)", MAX_FTP_LINE_LEN)
+                ));
+            }
+            let mut tmp = [0u8; 256];
+            let n = self.inner.read(&mut tmp).map_err(FtpCommandError::Io)?;
+            if n == 0 {
+                if self.buf.is_empty() {
+                    return Err(FtpCommandError::Io(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        "connection closed",
+                    )));
+                }
+                // EOF mid-line: return what we have
+                return Ok(std::mem::take(&mut self.buf));
+            }
+            self.buf.extend_from_slice(&tmp[..n]);
+        }
+    }
+}
+
+impl Transport for BufferedTransport {
+    type Error = io::Error;
+
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
+        // Serve from the internal buffer first; if empty, read from inner.
+        if !self.buf.is_empty() {
+            let n = self.buf.len().min(buf.len());
+            buf[..n].copy_from_slice(&self.buf[..n]);
+            self.buf.drain(..n);
+            return Ok(n);
+        }
+        self.inner.read(buf)
+    }
+
+    fn write_all(&mut self, buf: &[u8]) -> Result<(), Self::Error> {
+        self.inner.write_all(buf)
+    }
+
+    fn flush(&mut self) -> Result<(), Self::Error> {
+        self.inner.flush()
+    }
+
+    fn peer_addr(&self) -> Result<std::net::SocketAddr, Self::Error> {
+        self.inner.peer_addr()
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 /// Trait for transports that can be converted back to TcpStream.
@@ -154,9 +247,16 @@ impl FtpResponse {
     ///
     /// Returns `FtpCommandError::Io` on read failure or unexpected EOF.
     pub fn read_line_from(transport: &mut dyn Transport<Error = io::Error>) -> Result<String, FtpCommandError> {
-        // Use a larger buffer for efficient reads, especially over TLS where
-        // each read() call may trigger a TLS record decryption. The previous
-        // single-byte read was correct but slow on high-latency connections.
+        // If the transport is a BufferedTransport, use its line-aware read
+        // which preserves leftover bytes. Otherwise, fall back to the
+        // direct read (which may lose bytes after \n on multi-line responses).
+        if let Some(buf) = transport.as_any_mut().downcast_mut::<BufferedTransport>() {
+            let line_bytes = buf.read_line_buffered()?;
+            return String::from_utf8(line_bytes)
+                .map_err(|e| FtpCommandError::Io(io::Error::new(io::ErrorKind::InvalidData, e.to_string())));
+        }
+
+        // Legacy path for non-buffered transports (e.g. in tests).
         const MAX_FTP_LINE_LEN: usize = 8 * 1024; // 8 KB per line (DoS guard)
         let mut line_bytes = Vec::new();
         let mut buf = [0u8; 256];
