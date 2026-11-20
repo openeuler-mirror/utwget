@@ -1159,9 +1159,13 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
         config.verbose = if config.quiet { 0 } else { 1 };
     }
 
-    config.debug = args.debug;
-    config.server_response = args.server_response;
-    config.background = args.background;
+    // Only override wgetrc when the CLI flag is explicitly true.
+    // For clap bool fields with ArgAction::SetTrue (default), false means
+    // the flag was not given → preserve wgetrc value. --no-FOO flags
+    // are handled separately below.
+    if args.debug { config.debug = true; }
+    if args.server_response { config.server_response = true; }
+    if args.background { config.background = true; }
     // Only override wgetrc values when the CLI explicitly provides a value;
     // otherwise preserve the value loaded from wgetrc (GNU wget init.c
     // semantics: command-line overrides wgetrc, but absent CLI flags leave
@@ -1184,20 +1188,20 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
     if args.input_file.is_some() {
         config.input_filename = args.input_file.clone();
     }
-    config.force_html = args.force_html;
+    if args.force_html { config.force_html = true; }
     if args.directory_prefix.is_some() {
         config.dir_prefix = args.directory_prefix.clone();
     }
-    config.noclobber = args.no_clobber;
-    config.unlink = args.unlink;
+    if args.no_clobber { config.noclobber = true; }
+    if args.unlink { config.unlink = true; }
     if args.backups.is_some() {
         config.backups = args.backups;
     }
-    config.continue_download = args.continue_download;
+    if args.continue_download { config.continue_download = true; }
     if args.start_pos.is_some() {
         config.start_position = args.start_pos;
     }
-    config.timestamping = args.timestamping;
+    if args.timestamping { config.timestamping = true; }
 
     if args.no_if_modified_since {
         config.if_modified_since = false;
@@ -1219,10 +1223,10 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
     if let Some(d) = args.wait_retry {
         config.wait_retry = safe_duration_f64(d);
     }
-    config.random_wait = args.random_wait;
-    config.delete_after = args.delete_after;
-    config.content_disposition = args.content_disposition;
-    config.auth_without_challenge = args.auth_no_challenge;
+    if args.random_wait { config.random_wait = true; }
+    if args.delete_after { config.delete_after = true; }
+    if args.content_disposition { config.content_disposition = true; }
+    if args.auth_no_challenge { config.auth_without_challenge = true; }
     config.concurrent_downloads = args.concurrency;
 
     if args.no_netrc {
@@ -1433,10 +1437,12 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
         }
     }
 
-    config.recursive.enabled = args.recursive;
+    if args.recursive { config.recursive.enabled = true; }
     // -l 0 means unlimited depth (like original wget), so set to None
-    config.recursive.max_level = if args.level == 0 { None } else { Some(args.level) };
-    config.page_requisites = args.page_requisites;
+    if args.level != 1 {  // clap default is 1; only override if user set -l
+        config.recursive.max_level = if args.level == 0 { None } else { Some(args.level) };
+    }
+    if args.page_requisites { config.page_requisites = true; }
 
     // GNU wget (main.c:1620-1626): when -p is given without -r, set
     // reclevel=0 (only download the starting page and its inline
@@ -1447,16 +1453,16 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
         config.recursive.max_level = Some(0);
     }
 
-    config.recursive.span_hosts = args.span_hosts;
-    config.recursive.no_parent = args.no_parent;
-    config.recursive.relative_only = args.relative;
-    config.recursive.spider = args.spider;
+    if args.span_hosts { config.recursive.span_hosts = true; }
+    if args.no_parent { config.recursive.no_parent = true; }
+    if args.relative { config.recursive.relative_only = true; }
+    if args.spider { config.recursive.spider = true; }
 
-    config.ignore_length = args.ignore_length;
-    config.ignore_case = args.ignore_case;
+    if args.ignore_length { config.ignore_length = true; }
+    if args.ignore_case { config.ignore_case = true; }
 
-    config.xattr = args.xattr;
-    config.preserve_permissions = args.preserve_permissions;
+    if args.xattr { config.xattr = true; }
+    if args.preserve_permissions { config.preserve_permissions = true; }
 
     if let Some(ref tags) = args.follow_tags {
         config.recursive.follow_tags = tags.split(',').map(String::from).collect();
@@ -1497,10 +1503,10 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
         config.recursive.use_robots = false;
     }
 
-    config.convert_links = args.convert_links;
-    config.convert_file_only = args.convert_file_only;
-    config.backup_converted = args.backup_converted;
-    config.adjust_extension = args.adjust_extension;
+    if args.convert_links { config.convert_links = true; }
+    if args.convert_file_only { config.convert_file_only = true; }
+    if args.backup_converted { config.backup_converted = true; }
+    if args.adjust_extension { config.adjust_extension = true; }
 
     if args.mirror {
         // --mirror is equivalent to -N -r -l inf --no-remove-listing in GNU wget
@@ -1526,7 +1532,7 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
     if let Some(s) = args.dns_timeout {
         config.dns_timeout = safe_duration_f64(s);
     }
-    config.no_dns_cache = args.no_dns_cache;
+    if args.no_dns_cache { config.no_dns_cache = true; }
 
     config.cookie.enabled = !args.no_cookies;
     if args.load_cookies.is_some() {
@@ -1585,10 +1591,10 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
         }
     }
 
-    config.no_host_directories = args.no_host_directories;
-    config.protocol_directories = args.protocol_directories;
-    config.no_directories = args.no_directories;
-    config.force_directories = args.force_directories;
+    if args.no_host_directories { config.no_host_directories = true; }
+    if args.protocol_directories { config.protocol_directories = true; }
+    if args.no_directories { config.no_directories = true; }
+    if args.force_directories { config.force_directories = true; }
     if let Some(c) = args.cut_dirs {
         config.cut_dirs = c;
     }
@@ -1596,8 +1602,8 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
     if args.bind_address.is_some() {
         config.bind_address = args.bind_address.clone();
     }
-    config.force_ipv4 = args.inet4_only;
-    config.force_ipv6 = args.inet6_only;
+    if args.inet4_only { config.force_ipv4 = true; }
+    if args.inet6_only { config.force_ipv6 = true; }
 
     // Handle compression options
     #[cfg(feature = "compression")]
@@ -1693,7 +1699,7 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
     }
 
     // Apply --trust-server-names
-    config.trust_server_names = args.trust_server_names;
+    if args.trust_server_names { config.trust_server_names = true; }
 
     if args.reject_log.is_some() {
         config.reject_log = args.reject_log.clone();
