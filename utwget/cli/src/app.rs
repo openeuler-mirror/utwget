@@ -1152,6 +1152,13 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
         config.verbose = 0;
     }
 
+    // GNU wget main.c:1630-1631: if verbose is still the sentinel -1
+    // (neither --verbose nor --quiet nor --no-verbose was given on the
+    // CLI, and wgetrc didn't set it), resolve to !quiet (default verbose).
+    if config.verbose == -1 {
+        config.verbose = if config.quiet { 0 } else { 1 };
+    }
+
     config.debug = args.debug;
     config.server_response = args.server_response;
     config.background = args.background;
