@@ -641,11 +641,13 @@ fn extract_dir(path: &str) -> String {
     // (minus the trailing slash) is the directory. Otherwise, the directory
     // is everything up to and including the last '/'.
     if path.ends_with('/') {
-        // Directory path: e.g. "/a/b/" -> dir "/a/b/"
+        // Directory path: e.g. "/a/b/" -> dir "/a/b/", "/foo/" -> dir "/foo/"
         let trimmed = path.trim_end_matches('/');
         match trimmed.rfind('/') {
-            Some(0) => "/".to_string(),
             Some(idx) => {
+                // idx is the position of the last '/' in the trimmed path.
+                // For "/foo" -> idx=0, dir becomes "/foo/".
+                // For "/a/b" -> idx=2, dir becomes "/a/b/".
                 let mut dir = trimmed[..idx + 1].to_string();
                 let last = &trimmed[idx + 1..];
                 if !last.is_empty() {
