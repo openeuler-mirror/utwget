@@ -1004,7 +1004,7 @@ impl Retriever {
             // This must happen AFTER de-chunking (handled inside stream_response_body),
             // since Content-Encoding applies to the entity body, not the transfer.
             let encoding = response.headers.get("Content-Encoding");
-            let mut writer: Box<dyn io::Write> = match encoding {
+            let writer: Box<dyn io::Write> = match encoding {
                 #[cfg(feature = "compression")]
                 Some(e) if e.eq_ignore_ascii_case("gzip") || e.eq_ignore_ascii_case("x-gzip") => {
                     debug!("decompressing gzip response body");
@@ -1017,6 +1017,11 @@ impl Retriever {
                 }
                 _ => Box::new(file),
             };
+
+            // 限速：将 writer 用 RateLimitedWriter 包装，使 --limit-rate
+            // 对 HTTP/HTTPS 下载也生效（此前仅 FTP 路径应用了限速）。
+            let mut writer: Box<dyn io::Write> =
+                apply_rate_limit(writer, self.config.limit_rate);
 
             let stream_result = stream_response_body(
                 &mut io::Cursor::new(leftover).chain(&mut source),
