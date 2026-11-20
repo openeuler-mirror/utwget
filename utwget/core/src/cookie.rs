@@ -92,6 +92,12 @@ pub struct Cookie {
     pub httponly: bool,
     /// Whether the cookie should be persisted across sessions.
     pub persistent: bool,
+    /// Whether this is a host-only cookie (no `Domain=` attribute was set).
+    /// Mirrors GNU wget's `domain_exact` flag (cookies.c:111): a host-only
+    /// cookie's domain is the request host exactly (no leading dot, no
+    /// subdomain matching), and is written to the cookie file with the
+    /// subdomain-flag column set to FALSE.
+    pub host_only: bool,
     /// SameSite attribute (RFC 6265bis). Defaults to Lax per modern
     /// browsers; wget as a CLI tool sends SameSite=None cookies on all
     /// requests (no cross-site context), so this is primarily stored for
@@ -255,6 +261,13 @@ impl CookieJar {
         };
 
         let mut domain = request_host.to_ascii_lowercase();
+        // Whether the cookie explicitly specified a Domain= attribute.
+        // GNU wget (cookies.c:764-771) treats cookies without a Domain
+        // attribute as "host-only" (domain_exact=1) and skips the PSL
+        // check, accepting the cookie for the request host unconditionally.
+        // Only cookies with an explicit Domain= attribute are subjected to
+        // the Public Suffix List check (check_domain_match, cookies.c:774).
+        let mut has_domain_attr = false;
         // RFC 6265 §5.1.4: default-path = the request URI up to (but not
         // including) the rightmost '/'. If there is no '/' or the URI
         // starts with '//', the default path is '/'.
@@ -281,6 +294,7 @@ impl CookieJar {
                         let d = v.trim_start_matches('.').to_ascii_lowercase();
                         if !d.is_empty() {
                             domain = d;
+                            has_domain_attr = true;
                         }
                     }
                 }
@@ -337,7 +351,14 @@ impl CookieJar {
         // itself a public suffix (e.g. "com", "co.uk"), which would let a
         // server set cookies for an entire public suffix and leak them to
         // unrelated subdomains. Mirrors GNU wget's libpsl usage (cookies.c:584).
-        if !is_cookie_domain_acceptable(request_host, &domain) {
+        //
+        // Only cookies with an explicit Domain= attribute are checked. A
+        // host-only cookie (no Domain=) is always accepted for the request
+        // host (GNU wget cookies.c:764-771 sets domain_exact and skips the
+        // PSL check). Without this gate, host-only cookies on hosts that are
+        // themselves listed as private suffixes in the PSL (e.g. httpbin.org)
+        // would be wrongly rejected.
+        if has_domain_attr && !is_cookie_domain_acceptable(request_host, &domain) {
             log::warn!(
                 "cookie with Domain='{}' rejected: domain is a public suffix",
                 domain
@@ -354,6 +375,7 @@ impl CookieJar {
             secure,
             httponly,
             persistent,
+            host_only: !has_domain_attr,
             samesite,
         };
 
@@ -388,6 +410,15 @@ impl CookieJar {
                 continue;
             }
             if !Cookie::domain_matches(&host_lc, &cookie.domain) {
+                continue;
+            }
+            // A host-only cookie (no Domain= attribute) must match the
+            // request host exactly, never a subdomain. GNU wget tracks this
+            // via domain_exact (cookies.c:111). domain_matches() above does
+            // a suffix match that would let a host-only cookie on
+            // "example.com" match "sub.example.com"; gate host-only cookies
+            // to an exact host comparison.
+            if cookie.host_only && host_lc != cookie.domain {
                 continue;
             }
             if !path_matches(path, &cookie.path) {
@@ -496,6 +527,11 @@ impl CookieJar {
                 continue;
             }
             let domain = fields[0].trim_start_matches('.').to_string();
+            // GNU wget's Netscape-format: a leading '.' on the domain means
+            // a domain cookie (subdomain matching); the second field is the
+            // "domain_exact" flag (FALSE for host-only, TRUE for domain).
+            // A host-only cookie has no leading dot and field[1]=="FALSE".
+            let host_only = !fields[0].starts_with('.');
             let path = fields[2].to_string();
             let secure = fields[3] == "TRUE";
             let expires = if fields[4] == "0" {
@@ -518,6 +554,7 @@ impl CookieJar {
                 secure,
                 httponly,
                 persistent: expires.is_some(),
+                host_only,
                 samesite: SameSite::Unspecified,
             };
             self.store(cookie);
@@ -527,12 +564,21 @@ impl CookieJar {
 
     /// Saves cookies to a writer in Netscape cookie file format.
     ///
-    /// Only persistent cookies are saved. Cookies are sorted by domain,
-    /// path, and name for consistent output.
+    /// Persistent cookies are always saved. Session (non-persistent)
+    /// cookies are only saved when `keep_session_cookies` is true, matching
+    /// GNU wget's `--keep-session-cookies` behavior (cookies.c:1397).
+    /// Cookies are sorted by domain, path, and name for consistent output.
+    ///
+    /// The output format matches GNU wget (cookies.c:1385-1410): a 7-column
+    /// tab-separated record `domain\tsubdomain_flag\tpath\tsecure\texpires\tname\tvalue`
+    /// with the canonical header lines. The 8th `httponly` column previously
+    /// written by utwget is non-standard and prevented original wget from
+    /// parsing the file.
     ///
     /// # Arguments
     ///
     /// * `writer` - A writer to receive the cookie file content.
+    /// * `keep_session_cookies` - Whether to keep non-persistent cookies.
     ///
     /// # Returns
     ///
@@ -550,49 +596,61 @@ impl CookieJar {
     ///
     /// let jar = CookieJar::new();
     /// let file = File::create("cookies.txt")?;
-    /// jar.save_to_writer(file)?;
+    /// jar.save_to_writer(file, false)?;
     /// # Ok::<(), std::io::Error>(())
     /// ```
-    pub fn save_to_writer<W: Write>(&self, mut writer: W) -> std::io::Result<()> {
+    pub fn save_to_writer<W: Write>(&self, mut writer: W, keep_session_cookies: bool) -> std::io::Result<()> {
         let mut cookies: Vec<_> = self.cookies.values().collect();
         cookies.sort_by(|a, b| {
             a.domain.cmp(&b.domain).then_with(|| a.path.cmp(&b.path).then_with(|| a.name.cmp(&b.name)))
         });
 
-        writeln!(writer, "# Netscape HTTP Cookie File")?;
-        writeln!(writer, "# This file was generated by wget-rs.")?;
+        // Header lines matching GNU wget (cookies.c:1385-1387).
+        writeln!(writer, "# HTTP Cookie File")?;
+        let now = chrono::Utc::now();
+        writeln!(writer, "# Generated by Wget on {}.", now.format("%Y-%m-%d %H:%M:%S"))?;
+        writeln!(writer, "# Edit at your own risk.\n")?;
 
         for c in cookies {
-            // Skip non-persistent session cookies and expired cookies
-            if !c.persistent && c.expires.is_none() {
-                continue;
-            }
+            // Skip expired cookies (cookies.c:1399).
             if c.is_expired() {
                 continue;
             }
-            let domain_str = if c.domain.starts_with('.') {
-                c.domain.clone()
+            // Skip session cookies unless --keep-session-cookies is set
+            // (cookies.c:1397).
+            if !c.persistent && !keep_session_cookies {
+                continue;
+            }
+            // GNU wget format (cookies.c:1401-1410): host-only cookies
+            // (domain_exact) write the bare host with the subdomain flag set
+            // to FALSE and no leading dot; domain cookies write ".{domain}"
+            // with the flag TRUE.
+            let (domain_field, subdomain_flag) = if c.host_only {
+                (c.domain.clone(), "FALSE")
             } else {
-                format!(".{}", c.domain)
+                let d = if c.domain.starts_with('.') {
+                    c.domain.clone()
+                } else {
+                    format!(".{}", c.domain)
+                };
+                (d, "TRUE")
             };
-            let domain = &domain_str;
             let expires = c
                 .expires
                 .map(|e| e.timestamp().to_string())
                 .unwrap_or_else(|| "0".to_string());
             let secure = if c.secure { "TRUE" } else { "FALSE" };
-            let httponly = if c.httponly { "TRUE" } else { "FALSE" };
+            // 7-column Netscape format (cookies.c:1406-1410): no httponly column.
             writeln!(
                 writer,
-                "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-                domain,
-                "TRUE",
+                "{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                domain_field,
+                subdomain_flag,
                 c.path,
                 secure,
                 expires,
                 c.name,
                 c.value,
-                httponly
             )?;
         }
         Ok(())
