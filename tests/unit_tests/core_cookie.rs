@@ -203,6 +203,7 @@ fn test_store_cookie() {
         httponly: false,
         persistent: false,
         samesite: ut_core::cookie::SameSite::Unspecified,
+        host_only: true,
     };
 
     jar.store(cookie);
@@ -252,7 +253,7 @@ fn test_save_and_load_cookies() {
 
     // Save to buffer
     let mut buffer = Vec::new();
-    jar.save_to_writer(&mut buffer).unwrap();
+    jar.save_to_writer(&mut buffer, true).unwrap();
 
     // Load from buffer
     let mut jar2 = CookieJar::new();
@@ -288,6 +289,7 @@ fn test_is_expired() {
         httponly: false,
         persistent: false,
         samesite: ut_core::cookie::SameSite::Unspecified,
+        host_only: true,
     };
 
     // Cookie without expiration is not expired
