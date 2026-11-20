@@ -170,7 +170,15 @@ impl AsyncRetriever {
 
 /// Create a silent progress display for background downloads.
 fn create_silent_progress() -> Box<dyn ProgressDisplay> {
-    ut_progress::create_progress_display(ut_core::ProgressStyle::Silent, true)
+    // Use Verbose style (no progress bar, just download start/end lines)
+    // instead of Silent so the user sees activity during -j N downloads.
+    // Verbose is safe for concurrent use: it only prints to stderr on
+    // begin/finish, with no animated bar that would interleave.
+    if std::env::var("UTWGET_CONCURRENT_SILENT").is_ok() {
+        ut_progress::create_progress_display(ut_core::ProgressStyle::Silent, true)
+    } else {
+        ut_progress::create_progress_display(ut_core::ProgressStyle::Verbose, true)
+    }
 }
 
 /// Download a single URL asynchronously using the default configuration.
