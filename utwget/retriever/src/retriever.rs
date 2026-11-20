@@ -2483,6 +2483,14 @@ impl Retriever {
     ) -> RequestOptions {
         let mut opts = RequestOptions::default();
         opts.method = self.config.http.method.unwrap_or(ut_core::types::HttpMethod::Get);
+        // --spider: GNU wget issues HEAD instead of GET to check existence
+        // without downloading the body (http.c:1861). Only override when
+        // the user hasn't explicitly set --method.
+        if self.config.recursive.spider
+            && self.config.http.method.is_none()
+        {
+            opts.method = ut_core::types::HttpMethod::Head;
+        }
         // RFC 9110: after a 301/302/303 redirect of a POST (or other unsafe
         // method), the client must follow up with GET and no body. Such target
         // URLs are recorded in redirect_get_method_urls when the redirect is
