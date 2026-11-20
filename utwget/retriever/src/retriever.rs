@@ -645,7 +645,6 @@ impl Retriever {
             for (key, value) in response.headers.iter() {
                 eprintln!("  {}: {}", key, value);
             }
-            eprintln!();
         }
 
         // Spider mode: if response is successful, report file exists and return
