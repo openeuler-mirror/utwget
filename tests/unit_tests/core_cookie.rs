@@ -407,3 +407,65 @@ fn test_psl_ip_address_exempt() {
     jar.parse_set_cookie("id=ok; Domain=127.0.0.1", "127.0.0.1", "/");
     assert_eq!(jar.len(), 1, "IP-address cookies should bypass PSL");
 }
+
+// ============================================================================
+// Cookie Expires GMT Parsing Tests
+// ============================================================================
+//
+// 验证 Set-Cookie 的 Expires 属性带 "GMT" 后缀时能被正确解析。
+// 此前因 NaiveDateTime::parse_from_str 要求整个字符串匹配格式，
+// 带尾部 " GMT" 的标准日期全部解析失败，导致所有持久 Cookie 被当作
+// 会话 Cookie 丢失（expires=None, persistent=false）。
+//
+// 注意：使用未来日期（2099 年），否则 match_request 会跳过已过期 Cookie。
+// 且星期几必须与日期匹配，否则 chrono 的 %a 解析会失败。
+
+#[test]
+fn test_parse_set_cookie_expires_with_gmt() {
+    let mut jar = CookieJar::new();
+    jar.parse_set_cookie(
+        "id=123; Expires=Wed, 03 Jun 2099 10:18:14 GMT",
+        "example.com",
+        "/",
+    );
+    assert_eq!(jar.len(), 1);
+    let cookies = jar.match_request("example.com", "/", Scheme::Http);
+    assert_eq!(cookies.len(), 1);
+    let c = &cookies[0];
+    assert!(c.persistent, "cookie with Expires should be persistent");
+    let expires = c.expires.expect("expires should be set");
+    assert_eq!(
+        expires.format("%Y-%m-%d %H:%M:%S").to_string(),
+        "2099-06-03 10:18:14",
+    );
+}
+
+#[test]
+fn test_parse_set_cookie_expires_lowercase_gmt() {
+    let mut jar = CookieJar::new();
+    jar.parse_set_cookie(
+        "id=123; Expires=Wed, 03 Jun 2099 10:18:14 gmt",
+        "example.com",
+        "/",
+    );
+    assert_eq!(jar.len(), 1);
+    let cookies = jar.match_request("example.com", "/", Scheme::Http);
+    assert_eq!(cookies.len(), 1);
+    assert!(cookies[0].persistent);
+    assert!(cookies[0].expires.is_some());
+}
+
+#[test]
+fn test_parse_set_cookie_expires_no_gmt_suffix() {
+    let mut jar = CookieJar::new();
+    jar.parse_set_cookie(
+        "id=123; Expires=Wed, 03 Jun 2099 10:18:14",
+        "example.com",
+        "/",
+    );
+    assert_eq!(jar.len(), 1);
+    let cookies = jar.match_request("example.com", "/", Scheme::Http);
+    assert_eq!(cookies.len(), 1);
+    assert!(cookies[0].persistent);
+    assert!(cookies[0].expires.is_some());
+}

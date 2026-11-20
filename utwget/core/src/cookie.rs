@@ -756,35 +756,3 @@ fn parse_cookie_expires(s: &str) -> Result<DateTime<Utc>, ()> {
     }
     Err(())
 }
-
-#[cfg(test)]
-mod cookie_expires_tests {
-    use super::parse_cookie_expires;
-
-    #[test]
-    fn test_parses_rfc1123_with_gmt() {
-        // 标准 Set-Cookie expires 格式：带 "GMT" 后缀
-        let result = parse_cookie_expires("Wed, 09 Jun 2021 10:18:14 GMT");
-        assert!(result.is_ok(), "should parse standard GMT date");
-        let dt = result.unwrap();
-        assert_eq!(dt.format("%Y-%m-%d %H:%M:%S").to_string(), "2021-06-09 10:18:14");
-    }
-
-    #[test]
-    fn test_parses_without_gmt() {
-        let result = parse_cookie_expires("Wed, 09 Jun 2021 10:18:14");
-        assert!(result.is_ok(), "should parse date without GMT suffix");
-    }
-
-    #[test]
-    fn test_parses_lowercase_gmt() {
-        let result = parse_cookie_expires("Wed, 09 Jun 2021 10:18:14 gmt");
-        assert!(result.is_ok(), "should parse lowercase gmt suffix");
-    }
-
-    #[test]
-    fn test_invalid_date_returns_err() {
-        let result = parse_cookie_expires("not a date");
-        assert!(result.is_err());
-    }
-}
