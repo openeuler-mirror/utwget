@@ -718,6 +718,13 @@ impl App {
             return;
         }
 
+        // Build a reverse map (local_path → url) so we can pass each
+        // document's URL to the converter for relative-link resolution.
+        let local_to_url: HashMap<&String, &String> = url_to_local
+            .iter()
+            .map(|(u, p)| (p, u))
+            .collect();
+
         let converter = LinkConverter::new();
         let opts = ConvertOptions {
             convert_to_relative: true,
@@ -770,7 +777,8 @@ impl App {
                     }
                 }
             } else {
-                match converter.convert_links(local_path, &url_to_local, &opts) {
+                let doc_url = local_to_url.get(local_path).map(|s| s.as_str());
+                match converter.convert_links_with_base(local_path, &url_to_local, &opts, doc_url) {
                     Ok(stats) => {
                         converted_count += stats.converted;
                         if self.config.verbose >= 1 {

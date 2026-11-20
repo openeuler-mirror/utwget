@@ -193,11 +193,46 @@ impl LinkConverter {
     ///
     /// let stats = converter.convert_links("index.html", &url_map, &opts)?;
     /// ```
+    /// Converts URLs in an HTML file to local paths.
+    ///
+    /// This method reads an HTML file, finds all URL-containing attributes,
+    /// resolves relative URLs against the document's base URL, looks them up
+    /// in the mapping, and replaces matched URLs with relative paths computed
+    /// from the current file's location to the target file.
+    ///
+    /// URLs that are not in the download mapping (i.e. not downloaded) are
+    /// converted to absolute URLs so that links still work online, matching
+    /// GNU wget's `CO_CONVERT_TO_COMPLETE` behavior (convert.c:353-373).
+    ///
+    /// # Arguments
+    ///
+    /// * `file_path` - Path to the HTML file to convert.
+    /// * `url_to_local` - Mapping from normalized absolute URLs to local file paths.
+    /// * `opts` - Options controlling conversion behavior.
+    /// * `doc_url` - The absolute URL of the document being converted (used
+    ///   to resolve relative links and to compute relative output paths).
+    ///
+    /// # Returns
+    ///
+    /// A `ConvertStats` struct containing conversion statistics, or a
+    /// `ConvertError` if the operation fails.
     pub fn convert_links(
         &self,
         file_path: &str,
         url_to_local: &std::collections::HashMap<String, String>,
         opts: &ConvertOptions,
+    ) -> Result<ConvertStats, ConvertError> {
+        self.convert_links_with_base(file_path, url_to_local, opts, None)
+    }
+
+    /// Like `convert_links` but with an explicit base URL for resolving
+    /// relative links in the document.
+    pub fn convert_links_with_base(
+        &self,
+        file_path: &str,
+        url_to_local: &std::collections::HashMap<String, String>,
+        opts: &ConvertOptions,
+        doc_url: Option<&str>,
     ) -> Result<ConvertStats, ConvertError> {
         let path = std::path::Path::new(file_path);
         if !path.exists() {
@@ -224,6 +259,13 @@ impl LinkConverter {
             })?;
         }
 
+        // Parse the document URL for resolving relative links.
+        let base_parsed = doc_url.and_then(|u| ut_core::url::ParsedUrl::parse(u).ok());
+
+        // The directory containing the current file, used to compute relative
+        // paths to target files.
+        let current_dir = path.parent().unwrap_or(std::path::Path::new(""));
+
         let rewritten_content: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
         let rewrite_count: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
 
@@ -231,6 +273,8 @@ impl LinkConverter {
         let rewritten_a = rewritten_content.clone();
         let count_a = rewrite_count.clone();
         let nullify_base = opts.nullify_base;
+        let base_for_resolve = base_parsed.clone();
+        let current_dir_owned = current_dir.to_path_buf();
 
         let mut rewriter = HtmlRewriter::new(
             Settings {
@@ -251,13 +295,60 @@ impl LinkConverter {
                             if original_url.starts_with('#')
                                 || original_url.starts_with("javascript:")
                                 || original_url.starts_with("data:")
+                                || original_url.starts_with("mailto:")
+                                || original_url.starts_with("tel:")
                             {
                                 return Ok(());
                             }
 
-                            if let Some(local_path) = url_to_local_clone.get(&original_url) {
-                                let _ = el.set_attribute(attr_name, local_path);
-                                *count_a.lock().unwrap_or_else(|e| e.into_inner()) += 1;
+                            // Resolve the attribute value to an absolute URL
+                            // for lookup in url_to_local. If the value is
+                            // already absolute, parse it directly; otherwise
+                            // merge against the base URL.
+                            let resolved_url: Option<String> = if original_url.contains("://") {
+                                Some(original_url.clone())
+                            } else if let Some(ref base) = base_for_resolve {
+                                base.merge(&original_url)
+                                    .ok()
+                                    .map(|u| u.to_string())
+                            } else {
+                                None
+                            };
+
+                            // Strip fragment for lookup (fragments don't change
+                            // the resource, only the location within the page).
+                            let lookup_url = resolved_url
+                                .as_deref()
+                                .map(|u| u.split('#').next().unwrap_or(u).to_string());
+
+                            if let Some(ref lookup) = lookup_url {
+                                if let Some(local_path) = url_to_local_clone.get(lookup) {
+                                    // Found in download map: compute a relative
+                                    // path from the current file's directory to
+                                    // the target file, so offline browsing works
+                                    // regardless of the mirror directory depth.
+                                    let target = std::path::Path::new(local_path);
+                                    let rel = relative_path(&current_dir_owned, target);
+                                    let _ = el.set_attribute(attr_name, &rel);
+                                    *count_a.lock().unwrap_or_else(|e| e.into_inner()) += 1;
+                                    return Ok(());
+                                }
+                            }
+
+                            // URL was not downloaded: convert relative URLs to
+                            // absolute URLs so links still work online
+                            // (CO_CONVERT_TO_COMPLETE, convert.c:353-373).
+                            // Only do this if the URL is relative and we have
+                            // a base URL to resolve against.
+                            if !original_url.contains("://")
+                                && !original_url.starts_with("//")
+                            {
+                                if let Some(ref base) = base_for_resolve {
+                                    if let Ok(absolute) = base.merge(&original_url) {
+                                        let abs_str = absolute.to_string();
+                                        let _ = el.set_attribute(attr_name, &abs_str);
+                                    }
+                                }
                             }
                         }
                     }
@@ -303,5 +394,117 @@ impl LinkConverter {
             skipped: total_urls.saturating_sub(count),
             already_relative: 0,
         })
+    }
+}
+
+/// Compute a relative path from `from_dir` to `to_path`.
+///
+/// This mirrors GNU wget's `construct_relative()` (convert.c:411-447):
+/// given the directory containing the current HTML file and the target
+/// file path (both relative to the download root), produce a relative
+/// path like `../subdir/page.html` that works when browsing offline.
+///
+/// # Arguments
+///
+/// * `from_dir` - The directory of the source file (e.g. `example.com/sub`).
+/// * `to_path` - The target file path (e.g. `example.com/other/page.html`).
+///
+/// # Returns
+///
+/// A relative path string (e.g. `../other/page.html`).
+fn relative_path(from_dir: &std::path::Path, to_path: &std::path::Path) -> String {
+    // Collect the path components of both the source directory and the
+    // target file. We use `components()` which yields normalized components
+    // (no `.` or `..` after resolution).
+    let from_parts: Vec<_> = from_dir.components().filter_map(|c| match c {
+        std::path::Component::Normal(s) => Some(s.to_owned()),
+        _ => None,
+    }).collect();
+
+    // For the target, the last component is the filename; everything before
+    // it is the directory.
+    let to_components: Vec<_> = to_path.components().filter_map(|c| match c {
+        std::path::Component::Normal(s) => Some(s.to_owned()),
+        _ => None,
+    }).collect();
+
+    if to_components.is_empty() {
+        return to_path.to_string_lossy().to_string();
+    }
+
+    let to_dir = &to_components[..to_components.len() - 1];
+    let to_file = &to_components[to_components.len() - 1];
+
+    // Find the common prefix length.
+    let common = from_parts
+        .iter()
+        .zip(to_dir.iter())
+        .take_while(|(a, b)| a == b)
+        .count();
+
+    // Number of `..` needed = remaining dirs in source after common prefix.
+    let up = from_parts.len().saturating_sub(common);
+
+    // Build the relative path: `../` * up + remaining target dirs + filename.
+    let mut result = std::path::PathBuf::new();
+    for _ in 0..up {
+        result.push("..");
+    }
+    for part in &to_dir[common..] {
+        result.push(part);
+    }
+    result.push(to_file);
+
+    result.to_string_lossy().to_string()
+}
+
+#[cfg(test)]
+mod relative_path_tests {
+    use super::relative_path;
+    use std::path::Path;
+
+    #[test]
+    fn test_same_directory() {
+        let result = relative_path(
+            Path::new("example.com"),
+            Path::new("example.com/page.html"),
+        );
+        assert_eq!(result, "page.html");
+    }
+
+    #[test]
+    fn test_subdirectory() {
+        let result = relative_path(
+            Path::new("example.com"),
+            Path::new("example.com/sub/page.html"),
+        );
+        assert_eq!(result, "sub/page.html");
+    }
+
+    #[test]
+    fn test_parent_directory() {
+        let result = relative_path(
+            Path::new("example.com/sub"),
+            Path::new("example.com/page.html"),
+        );
+        assert_eq!(result, "../page.html");
+    }
+
+    #[test]
+    fn test_sibling_directory() {
+        let result = relative_path(
+            Path::new("example.com/sub"),
+            Path::new("example.com/other/page.html"),
+        );
+        assert_eq!(result, "../other/page.html");
+    }
+
+    #[test]
+    fn test_deep_nesting() {
+        let result = relative_path(
+            Path::new("example.com/a/b/c"),
+            Path::new("example.com/a/x/y.html"),
+        );
+        assert_eq!(result, "../../x/y.html");
     }
 }
