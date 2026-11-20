@@ -350,7 +350,11 @@ impl RobotParser {
                     .specs
                     .sitemaps
                     .iter()
-                    .filter(|s| seen.insert(s.clone()))
+                    // `s` is `&&String` (iter yields &String, filter passes &T);
+                    // `s.clone()` would clone the reference, not the String
+                    // (suspicious_double_ref_op). Use to_string() to obtain an
+                    // owned String for the dedup set.
+                    .filter(|s| seen.insert(s.to_string()))
                     .cloned()
                     .collect();
             }
