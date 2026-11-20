@@ -164,7 +164,9 @@ pub struct Args {
     /// Rotate up to N backup files before writing.
     /// GNU wget's OPT_BOOLEAN: --backups (no value) defaults to 1,
     /// --backups=N sets count to N.
-    #[arg(long = "backups", num_args = 0..=1, default_missing_value = "1")]
+    // 使用 require_equals=true 确保值仅通过 --backups=N 传入，
+    // 不会吞掉下一个非 `-` 开头的参数（通常是 URL）。
+    #[arg(long = "backups", num_args = 0..=1, default_missing_value = "1", require_equals = true)]
     pub backups: Option<u32>,
 
     /// Continue getting a partially-downloaded file.
