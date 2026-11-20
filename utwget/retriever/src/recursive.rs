@@ -518,7 +518,7 @@ impl RecursiveRetriever {
 
         // Fetch robots.txt from the network if not already cached
         if !self.robots_cache.contains_key(&host_lc) {
-            let allowed = match self.fetch_robots(&host_lc, robot_parser) {
+            let allowed = match self.fetch_robots(&host_lc, &parsed.scheme, robot_parser) {
                 Some(content) => {
                     robot_parser.load(&host_lc, &content);
                     robot_parser.is_allowed(&host_lc, url).unwrap_or(true)
@@ -535,8 +535,10 @@ impl RecursiveRetriever {
 
     /// Fetch robots.txt for a host from the network.
     ///
-    /// Downloads `http://{host}/robots.txt` via the retriever and returns
-    /// the content. Caching is handled in-memory by the `RobotParser`; we do
+    /// Downloads `{scheme}://{host}/robots.txt` via the retriever and returns
+    /// the content. The scheme matches the URL being checked (HTTP or HTTPS),
+    /// matching GNU wget's behavior (recur.c:retrieve_robots), which fetches
+    /// robots.txt using the same scheme as the page being crawled. We do
     /// NOT write to a predictable `/tmp` path because that would expose us to
     /// symlink attacks (an attacker could pre-create a symlink at the cache
     /// path pointing at a sensitive file, which we would then overwrite).
@@ -544,14 +546,18 @@ impl RecursiveRetriever {
     /// # Arguments
     ///
     /// * `host` - The host to fetch robots.txt for (lowercase).
+    /// * `scheme` - The URL scheme to use ("http" or "https").
     /// * `robot_parser` - The robots.txt parser instance (unused here, kept for API consistency).
     ///
     /// # Returns
     ///
     /// `Some(content)` if robots.txt was successfully fetched, `None` otherwise.
-    fn fetch_robots(&mut self, host: &str, _robot_parser: &mut RobotParser) -> Option<String> {
-        // Use HTTPS when possible to prevent MITM injection of false robots.txt
-        let robots_url = format!("https://{}/robots.txt", host);
+    fn fetch_robots(&mut self, host: &str, scheme: &ut_core::types::Scheme, _robot_parser: &mut RobotParser) -> Option<String> {
+        // Use the same scheme as the page being crawled (GNU wget semantics).
+        // Previously this was hardcoded to HTTPS, which caused HTTP-only sites
+        // to fail robots.txt retrieval (404 or TLS error) and could abort
+        // recursive downloads.
+        let robots_url = format!("{}://{}/robots.txt", scheme.as_str(), host);
 
         match self.retriever.retrieve(&robots_url) {
             Ok(RetrieveOutcome::Success(body)) => {
