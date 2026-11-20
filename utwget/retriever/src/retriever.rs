@@ -1021,11 +1021,18 @@ impl Retriever {
                     // attempting to reuse it would yield stale bytes or immediate EOF.
                     if self.pending_keep_alive && result.connection_reusable {
                         if let Some((host, port)) = self.pending_return_info.take() {
-                            if let BodySource::Tls(mut t) = source {
-                                if let Some(conn) = t.take_inner() {
-                                    debug!("returning TLS connection to pool for {}:{}", host, port);
-                                    self.connection_pool.put_tls(&host, port, conn);
+                            match source {
+                                BodySource::Tls(mut t) => {
+                                    if let Some(conn) = t.take_inner() {
+                                        debug!("returning TLS connection to pool for {}:{}", host, port);
+                                        self.connection_pool.put_tls(&host, port, conn);
+                                    }
                                 }
+                                BodySource::Tcp(tcp) => {
+                                    debug!("returning TCP connection to pool for {}:{}", host, port);
+                                    self.connection_pool.put_tcp(&host, port, tcp);
+                                }
+                                _ => {}
                             }
                         }
                     }
@@ -2009,8 +2016,10 @@ impl Retriever {
                 stream.flush().map_err(RetrieveError::Io)?;
 
                 let (response, leftover) = read_response_head(&mut stream)?;
-                let source = BodySource::Plain(Box::new(stream));
-                Ok((response, leftover, source, None))
+                let source = BodySource::Tcp(stream);
+                // Direct HTTP: connection can be returned to the TCP pool
+                // after the body is consumed, if the server allows keep-alive.
+                Ok((response, leftover, source, Some((host.clone(), port))))
             }
         }
     }
@@ -2174,14 +2183,16 @@ impl Read for OwnedTransportRead {
 ///
 /// Distinguishes between a non-poolable reader (plain HTTP, proxy, or
 /// in-memory HTTP/2 buffer) and a poolable TLS transport (direct HTTPS).
-/// Only the `Tls` variant can be returned to the connection pool for
+/// The `Tcp` variant (direct HTTP) can be returned to the TCP pool, and
+/// the `Tls` variant (direct HTTPS) can be returned to the TLS pool for
 /// Keep-Alive reuse after the body is fully consumed.
 enum BodySource {
-    /// Non-poolable reader: plain HTTP TCP stream, proxy tunnel, or HTTP/2
-    /// in-memory buffer. Cannot be returned to the TLS pool.
+    /// Non-poolable reader: proxy tunnel, or HTTP/2 in-memory buffer.
+    /// Cannot be returned to any connection pool.
     Plain(Box<dyn Read + Send>),
-    /// Poolable TLS transport (direct HTTPS only). The underlying transport
-    /// can be extracted after the body is read and returned to the pool.
+    /// Poolable plain TCP transport (direct HTTP only).
+    Tcp(std::net::TcpStream),
+    /// Poolable TLS transport (direct HTTPS only).
     Tls(OwnedTransportRead),
 }
 
@@ -2189,6 +2200,7 @@ impl Read for BodySource {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
             BodySource::Plain(p) => p.read(buf),
+            BodySource::Tcp(s) => s.read(buf),
             BodySource::Tls(t) => t.read(buf),
         }
     }
