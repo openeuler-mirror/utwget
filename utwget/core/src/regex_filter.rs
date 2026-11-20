@@ -401,7 +401,9 @@ impl UrlFilter for SchemeFilter {
             Some(s) => s,
             None => return true,
         };
-        if self.https_only && !scheme.is_secure() && scheme != Scheme::Http {
+        // --https-only: reject ALL non-HTTPS schemes (including HTTP).
+        // Original wget: `if (opt.https_only && u->scheme != SCHEME_HTTPS)`
+        if self.https_only && scheme != Scheme::Https {
             return false;
         }
         if scheme == Scheme::Ftp && !self.follow_ftp {
