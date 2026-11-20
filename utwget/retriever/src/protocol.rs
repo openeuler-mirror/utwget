@@ -211,6 +211,10 @@ pub struct ProgressWriter<'a, W: Write, P: ProgressDisplay> {
     inner: W,
     progress: &'a mut P,
     total_written: u64,
+    /// Start time for elapsed-time computation. Must be captured at
+    /// construction, NOT computed via `Instant::now().elapsed()` (which
+    /// is always zero — the bug fixed by this field).
+    start: std::time::Instant,
 }
 
 impl<'a, W: Write, P: ProgressDisplay> ProgressWriter<'a, W, P> {
@@ -219,6 +223,7 @@ impl<'a, W: Write, P: ProgressDisplay> ProgressWriter<'a, W, P> {
             inner,
             progress,
             total_written: 0,
+            start: std::time::Instant::now(),
         }
     }
 
@@ -231,7 +236,7 @@ impl<'a, W: Write, P: ProgressDisplay> Write for ProgressWriter<'a, W, P> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let n = self.inner.write(buf)?;
         self.total_written += n as u64;
-        let elapsed = std::time::Instant::now().elapsed();
+        let elapsed = self.start.elapsed();
         self.progress.update(self.total_written, elapsed);
         Ok(n)
     }
