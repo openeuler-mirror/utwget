@@ -491,6 +491,36 @@ impl FtpsClient {
     fn build_tls_config(&self) -> Result<Arc<ClientConfig>, FtpError> {
         let mut root_store = RootCertStore::empty();
 
+        // Load client certificate and private key if both are specified.
+        let client_auth = match (&self.config.client_cert, &self.config.client_key) {
+            (Some(cert_path), Some(key_path)) => {
+                let cert_data = std::fs::read(cert_path)
+                    .map_err(|e| FtpError::Connect(format!("cannot read client cert: {}", e)))?;
+                let certs: Vec<CertificateDer<'static>> =
+                    rustls_pemfile::certs(&mut cert_data.as_slice())
+                        .collect::<Result<Vec<_>, _>>()
+                        .map_err(|e| FtpError::Connect(format!("cannot parse client cert: {}", e)))?;
+                if certs.is_empty() {
+                    return Err(FtpError::Connect("client cert file contains no certificates".into()));
+                }
+                let key_data = std::fs::read(key_path)
+                    .map_err(|e| FtpError::Connect(format!("cannot read client key: {}", e)))?;
+                let key = rustls_pemfile::private_key(&mut key_data.as_slice())
+                    .map_err(|e| FtpError::Connect(format!("cannot parse client key: {}", e)))?
+                    .ok_or_else(|| {
+                        FtpError::Connect("client key file contains no private key".into())
+                    })?;
+                Some((certs, key))
+            }
+            _ => None,
+        };
+
+        let versions: &[&'static rustls::SupportedProtocolVersion] = match self.config.secure_protocol {
+            SecureProtocol::TlsV1_2 => &[&rustls::version::TLS12],
+            SecureProtocol::TlsV1_3 => &[&rustls::version::TLS13],
+            SecureProtocol::Auto | SecureProtocol::Pfs => rustls::ALL_VERSIONS,
+        };
+
         if self.config.verify_certificate {
             // Load custom CA if specified
             if let Some(ref ca_path) = self.config.ca_cert {
@@ -516,34 +546,30 @@ impl FtpsClient {
                 }
             }
 
-            // Select TLS protocol versions based on --secure-protocol, mirroring
-            // the HTTPS path in net/src/tls/rustls_impl.rs:175-185.
-            let versions: &[&'static rustls::SupportedProtocolVersion] = match self.config.secure_protocol {
-                SecureProtocol::TlsV1_2 => &[&rustls::version::TLS12],
-                SecureProtocol::TlsV1_3 => &[&rustls::version::TLS13],
-                SecureProtocol::Auto | SecureProtocol::Pfs => rustls::ALL_VERSIONS,
-            };
+            let cfg = ClientConfig::builder_with_protocol_versions(versions)
+                .with_root_certificates(root_store);
 
-            Ok(Arc::new(
-                ClientConfig::builder_with_protocol_versions(versions)
-                    .with_root_certificates(root_store)
-                    .with_no_client_auth(),
-            ))
+            let cfg = match client_auth {
+                Some((certs, key)) => cfg
+                    .with_client_auth_cert(certs, key)
+                    .map_err(|e| FtpError::Connect(format!("cannot set client auth: {}", e)))?,
+                None => cfg.with_no_client_auth(),
+            };
+            Ok(Arc::new(cfg))
         } else {
             // Skip certificate verification
             let verifier: Arc<dyn ServerCertVerifier> = Arc::new(SkipServerVerification);
-            // Still honor --secure-protocol even when verification is skipped.
-            let versions: &[&'static rustls::SupportedProtocolVersion] = match self.config.secure_protocol {
-                SecureProtocol::TlsV1_2 => &[&rustls::version::TLS12],
-                SecureProtocol::TlsV1_3 => &[&rustls::version::TLS13],
-                SecureProtocol::Auto | SecureProtocol::Pfs => rustls::ALL_VERSIONS,
+            let cfg = ClientConfig::builder_with_protocol_versions(versions)
+                .dangerous()
+                .with_custom_certificate_verifier(verifier);
+
+            let cfg = match client_auth {
+                Some((certs, key)) => cfg
+                    .with_client_auth_cert(certs, key)
+                    .map_err(|e| FtpError::Connect(format!("cannot set client auth: {}", e)))?,
+                None => cfg.with_no_client_auth(),
             };
-            Ok(Arc::new(
-                ClientConfig::builder_with_protocol_versions(versions)
-                    .dangerous()
-                    .with_custom_certificate_verifier(verifier)
-                    .with_no_client_auth(),
-            ))
+            Ok(Arc::new(cfg))
         }
     }
 
