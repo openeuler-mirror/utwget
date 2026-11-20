@@ -502,3 +502,13 @@ impl std::fmt::Debug for TcpTransport {
             .finish()
     }
 }
+
+/// On drop, shut down both sides of the TCP connection so the remote
+/// sees a clean FIN rather than a RST.  Best-effort (errors ignored).
+impl Drop for TcpTransport {
+    fn drop(&mut self) {
+        if let Some(stream) = self.stream.take() {
+            let _ = stream.shutdown(std::net::Shutdown::Both);
+        }
+    }
+}
