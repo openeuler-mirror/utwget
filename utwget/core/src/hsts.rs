@@ -42,12 +42,19 @@ impl HstsEntry {
     /// A new `HstsEntry` with calculated expiration time.
     pub fn new(host: String, include_subdomains: bool, max_age: u64) -> Self {
         let now = Utc::now();
+        // 将 max_age 限制在 i64::MAX 以内，避免 u64→i64 截断后变为负值。
+        let safe_secs = max_age.min(i64::MAX as u64) as i64;
+        // 使用 checked_add_signed 避免 DateTime 溢出时 panic；
+        // 溢出时回退到最大可表示时间，等效于"永不过期"。
+        let expires = now
+            .checked_add_signed(chrono::Duration::seconds(safe_secs))
+            .unwrap_or(DateTime::<Utc>::MAX_UTC);
         HstsEntry {
             host,
             include_subdomains,
             max_age,
             created: now,
-            expires: now + chrono::Duration::seconds(max_age as i64),
+            expires,
         }
     }
 
