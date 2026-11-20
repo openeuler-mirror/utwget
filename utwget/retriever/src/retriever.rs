@@ -966,17 +966,27 @@ impl Retriever {
         }
 
         let resume_for_open = effective_resume_pos;
-        let file = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(resume_for_open == 0)
-            .append(resume_for_open > 0)
-            .open(&output_path)
-            .map_err(RetrieveError::Io)?;
 
-        // Wrap file in BufWriter to reduce write system calls.
-        // 64KB capacity matches our I/O buffer size for efficient batching.
-        let file = io::BufWriter::with_capacity(IO_BUFFER_SIZE, file);
+        // GNU wget treats -O - as "write to stdout". When output_document
+        // is "-", we write the body to stdout instead of opening a file.
+        let write_to_stdout = output_path == std::path::Path::new("-");
+
+        let file: Box<dyn io::Write> = if write_to_stdout {
+            Box::new(io::BufWriter::with_capacity(IO_BUFFER_SIZE, io::stdout()))
+        } else {
+            Box::new(
+                io::BufWriter::with_capacity(
+                    IO_BUFFER_SIZE,
+                    OpenOptions::new()
+                        .create(true)
+                        .write(true)
+                        .truncate(resume_for_open == 0)
+                        .append(resume_for_open > 0)
+                        .open(&output_path)
+                        .map_err(RetrieveError::Io)?,
+                )
+            )
+        };
 
         // Use Content-Length for progress, unless ignore_length is set
         let total_size = if self.config.ignore_length {
