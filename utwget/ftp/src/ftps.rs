@@ -458,11 +458,17 @@ impl FtpsClient {
             if resp.is_positive_completion {
                 self.config.require_data_tls = true;
             } else {
-                log::warn!(
-                    "FTPS: server refused PROT P ({}); data channel will be UNENCRYPTED. \
-                     Control channel is still encrypted, but file contents are sent in cleartext.",
+                // RFC 4217 §3.1: if the user requested FTPS (encrypted, PROT P)
+                // but the server refuses, this is a security policy violation.
+                // GNU wget's `ftp_prot` returns FTPNOPROT (an error). We do
+                // the same instead of silently downgrading to cleartext.
+                // The user can explicitly allow cleartext data with
+                // --ftps-clear-data-connection.
+                return Err(FtpError::Connect(format!(
+                    "server refused PROT P ({}); encrypted data channel required \
+                     (use --ftps-clear-data-connection to allow unencrypted data)",
                     resp.text.trim()
-                );
+                )));
             }
         }
 
