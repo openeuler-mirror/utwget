@@ -581,10 +581,12 @@ impl Retriever {
                 }
             }
             match h2_response {
-                Some(r) => {
+                Some(mut r) => {
                     // HTTP/2 responses already have the body in r.body.
-                    // Set pending_body_reader so stream_response_body can write it to disk.
-                    let body_data = r.body.clone().unwrap_or_default();
+                    // Use take() instead of clone() to avoid a third copy of
+                    // the body (read_body_limited already copies into Vec,
+                    // and h2_integration.rs copies Bytes→Vec).
+                    let body_data = r.body.take().unwrap_or_default();
                     self.pending_body_reader = Some((body_data, BodySource::Plain(Box::new(io::Cursor::new(Vec::new())))));
                     self.pending_return_info = None;
                     self.pending_keep_alive = false;
