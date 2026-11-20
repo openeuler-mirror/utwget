@@ -225,6 +225,29 @@ fn rearrange_args() -> Vec<String> {
     result
 }
 
+/// Write to stderr, ignoring errors (e.g. broken pipe when piped to `head`).
+///
+/// Rust's `safe_eprintln!` panics on write error (e.g. EPIPE when stderr is a
+/// closed pipe), producing exit code 101 instead of the intended exit code.
+/// This helper silently discards write errors, matching the behavior of
+/// GNU wget which uses `fprintf(stderr, ...)` and doesn't crash on SIGPIPE.
+macro_rules! safe_eprintln {
+    ($($arg:tt)*) => {{
+        use std::io::Write;
+        let stderr = std::io::stderr();
+        let _ = writeln!(stderr.lock(), $($arg)*);
+    }};
+}
+
+/// Write to stdout, ignoring errors (e.g. broken pipe when piped to `head`).
+macro_rules! safe_println {
+    ($($arg:tt)*) => {{
+        use std::io::Write;
+        let stdout = std::io::stdout();
+        let _ = writeln!(stdout.lock(), $($arg)*);
+    }};
+}
+
 /// Main entry point for the utwget command-line utility.
 ///
 /// This function orchestrates the entire download process:
@@ -263,18 +286,18 @@ fn main() -> ExitCode {
     let args = match Args::try_parse_from(&rearranged) {
         Ok(a) => a,
         Err(e) => {
-            eprintln!("{}", e);
+            safe_eprintln!("{}", e);
             return ExitCode::from(2); // PARSE_ERROR
         }
     };
 
     if args.version {
-        println!("utwget {}", env!("CARGO_PKG_VERSION"));
-        println!("Rust 重构版 GNU Wget 1.21.4");
-        println!();
-        println!("特性支持:");
-        println!("    +http +https +ftp +ftps");
-        println!("    +cookies +auth-basic +auth-digest");
+        safe_println!("utwget {}", env!("CARGO_PKG_VERSION"));
+        safe_println!("Rust 重构版 GNU Wget 1.21.4");
+        safe_println!();
+        safe_println!("特性支持:");
+        safe_println!("    +http +https +ftp +ftps");
+        safe_println!("    +cookies +auth-basic +auth-digest");
 
         // 动态显示可选特性
         let mut optional_features = Vec::new();
@@ -292,14 +315,14 @@ fn main() -> ExitCode {
         optional_features.push("+async");
 
         if !optional_features.is_empty() {
-            println!("    {}", optional_features.join(" "));
+            safe_println!("    {}", optional_features.join(" "));
         }
 
         // WARC 总是可用
-        println!("    +warc +iri +ipv6");
-        println!();
-        println!("编译信息:");
-        println!("    rustc {} (target: {})", env!("RUSTC_VERSION"), env!("TARGET"));
+        safe_println!("    +warc +iri +ipv6");
+        safe_println!();
+        safe_println!("编译信息:");
+        safe_println!("    rustc {} (target: {})", env!("RUSTC_VERSION"), env!("TARGET"));
         return ExitCode::SUCCESS;
     }
 
@@ -316,11 +339,11 @@ fn main() -> ExitCode {
             match wgetrc::WgetrcParser::parse(path) {
                 Ok(commands) => {
                     if let Err(e) = wgetrc::WgetrcParser::apply(&commands, &mut config) {
-                        eprintln!("utwget: warning: error applying {}: {}", path.display(), e);
+                        safe_eprintln!("utwget: warning: error applying {}: {}", path.display(), e);
                     }
                 }
                 Err(e) => {
-                    eprintln!("utwget: warning: error reading {}: {}", path.display(), e);
+                    safe_eprintln!("utwget: warning: error reading {}: {}", path.display(), e);
                 }
             }
         }
@@ -339,7 +362,7 @@ fn main() -> ExitCode {
     let log_append = args.append_output.is_some() || config.append_output.is_some();
     if let Some(ref target) = log_target {
         if let Err(e) = redirect_log_output(target, log_append) {
-            eprintln!("utwget: {}", e);
+            safe_eprintln!("utwget: {}", e);
             return ExitCode::from(1);
         }
     }
@@ -357,7 +380,7 @@ fn main() -> ExitCode {
             && config.input_filename.is_none()
             && args.input_file.is_none()
         {
-            eprintln!("utwget: 缺少 URL");
+            safe_eprintln!("utwget: 缺少 URL");
             return ExitCode::from(1);
         }
 
@@ -369,7 +392,7 @@ fn main() -> ExitCode {
             // GNU wget defaults to "wget-log" in the current directory.
             let default_log = std::path::PathBuf::from("wget-log");
             if let Err(e) = redirect_log_output(&default_log, false) {
-                eprintln!("utwget: {}", e);
+                safe_eprintln!("utwget: {}", e);
                 return ExitCode::from(1);
             }
         }
@@ -381,9 +404,9 @@ fn main() -> ExitCode {
         match daemonize(false) {
             Ok(child_pid) if child_pid > 0 => {
                 // Parent process: child has been forked off.
-                eprintln!("Continuing in background, pid {}.", child_pid);
+                safe_eprintln!("Continuing in background, pid {}.", child_pid);
                 if !keep_log {
-                    eprintln!("Output will be written to 'wget-log'.");
+                    safe_eprintln!("Output will be written to 'wget-log'.");
                 }
                 return ExitCode::SUCCESS;
             }
@@ -392,7 +415,7 @@ fn main() -> ExitCode {
                 // Signal handlers were already reinstalled inside daemonize().
             }
             Err(e) => {
-                eprintln!("utwget: unable to daemonize: {}", e);
+                safe_eprintln!("utwget: unable to daemonize: {}", e);
                 return ExitCode::from(1);
             }
         }
@@ -406,13 +429,13 @@ fn main() -> ExitCode {
             match result {
                 Ok(status) => ExitCode::from(status.to_exit_code()),
                 Err(e) => {
-                    eprintln!("utwget: {}", e);
+                    safe_eprintln!("utwget: {}", e);
                     ExitCode::from(1)
                 }
             }
         }
         Err(e) => {
-            eprintln!("utwget: {}", e);
+            safe_eprintln!("utwget: {}", e);
             ExitCode::from(1)
         }
     }
@@ -456,7 +479,7 @@ fn load_wgetrc_paths(args: &Args) -> Vec<std::path::PathBuf> {
     if let Some(wgetrc) = std::env::var_os("WGETRC") {
         let path = std::path::PathBuf::from(wgetrc);
         if !path.exists() {
-            eprintln!("utwget: WGETRC points to {:?} which does not exist", path);
+            safe_eprintln!("utwget: WGETRC points to {:?} which does not exist", path);
             std::process::exit(1);
         }
         paths.push(path);
@@ -495,210 +518,210 @@ fn load_wgetrc_paths(args: &Args) -> Vec<std::path::PathBuf> {
 fn print_wget_help() {
     let t = |key: &str| crate::i18n::translate(key);
 
-    println!("{}", t("utwget.version"));
-    println!("{}", t("utwget.help_usage"));
-    println!();
-    println!("{}", t("utwget.help_mandatory"));
-    println!();
+    safe_println!("{}", t("utwget.version"));
+    safe_println!("{}", t("utwget.help_usage"));
+    safe_println!();
+    safe_println!("{}", t("utwget.help_mandatory"));
+    safe_println!();
 
-    println!("{}:", t("utwget.help_startup"));
-    println!("  -V,  --version                   {}", t("utwget.help_version"));
-    println!("  -h,  --help                      {}", t("utwget.help_help"));
-    println!("  -b,  --background                {}", t("utwget.help_background"));
-    println!("  -e,  --execute=COMMAND           {}", t("utwget.help_execute"));
-    println!();
+    safe_println!("{}:", t("utwget.help_startup"));
+    safe_println!("  -V,  --version                   {}", t("utwget.help_version"));
+    safe_println!("  -h,  --help                      {}", t("utwget.help_help"));
+    safe_println!("  -b,  --background                {}", t("utwget.help_background"));
+    safe_println!("  -e,  --execute=COMMAND           {}", t("utwget.help_execute"));
+    safe_println!();
 
-    println!("{}:", t("utwget.help_logging"));
-    println!("  -o,  --output-file=FILE          {}", t("utwget.help_output_file"));
-    println!("  -a,  --append-output=FILE        {}", t("utwget.help_append_output"));
-    println!("  -d,  --debug                     {}", t("utwget.help_debug"));
-    println!("  -q,  --quiet                     {}", t("utwget.help_quiet"));
-    println!("  -v,  --verbose                   {}", t("utwget.help_verbose"));
-    println!("  -nv, --no-verbose                {}", t("utwget.help_no_verbose"));
-    println!("       --report-speed=TYPE         {}", t("utwget.help_report_speed"));
-    println!("  -i,  --input-file=FILE           {}", t("utwget.help_input_file"));
-    println!("  -F,  --force-html                {}", t("utwget.help_force_html"));
-    println!("  -B,  --base=URL                  {}", t("utwget.help_base"));
-    println!("       --config=FILE               {}", t("utwget.help_config"));
-    println!("       --no-config                 {}", t("utwget.help_no_config"));
-    println!("       --rejected-log=FILE         {}", t("utwget.help_rejected_log"));
-    println!();
+    safe_println!("{}:", t("utwget.help_logging"));
+    safe_println!("  -o,  --output-file=FILE          {}", t("utwget.help_output_file"));
+    safe_println!("  -a,  --append-output=FILE        {}", t("utwget.help_append_output"));
+    safe_println!("  -d,  --debug                     {}", t("utwget.help_debug"));
+    safe_println!("  -q,  --quiet                     {}", t("utwget.help_quiet"));
+    safe_println!("  -v,  --verbose                   {}", t("utwget.help_verbose"));
+    safe_println!("  -nv, --no-verbose                {}", t("utwget.help_no_verbose"));
+    safe_println!("       --report-speed=TYPE         {}", t("utwget.help_report_speed"));
+    safe_println!("  -i,  --input-file=FILE           {}", t("utwget.help_input_file"));
+    safe_println!("  -F,  --force-html                {}", t("utwget.help_force_html"));
+    safe_println!("  -B,  --base=URL                  {}", t("utwget.help_base"));
+    safe_println!("       --config=FILE               {}", t("utwget.help_config"));
+    safe_println!("       --no-config                 {}", t("utwget.help_no_config"));
+    safe_println!("       --rejected-log=FILE         {}", t("utwget.help_rejected_log"));
+    safe_println!();
 
-    println!("{}:", t("utwget.help_download"));
-    println!("  -t,  --tries=NUMBER              {}", t("utwget.help_tries"));
-    println!("       --retry-connrefused         {}", t("utwget.help_retry_connrefused"));
-    println!("       --retry-on-host-error       {}", t("utwget.help_retry_on_host_error"));
-    println!("       --retry-on-http-error=ERRORS    {}", t("utwget.help_retry_on_http_error"));
-    println!("  -O,  --output-document=FILE      {}", t("utwget.help_output_document"));
-    println!("  -nc, --no-clobber                {}", t("utwget.help_no_clobber"));
-    println!("       --no-netrc                  {}", t("utwget.help_no_netrc"));
-    println!("  -c,  --continue                  {}", t("utwget.help_continue"));
-    println!("       --start-pos=OFFSET          {}", t("utwget.help_start_pos"));
-    println!("       --progress=TYPE             {}", t("utwget.help_progress"));
-    println!("       --show-progress             {}", t("utwget.help_show_progress"));
-    println!("  -N,  --timestamping              {}", t("utwget.help_timestamping"));
-    println!("  -S,  --server-response           {}", t("utwget.help_server_response"));
-    println!("       --spider                    {}", t("utwget.help_spider"));
-    println!("  -T,  --timeout=SECONDS           {}", t("utwget.help_timeout"));
-    println!("       --connect-timeout=SECS      {}", t("utwget.help_connect_timeout"));
-    println!("       --read-timeout=SECS         {}", t("utwget.help_read_timeout"));
-    println!("       --dns-timeout=SECS          {}", t("utwget.help_dns_timeout"));
-    println!("  -w,  --wait=SECONDS              {}", t("utwget.help_wait"));
-    println!("       --waitretry=SECONDS         {}", t("utwget.help_waitretry"));
-    println!("       --random-wait               {}", t("utwget.help_random_wait"));
-    println!("       --no-proxy                  {}", t("utwget.help_no_proxy"));
-    println!("  -4,  --inet4-only                {}", t("utwget.help_inet4_only"));
-    println!("  -6,  --inet6-only                {}", t("utwget.help_inet6_only"));
-    println!("       --proxy-user=USER           {}", t("utwget.help_proxy_user"));
-    println!("       --proxy-password=PASS       {}", t("utwget.help_proxy_password"));
-    println!("  -Q,  --quota=NUMBER              {}", t("utwget.help_quota"));
-    println!("       --limit-rate=RATE           {}", t("utwget.help_limit_rate"));
-    println!("       --delete-after              {}", t("utwget.help_delete_after"));
-    println!("       --content-disposition       {}", t("utwget.help_content_disposition"));
-    println!("       --auth-no-challenge          {}", t("utwget.help_auth_no_challenge"));
-    println!("       --ask-password              {}", t("utwget.help_ask_password"));
-    println!("       --use-askpass=PROGRAM       {}", t("utwget.help_use_askpass"));
-    println!("       --trust-server-names         {}", t("utwget.help_trust_server_names"));
-    println!("       --unlink                    {}", t("utwget.help_unlink"));
-    println!("       --xattr                     {}", t("utwget.help_xattr"));
-    println!("       --preserve-permissions      {}", t("utwget.help_preserve_permissions"));
-    println!("       --backups                   {}", t("utwget.help_backups"));
-    println!("       --bind-address=ADDRESS      {}", t("utwget.help_bind_address"));
-    println!("       --no-dns-cache              {}", t("utwget.help_no_dns_cache"));
-    println!("       --restrict-file-names=MODES {}", t("utwget.help_restrict_file_names"));
-    println!("       --prefer-family=ADDRESS     {}", t("utwget.help_prefer_family"));
-    println!();
-    println!("{}:", t("utwget.help_directories"));
-    println!("  -nd, --no-directories            {}", t("utwget.help_no_directories"));
-    println!("  -x,  --force-directories         {}", t("utwget.help_force_directories"));
-    println!("  -nH, --no-host-directories       {}", t("utwget.help_no_host_directories"));
-    println!("       --protocol-directories      {}", t("utwget.help_protocol_directories"));
-    println!("  -P,  --directory-prefix=PREFIX   {}", t("utwget.help_directory_prefix"));
-    println!("       --cut-dirs=NUMBER           {}", t("utwget.help_cut_dirs"));
-    println!();
+    safe_println!("{}:", t("utwget.help_download"));
+    safe_println!("  -t,  --tries=NUMBER              {}", t("utwget.help_tries"));
+    safe_println!("       --retry-connrefused         {}", t("utwget.help_retry_connrefused"));
+    safe_println!("       --retry-on-host-error       {}", t("utwget.help_retry_on_host_error"));
+    safe_println!("       --retry-on-http-error=ERRORS    {}", t("utwget.help_retry_on_http_error"));
+    safe_println!("  -O,  --output-document=FILE      {}", t("utwget.help_output_document"));
+    safe_println!("  -nc, --no-clobber                {}", t("utwget.help_no_clobber"));
+    safe_println!("       --no-netrc                  {}", t("utwget.help_no_netrc"));
+    safe_println!("  -c,  --continue                  {}", t("utwget.help_continue"));
+    safe_println!("       --start-pos=OFFSET          {}", t("utwget.help_start_pos"));
+    safe_println!("       --progress=TYPE             {}", t("utwget.help_progress"));
+    safe_println!("       --show-progress             {}", t("utwget.help_show_progress"));
+    safe_println!("  -N,  --timestamping              {}", t("utwget.help_timestamping"));
+    safe_println!("  -S,  --server-response           {}", t("utwget.help_server_response"));
+    safe_println!("       --spider                    {}", t("utwget.help_spider"));
+    safe_println!("  -T,  --timeout=SECONDS           {}", t("utwget.help_timeout"));
+    safe_println!("       --connect-timeout=SECS      {}", t("utwget.help_connect_timeout"));
+    safe_println!("       --read-timeout=SECS         {}", t("utwget.help_read_timeout"));
+    safe_println!("       --dns-timeout=SECS          {}", t("utwget.help_dns_timeout"));
+    safe_println!("  -w,  --wait=SECONDS              {}", t("utwget.help_wait"));
+    safe_println!("       --waitretry=SECONDS         {}", t("utwget.help_waitretry"));
+    safe_println!("       --random-wait               {}", t("utwget.help_random_wait"));
+    safe_println!("       --no-proxy                  {}", t("utwget.help_no_proxy"));
+    safe_println!("  -4,  --inet4-only                {}", t("utwget.help_inet4_only"));
+    safe_println!("  -6,  --inet6-only                {}", t("utwget.help_inet6_only"));
+    safe_println!("       --proxy-user=USER           {}", t("utwget.help_proxy_user"));
+    safe_println!("       --proxy-password=PASS       {}", t("utwget.help_proxy_password"));
+    safe_println!("  -Q,  --quota=NUMBER              {}", t("utwget.help_quota"));
+    safe_println!("       --limit-rate=RATE           {}", t("utwget.help_limit_rate"));
+    safe_println!("       --delete-after              {}", t("utwget.help_delete_after"));
+    safe_println!("       --content-disposition       {}", t("utwget.help_content_disposition"));
+    safe_println!("       --auth-no-challenge          {}", t("utwget.help_auth_no_challenge"));
+    safe_println!("       --ask-password              {}", t("utwget.help_ask_password"));
+    safe_println!("       --use-askpass=PROGRAM       {}", t("utwget.help_use_askpass"));
+    safe_println!("       --trust-server-names         {}", t("utwget.help_trust_server_names"));
+    safe_println!("       --unlink                    {}", t("utwget.help_unlink"));
+    safe_println!("       --xattr                     {}", t("utwget.help_xattr"));
+    safe_println!("       --preserve-permissions      {}", t("utwget.help_preserve_permissions"));
+    safe_println!("       --backups                   {}", t("utwget.help_backups"));
+    safe_println!("       --bind-address=ADDRESS      {}", t("utwget.help_bind_address"));
+    safe_println!("       --no-dns-cache              {}", t("utwget.help_no_dns_cache"));
+    safe_println!("       --restrict-file-names=MODES {}", t("utwget.help_restrict_file_names"));
+    safe_println!("       --prefer-family=ADDRESS     {}", t("utwget.help_prefer_family"));
+    safe_println!();
+    safe_println!("{}:", t("utwget.help_directories"));
+    safe_println!("  -nd, --no-directories            {}", t("utwget.help_no_directories"));
+    safe_println!("  -x,  --force-directories         {}", t("utwget.help_force_directories"));
+    safe_println!("  -nH, --no-host-directories       {}", t("utwget.help_no_host_directories"));
+    safe_println!("       --protocol-directories      {}", t("utwget.help_protocol_directories"));
+    safe_println!("  -P,  --directory-prefix=PREFIX   {}", t("utwget.help_directory_prefix"));
+    safe_println!("       --cut-dirs=NUMBER           {}", t("utwget.help_cut_dirs"));
+    safe_println!();
 
-    println!("{}:", t("utwget.help_http_options"));
-    println!("       --user=USER                  {}", t("utwget.help_user"));
-    println!("       --password=PASS              {}", t("utwget.help_password"));
-    println!("       --http-user=USER            {}", t("utwget.help_http_user"));
-    println!("       --http-password=PASS        {}", t("utwget.help_http_password"));
-    println!("       --no-cache                  {}", t("utwget.help_no_cache"));
-    println!("  -E,  --adjust-extension          {}", t("utwget.help_adjust_extension"));
-    println!("       --header=STRING             {}", t("utwget.help_header"));
-    println!("       --compression=TYPE          {}", t("utwget.help_compression"));
-    println!("  -U,  --user-agent=AGENT          {}", t("utwget.help_user_agent"));
-    println!("       --no-cookies                {}", t("utwget.help_no_cookies"));
-    println!("       --load-cookies=FILE         {}", t("utwget.help_load_cookies"));
-    println!("       --save-cookies=FILE         {}", t("utwget.help_save_cookies"));
-    println!("       --keep-session-cookies      {}", t("utwget.help_keep_session_cookies"));
-    println!("       --post-data=STRING          {}", t("utwget.help_post_data"));
-    println!("       --post-file=FILE            {}", t("utwget.help_post_file"));
-    println!("       --method=METHOD             {}", t("utwget.help_method"));
-    println!("       --body-data=STRING          {}", t("utwget.help_body_data"));
-    println!("       --body-file=FILE            {}", t("utwget.help_body_file"));
-    println!("       --content-on-error          {}", t("utwget.help_content_on_error"));
-    println!("       --save-headers              {}", t("utwget.help_save_headers"));
-    println!("       --ignore-length             {}", t("utwget.help_ignore_length"));
-    println!("       --max-redirect=NUM          {}", t("utwget.help_max_redirect"));
-    println!("       --follow-tags=LIST          {}", t("utwget.help_follow_tags"));
-    println!("       --ignore-tags=LIST          {}", t("utwget.help_ignore_tags"));
-    println!("       --default-page=NAME         {}", t("utwget.help_default_page"));
-    println!("       --no-http-keep-alive        {}", t("utwget.help_no_http_keep_alive"));
-    println!("       --no-if-modified-since      {}", t("utwget.help_no_if_modified_since"));
-    println!("       --no-use-server-timestamps  {}", t("utwget.help_no_use_server_timestamps"));
-    println!("       --referer=URL               {}", t("utwget.help_referer"));
-    println!("       --local-encoding=ENC        {}", t("utwget.help_local_encoding"));
-    println!("       --remote-encoding=ENC       {}", t("utwget.help_remote_encoding"));
-    println!("       --no-iri                    {}", t("utwget.help_no_iri"));
-    println!();
+    safe_println!("{}:", t("utwget.help_http_options"));
+    safe_println!("       --user=USER                  {}", t("utwget.help_user"));
+    safe_println!("       --password=PASS              {}", t("utwget.help_password"));
+    safe_println!("       --http-user=USER            {}", t("utwget.help_http_user"));
+    safe_println!("       --http-password=PASS        {}", t("utwget.help_http_password"));
+    safe_println!("       --no-cache                  {}", t("utwget.help_no_cache"));
+    safe_println!("  -E,  --adjust-extension          {}", t("utwget.help_adjust_extension"));
+    safe_println!("       --header=STRING             {}", t("utwget.help_header"));
+    safe_println!("       --compression=TYPE          {}", t("utwget.help_compression"));
+    safe_println!("  -U,  --user-agent=AGENT          {}", t("utwget.help_user_agent"));
+    safe_println!("       --no-cookies                {}", t("utwget.help_no_cookies"));
+    safe_println!("       --load-cookies=FILE         {}", t("utwget.help_load_cookies"));
+    safe_println!("       --save-cookies=FILE         {}", t("utwget.help_save_cookies"));
+    safe_println!("       --keep-session-cookies      {}", t("utwget.help_keep_session_cookies"));
+    safe_println!("       --post-data=STRING          {}", t("utwget.help_post_data"));
+    safe_println!("       --post-file=FILE            {}", t("utwget.help_post_file"));
+    safe_println!("       --method=METHOD             {}", t("utwget.help_method"));
+    safe_println!("       --body-data=STRING          {}", t("utwget.help_body_data"));
+    safe_println!("       --body-file=FILE            {}", t("utwget.help_body_file"));
+    safe_println!("       --content-on-error          {}", t("utwget.help_content_on_error"));
+    safe_println!("       --save-headers              {}", t("utwget.help_save_headers"));
+    safe_println!("       --ignore-length             {}", t("utwget.help_ignore_length"));
+    safe_println!("       --max-redirect=NUM          {}", t("utwget.help_max_redirect"));
+    safe_println!("       --follow-tags=LIST          {}", t("utwget.help_follow_tags"));
+    safe_println!("       --ignore-tags=LIST          {}", t("utwget.help_ignore_tags"));
+    safe_println!("       --default-page=NAME         {}", t("utwget.help_default_page"));
+    safe_println!("       --no-http-keep-alive        {}", t("utwget.help_no_http_keep_alive"));
+    safe_println!("       --no-if-modified-since      {}", t("utwget.help_no_if_modified_since"));
+    safe_println!("       --no-use-server-timestamps  {}", t("utwget.help_no_use_server_timestamps"));
+    safe_println!("       --referer=URL               {}", t("utwget.help_referer"));
+    safe_println!("       --local-encoding=ENC        {}", t("utwget.help_local_encoding"));
+    safe_println!("       --remote-encoding=ENC       {}", t("utwget.help_remote_encoding"));
+    safe_println!("       --no-iri                    {}", t("utwget.help_no_iri"));
+    safe_println!();
 
-    println!("{}:", t("utwget.help_https_options"));
-    println!("       --secure-protocol=PR        {}", t("utwget.help_secure_protocol"));
-    println!("       --https-only                {}", t("utwget.help_https_only"));
-    println!("       --no-check-certificate      {}", t("utwget.help_no_check_certificate"));
-    println!("       --certificate=FILE          {}", t("utwget.help_certificate"));
-    println!("       --ca-certificate=FILE       {}", t("utwget.help_ca_certificate"));
-    println!("       --ca-directory=DIR          {}", t("utwget.help_ca_directory"));
-    println!("       --crl-file=FILE             {}", t("utwget.help_crl_file"));
-    println!("       --ciphers=STR               {}", t("utwget.help_ciphers"));
-    println!("       --pinnedpubkey=FILE         {}", t("utwget.help_pinnedpubkey"));
-    println!("       --private-key=FILE          {}", t("utwget.help_private_key"));
-    println!("       --private-key-type=TYPE     {}", t("utwget.help_private_key_type"));
-    println!("       --certificate-type=TYPE     {}", t("utwget.help_certificate_type"));
-    println!();
+    safe_println!("{}:", t("utwget.help_https_options"));
+    safe_println!("       --secure-protocol=PR        {}", t("utwget.help_secure_protocol"));
+    safe_println!("       --https-only                {}", t("utwget.help_https_only"));
+    safe_println!("       --no-check-certificate      {}", t("utwget.help_no_check_certificate"));
+    safe_println!("       --certificate=FILE          {}", t("utwget.help_certificate"));
+    safe_println!("       --ca-certificate=FILE       {}", t("utwget.help_ca_certificate"));
+    safe_println!("       --ca-directory=DIR          {}", t("utwget.help_ca_directory"));
+    safe_println!("       --crl-file=FILE             {}", t("utwget.help_crl_file"));
+    safe_println!("       --ciphers=STR               {}", t("utwget.help_ciphers"));
+    safe_println!("       --pinnedpubkey=FILE         {}", t("utwget.help_pinnedpubkey"));
+    safe_println!("       --private-key=FILE          {}", t("utwget.help_private_key"));
+    safe_println!("       --private-key-type=TYPE     {}", t("utwget.help_private_key_type"));
+    safe_println!("       --certificate-type=TYPE     {}", t("utwget.help_certificate_type"));
+    safe_println!();
 
-    println!("{}:", t("utwget.help_hsts_options"));
-    println!("       --no-hsts                   {}", t("utwget.help_no_hsts"));
-    println!("       --hsts-file=FILE            {}", t("utwget.help_hsts_file"));
-    println!();
+    safe_println!("{}:", t("utwget.help_hsts_options"));
+    safe_println!("       --no-hsts                   {}", t("utwget.help_no_hsts"));
+    safe_println!("       --hsts-file=FILE            {}", t("utwget.help_hsts_file"));
+    safe_println!();
 
-    println!("{}:", t("utwget.help_ftp_options"));
-    println!("       --ftp-user=USER             {}", t("utwget.help_ftp_user"));
-    println!("       --ftp-password=PASS         {}", t("utwget.help_ftp_password"));
-    println!("       --no-remove-listing         {}", t("utwget.help_no_remove_listing"));
-    println!("       --no-glob                   {}", t("utwget.help_no_glob"));
-    println!("       --no-passive-ftp            {}", t("utwget.help_no_passive_ftp"));
-    println!("       --retr-symlinks             {}", t("utwget.help_retr_symlinks"));
-    println!("       --ftps-implicit             {}", t("utwget.help_ftps_implicit"));
-    println!("       --ftps-resume-ssl           {}", t("utwget.help_ftps_resume_ssl"));
-    println!("       --ftps-clear-data-connection {}", t("utwget.help_ftps_clear_data_connection"));
-    println!("       --ftps-fallback-to-ftp      {}", t("utwget.help_ftps_fallback_to_ftp"));
-    println!();
+    safe_println!("{}:", t("utwget.help_ftp_options"));
+    safe_println!("       --ftp-user=USER             {}", t("utwget.help_ftp_user"));
+    safe_println!("       --ftp-password=PASS         {}", t("utwget.help_ftp_password"));
+    safe_println!("       --no-remove-listing         {}", t("utwget.help_no_remove_listing"));
+    safe_println!("       --no-glob                   {}", t("utwget.help_no_glob"));
+    safe_println!("       --no-passive-ftp            {}", t("utwget.help_no_passive_ftp"));
+    safe_println!("       --retr-symlinks             {}", t("utwget.help_retr_symlinks"));
+    safe_println!("       --ftps-implicit             {}", t("utwget.help_ftps_implicit"));
+    safe_println!("       --ftps-resume-ssl           {}", t("utwget.help_ftps_resume_ssl"));
+    safe_println!("       --ftps-clear-data-connection {}", t("utwget.help_ftps_clear_data_connection"));
+    safe_println!("       --ftps-fallback-to-ftp      {}", t("utwget.help_ftps_fallback_to_ftp"));
+    safe_println!();
 
-    println!("{}:", t("utwget.help_recursive_download"));
-    println!("  -r,  --recursive                 {}", t("utwget.help_recursive"));
-    println!("  -l,  --level=NUMBER              {}", t("utwget.help_level"));
-    println!("  -k,  --convert-links             {}", t("utwget.help_convert_links"));
-    println!("  -K,  --backup-converted          {}", t("utwget.help_backup_converted"));
-    println!("  -m,  --mirror                    {}", t("utwget.help_mirror"));
-    println!("  -p,  --page-requisites           {}", t("utwget.help_page_requisites"));
-    println!("       --strict-comments           {}", t("utwget.help_strict_comments"));
-    println!("       --convert-file-only         {}", t("utwget.help_convert_file_only"));
-    println!();
+    safe_println!("{}:", t("utwget.help_recursive_download"));
+    safe_println!("  -r,  --recursive                 {}", t("utwget.help_recursive"));
+    safe_println!("  -l,  --level=NUMBER              {}", t("utwget.help_level"));
+    safe_println!("  -k,  --convert-links             {}", t("utwget.help_convert_links"));
+    safe_println!("  -K,  --backup-converted          {}", t("utwget.help_backup_converted"));
+    safe_println!("  -m,  --mirror                    {}", t("utwget.help_mirror"));
+    safe_println!("  -p,  --page-requisites           {}", t("utwget.help_page_requisites"));
+    safe_println!("       --strict-comments           {}", t("utwget.help_strict_comments"));
+    safe_println!("       --convert-file-only         {}", t("utwget.help_convert_file_only"));
+    safe_println!();
 
-    println!("{}:", t("utwget.help_recursive_accept"));
-    println!("  -A,  --accept=LIST               {}", t("utwget.help_accept"));
-    println!("  -R,  --reject=LIST               {}", t("utwget.help_reject"));
-    println!("       --accept-regex=REGEX        {}", t("utwget.help_accept_regex"));
-    println!("       --reject-regex=REGEX        {}", t("utwget.help_reject_regex"));
-    println!("  -D,  --domains=LIST              {}", t("utwget.help_domains"));
-    println!("       --exclude-domains=LIST      {}", t("utwget.help_exclude_domains"));
-    println!("       --follow-ftp                {}", t("utwget.help_follow_ftp"));
-    println!("  -H,  --span-hosts                {}", t("utwget.help_span_hosts"));
-    println!("  -L,  --relative                  {}", t("utwget.help_relative"));
-    println!("  -I,  --include-directories=LIST  {}", t("utwget.help_include_directories"));
-    println!("  -X,  --exclude-directories=LIST  {}", t("utwget.help_exclude_directories"));
-    println!("  -np, --no-parent                 {}", t("utwget.help_no_parent"));
-    println!("       --robots                    {}", t("utwget.help_robots"));
-    println!("       --regex-type=TYPE           {}", t("utwget.help_regex_type"));
-    println!("       --ignore-case               {}", t("utwget.help_ignore_case"));
-    println!();
+    safe_println!("{}:", t("utwget.help_recursive_accept"));
+    safe_println!("  -A,  --accept=LIST               {}", t("utwget.help_accept"));
+    safe_println!("  -R,  --reject=LIST               {}", t("utwget.help_reject"));
+    safe_println!("       --accept-regex=REGEX        {}", t("utwget.help_accept_regex"));
+    safe_println!("       --reject-regex=REGEX        {}", t("utwget.help_reject_regex"));
+    safe_println!("  -D,  --domains=LIST              {}", t("utwget.help_domains"));
+    safe_println!("       --exclude-domains=LIST      {}", t("utwget.help_exclude_domains"));
+    safe_println!("       --follow-ftp                {}", t("utwget.help_follow_ftp"));
+    safe_println!("  -H,  --span-hosts                {}", t("utwget.help_span_hosts"));
+    safe_println!("  -L,  --relative                  {}", t("utwget.help_relative"));
+    safe_println!("  -I,  --include-directories=LIST  {}", t("utwget.help_include_directories"));
+    safe_println!("  -X,  --exclude-directories=LIST  {}", t("utwget.help_exclude_directories"));
+    safe_println!("  -np, --no-parent                 {}", t("utwget.help_no_parent"));
+    safe_println!("       --robots                    {}", t("utwget.help_robots"));
+    safe_println!("       --regex-type=TYPE           {}", t("utwget.help_regex_type"));
+    safe_println!("       --ignore-case               {}", t("utwget.help_ignore_case"));
+    safe_println!();
 
-    println!("{}:", t("utwget.help_metalink_options"));
-    println!("       --metalink-over-http        {}", t("utwget.help_metalink_over_http"));
-    println!("       --input-metalink=FILE       {}", t("utwget.help_input_metalink"));
-    println!();
+    safe_println!("{}:", t("utwget.help_metalink_options"));
+    safe_println!("       --metalink-over-http        {}", t("utwget.help_metalink_over_http"));
+    safe_println!("       --input-metalink=FILE       {}", t("utwget.help_input_metalink"));
+    safe_println!();
 
-    println!("{}:", t("utwget.help_warc_options"));
-    println!("       --warc-file=FILENAME        {}", t("utwget.help_warc_file"));
-    println!("       --warc-max-size=NUMBER      {}", t("utwget.help_warc_maxsize"));
-    println!("       --warc-cdx                  {}", t("utwget.help_warc_cdx"));
-    println!("       --warc-dedup=URL            {}", t("utwget.help_warc_dedup"));
-    println!("       --warc-compression          {}", t("utwget.help_warc_compression"));
-    println!("       --warc-digests              {}", t("utwget.help_warc_digests"));
-    println!("       --warc-keep-log             {}", t("utwget.help_warc_keep_log"));
-    println!("       --warc-tempdir=DIR          {}", t("utwget.help_warc_temp_dir"));
-    println!("       --warc-header=STRING        {}", t("utwget.help_warc_header"));
-    println!();
+    safe_println!("{}:", t("utwget.help_warc_options"));
+    safe_println!("       --warc-file=FILENAME        {}", t("utwget.help_warc_file"));
+    safe_println!("       --warc-max-size=NUMBER      {}", t("utwget.help_warc_maxsize"));
+    safe_println!("       --warc-cdx                  {}", t("utwget.help_warc_cdx"));
+    safe_println!("       --warc-dedup=URL            {}", t("utwget.help_warc_dedup"));
+    safe_println!("       --warc-compression          {}", t("utwget.help_warc_compression"));
+    safe_println!("       --warc-digests              {}", t("utwget.help_warc_digests"));
+    safe_println!("       --warc-keep-log             {}", t("utwget.help_warc_keep_log"));
+    safe_println!("       --warc-tempdir=DIR          {}", t("utwget.help_warc_temp_dir"));
+    safe_println!("       --warc-header=STRING        {}", t("utwget.help_warc_header"));
+    safe_println!();
 
-    println!("{}", t("utwget.help_email"));
+    safe_println!("{}", t("utwget.help_email"));
 }
 
 /// Redirect process logging to a file specified by `-o`/`-a`.
 ///
 /// GNU wget routes all diagnostic output through a single log file pointer.
 /// We achieve the same effect by redirecting the process's stderr file
-/// descriptor to the target file with `dup2`, so that every `eprintln!`
+/// descriptor to the target file with `dup2`, so that every `safe_eprintln!`
 /// and `log` message flows into it automatically — no call-site changes
 /// are required.
 ///
@@ -711,7 +734,7 @@ fn print_wget_help() {
 fn redirect_log_output(file: &std::path::Path, append: bool) -> Result<(), Box<dyn std::error::Error>> {
     // `-o -` (or `-a -`) routes logs to stdout.
     if file == std::path::Path::new("-") {
-        // dup2(stdout, stderr) so eprintln!/log go to stdout.
+        // dup2(stdout, stderr) so safe_eprintln!/log go to stdout.
         unsafe {
             if libc::dup2(libc::STDOUT_FILENO, libc::STDERR_FILENO) < 0 {
                 return Err("failed to redirect stderr to stdout".into());
