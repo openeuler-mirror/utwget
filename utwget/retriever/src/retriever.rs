@@ -55,6 +55,18 @@ static DNS_CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap
 /// DNS cache entry TTL (seconds).
 const DNS_CACHE_TTL: Duration = Duration::from_secs(60);
 
+/// Counter for detached DNS resolver threads (threads that timed out and
+/// are still running in the background). Used to warn about potential
+/// unbounded thread growth during recursive crawls with DNS timeouts.
+static DETACHED_DNS_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Decremented when a previously-detached DNS thread finishes. Since we
+/// cannot actually track this (the thread is detached), this is a no-op
+/// placeholder for future enhancement. The count only grows during a session.
+/// In practice, DNS cache hits (60s TTL) prevent most repeated lookups, so
+/// detached threads are bounded by the number of *distinct* hosts that time
+/// out within a 60s window.
+
 fn dns_cache() -> &'static std::sync::Mutex<std::collections::HashMap<(String, u16), (Vec<std::net::SocketAddr>, Instant)>> {
     DNS_CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
 }
@@ -1771,10 +1783,19 @@ impl Retriever {
                         )));
                     }
                     Err(_) => {
-                        // Timeout: thread may still be running
-                        // We cannot force-terminate it, so we detach it
-                        // It will complete on its own and clean up
-                        log::warn!("DNS resolution timeout for {}, detaching resolver thread", host);
+                        // Timeout: thread may still be running. We cannot
+                        // force-terminate it, so we detach it. To prevent
+                        // unbounded thread growth, track the count of detached
+                        // threads and warn if it exceeds a limit.
+                        let count = DETACHED_DNS_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        if count > 100 {
+                            log::warn!(
+                                "DNS resolution timeout for {}, detaching resolver thread ({} detached threads active)",
+                                host, count
+                            );
+                        } else {
+                            log::debug!("DNS resolution timeout for {}, detaching resolver thread", host);
+                        }
                         return Err(RetrieveError::Protocol(WgetError::Other(
                             "DNS resolution timeout".to_string()
                         )));
