@@ -634,8 +634,14 @@ impl Retriever {
         // Show server response headers if --server-response is enabled.
         // This must come BEFORE the spider early-return so that
         // `wget -S --spider` prints the headers (matching GNU wget).
-        if self.config.server_response && !self.config.quiet {
-            eprintln!("{} {} {}", response.version, response.status_code, response.reason);
+        //
+        // GNU wget prints the response via LOG_ALWAYS (http.c:881
+        // print_response_line), so --server-response bypasses --quiet:
+        // `wget -q -S` still shows the headers. All lines, including the
+        // status line, are prefixed with two spaces (http.c:3491 passes
+        // "  " as the prefix to print_server_response).
+        if self.config.server_response {
+            eprintln!("  {} {} {}", response.version, response.status_code, response.reason);
             for (key, value) in response.headers.iter() {
                 eprintln!("  {}: {}", key, value);
             }
