@@ -3,7 +3,7 @@
 //! This module provides a visual progress bar for download operations,
 //! displaying download progress with percentage, speed, and ETA information.
 
-use crate::{format_duration, format_eta, format_size, FinishStatus, ProgressDisplay};
+use crate::{format_duration, format_eta, format_size, format_speed_with_prefix, FinishStatus, ProgressDisplay};
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
 
@@ -83,6 +83,13 @@ impl BarProgress {
     ///
     /// A formatted string representing the progress bar.
     fn render_known_size(&self) -> String {
+        self.render_known_size_with_done(false)
+    }
+
+    /// Renders the progress bar when the total file size is known.
+    ///
+    /// When `done` is true, shows elapsed time instead of ETA.
+    fn render_known_size_with_done(&self, done: bool) -> String {
         let total = self.total_size.unwrap_or(self.downloaded);
         let pct = if total > 0 {
             if self.downloaded >= total { 100 } else { (self.downloaded * 100) / total }
@@ -91,15 +98,25 @@ impl BarProgress {
         };
 
         let elapsed = self.start_time.elapsed();
-        let secs = elapsed.as_secs_f64().max(1e-6);
+        let elapsed_secs = elapsed.as_secs_f64();
+        let secs = elapsed_secs.max(1e-6);
         let speed = self.downloaded as f64 / secs;
 
         // Detect terminal width for the progress bar.
         let term_width = terminal_size::terminal_size()
             .map(|(w, _)| w.0 as usize)
             .unwrap_or(80);
-        // Reserve space for: filename + pct(4) + bar(2 brackets) + size(8) + speed(10) + eta(15)
-        let bar_width = (term_width.saturating_sub(60)).clamp(10, 50);
+        // GNU wget: MAX_FILENAME_COLS = width / 4
+        let max_filename_cols = term_width / 4;
+        // Reserve space for: filename(1/4 width+1) + pct(4) + bar(2) + size(8) + speed(10) + eta(15)
+        let reserved = max_filename_cols + 1 + 4 + 2 + 8 + 10 + 15;
+        let bar_width = if term_width > reserved {
+            term_width - reserved
+        } else {
+            10
+        };
+        let bar_width = bar_width.max(5);
+
         let filled = if total > 0 {
             ((self.downloaded as f64 / total as f64) * bar_width as f64).round() as usize
         } else {
@@ -110,42 +127,80 @@ impl BarProgress {
 
         let mut bar = String::with_capacity(bar_width + 2);
         bar.push('[');
-        for i in 0..filled {
-            if i == filled - 1 && empty > 0 {
-                bar.push('>');
-            } else {
+        // GNU wget: draw filled-1 '=' chars, then one '>' at the leading edge.
+        // When filled == 0, the bar is all spaces.
+        if filled > 0 {
+            for _ in 0..filled - 1 {
                 bar.push('=');
             }
+            bar.push('>');
         }
         for _ in 0..empty {
             bar.push(' ');
         }
         bar.push(']');
 
-        // Speed format: matches GNU wget's calc_rate + variable precision
-        let speed_str = if self.report_speed_bytes {
+        // Filename: pad to max_filename_cols + 1 (matching GNU wget)
+        let filename_display = if self.filename.chars().count() > max_filename_cols {
+            &self.filename[..max_filename_cols]
+        } else {
+            &self.filename
+        };
+        let filename_padded = format!("{:<width$}", filename_display, width = max_filename_cols + 1);
+
+        // Downloaded size: right-aligned to 8 chars (PROGRESS_FILESIZE_LEN = 7 + 1)
+        let size_str = format_size(self.downloaded);
+        let size_padded = format!("{:>8}", size_str);
+
+        // Speed format: "  %4.*f%s" with 2-space prefix
+        // Show --.-KB/s when no data or elapsed <= 0
+        let speed_str = if self.downloaded == 0 || elapsed_secs <= 0.0 {
+            "  --.-KB/s".to_string()
+        } else if self.report_speed_bytes {
             format!("{:.0} B/s", speed)
         } else {
-            crate::format_speed(speed)
+            format_speed_with_prefix(speed)
         };
 
-        // ETA format: "    eta 6m 51s" (matching GNU wget's eta_to_human_short)
-        let eta_str = if total > self.downloaded && speed > 1.0 {
+        // ETA / elapsed time area (15 chars total, PROGRESS_ETA_LEN)
+        const ETA_LEN: usize = 15;
+        let eta_str = if done {
+            // Download complete: show elapsed time ("  用时 Xs" or "  用时 Xm Ys")
+            let time_str = if elapsed_secs >= 10.0 {
+                format_eta(elapsed_secs.round() as u64)
+            } else {
+                format!("{:.1}s", elapsed_secs)
+            };
+            let label = ut_core::i18n::translate_with_args("utwget.progress_elapsed", &[("time", time_str.clone())]);
+            if label.chars().count() < ETA_LEN {
+                format!("{}{}", label, " ".repeat(ETA_LEN - label.chars().count()))
+            } else {
+                label
+            }
+        } else if total > self.downloaded && elapsed_secs > 3.0 && speed > 1.0 {
+            // Show ETA only after 3 seconds of downloading
             let remaining = total - self.downloaded;
             let eta_secs = (remaining as f64 / speed) as u64;
-            format!("    eta {}", format_eta(eta_secs))
+            let time_str = format_eta(eta_secs);
+            let label = ut_core::i18n::translate_with_args("utwget.progress_eta", &[("time", time_str)]);
+            if label.chars().count() < ETA_LEN {
+                format!("{}{}", label, " ".repeat(ETA_LEN - label.chars().count()))
+            } else {
+                label
+            }
         } else {
-            "    eta --:--".to_string()
+            // Not enough data for ETA: pad with spaces
+            " ".repeat(ETA_LEN)
         };
 
-        // Format: "filename xx% [bar] downloaded_size  speed    eta X"
-        // (matching GNU wget's create_image format)
+        // Format: "filename   xx%[bar]   nnn.nnK  ddd.ddKB/s  eta Xm Ys"
+        // (matching GNU wget's create_image layout)
         format!(
-            "\r{} {:>3}% {} {:>8} {:>10}{}",
-            self.filename,
+            "\r{}{:>3}%{}{} {}{}",
+            filename_padded,
             pct,
             bar,
-            format_size(self.downloaded),
+            size_padded,
             speed_str,
             eta_str,
         )
@@ -160,17 +215,19 @@ impl BarProgress {
     /// A formatted string showing downloaded size and speed.
     fn render_unknown_size(&self) -> String {
         let elapsed = self.start_time.elapsed();
-        let secs = elapsed.as_secs_f64().max(1e-6);
-        let speed = self.downloaded as f64 / secs;
+        let elapsed_secs = elapsed.as_secs_f64();
+        let speed = self.downloaded as f64 / elapsed_secs.max(1e-6);
 
-        let speed_str = if self.report_speed_bytes {
+        let speed_str = if self.downloaded == 0 || elapsed_secs <= 0.0 {
+            "  --.-KB/s".to_string()
+        } else if self.report_speed_bytes {
             format!("{:.0} B/s", speed)
         } else {
-            crate::format_speed(speed)
+            crate::format_speed_with_prefix(speed)
         };
 
         format!(
-            "\r{:>10}  {:>10}",
+            "\r{:>10} {}",
             format_size(self.downloaded),
             speed_str,
         )
@@ -289,7 +346,7 @@ impl ProgressDisplay for BarProgress {
                 // Update to show 100% before clearing
                 self.downloaded = downloaded;
                 if self.total_size.is_some() {
-                    let line = self.render_known_size();
+                    let line = self.render_known_size_with_done(true);
                     eprint!("{}\r", line);
                     self.flush_line();
                 }
