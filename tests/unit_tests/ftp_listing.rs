@@ -34,8 +34,32 @@ fn test_unix_listing_with_symlink() {
 "#;
     let entries = parse_unix_listing(raw);
     assert_eq!(entries.len(), 1);
-    assert_eq!(entries[0].name, "link.html -> index.html");
+    assert_eq!(entries[0].name, "link.html");
+    assert!(entries[0].is_symlink);
     assert!(!entries[0].is_dir); // 符号链接以 'l' 开头，不是目录
+    assert_eq!(entries[0].linkto.as_deref(), Some("index.html"));
+}
+
+#[test]
+fn test_unix_listing_symlink_with_spaces_in_target() {
+    let raw = r#"lrwxrwxrwx  1 owner group          0 Jan 15 10:32 my link -> some target file
+"#;
+    let entries = parse_unix_listing(raw);
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].name, "my link");
+    assert!(entries[0].is_symlink);
+    assert_eq!(entries[0].linkto.as_deref(), Some("some target file"));
+}
+
+#[test]
+fn test_unix_listing_symlink_with_spaces_in_name() {
+    let raw = r#"lrwxrwxrwx  1 owner group          0 Jan 15 10:32 a link -> /path/to/target
+"#;
+    let entries = parse_unix_listing(raw);
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].name, "a link");
+    assert!(entries[0].is_symlink);
+    assert_eq!(entries[0].linkto.as_deref(), Some("/path/to/target"));
 }
 
 #[test]

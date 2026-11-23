@@ -1041,7 +1041,9 @@ lrwxrwxrwx  1 owner group          0 Jan 15 10:32 link.html -> index.html
     assert_eq!(entries[1].name, "file.txt");
     assert!(!entries[1].is_dir);
     assert_eq!(entries[1].size, Some(123456));
-    assert_eq!(entries[2].name, "link.html -> index.html");
+    assert_eq!(entries[2].name, "link.html");
+    assert!(entries[2].is_symlink);
+    assert_eq!(entries[2].linkto.as_deref(), Some("index.html"));
 }
 
 #[test]

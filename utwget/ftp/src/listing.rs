@@ -9,6 +9,10 @@ pub struct FtpEntry {
     pub name: String,
     /// Whether this entry is a directory rather than a regular file.
     pub is_dir: bool,
+    /// Whether this entry is a symbolic link (Unix `l` type).
+    pub is_symlink: bool,
+    /// The symlink target path, if this entry is a symbolic link.
+    pub linkto: Option<String>,
     /// The size of the file in bytes, if available from the listing.
     pub size: Option<u64>,
     /// The modification date and time of the entry, if available.
@@ -197,6 +201,7 @@ fn parse_unix_entry(line: &str) -> Option<FtpEntry> {
 
     let perms = parts[0].to_string();
     let is_dir = perms.as_bytes()[0] == b'd';
+    let is_symlink = perms.as_bytes()[0] == b'l';
     let owner = parts[2].to_string();
     let group = parts[3].to_string();
     let size: u64 = parts[4].parse().ok()?;
@@ -204,15 +209,56 @@ fn parse_unix_entry(line: &str) -> Option<FtpEntry> {
     let date_str = format!("{} {} {}", parts[5], parts[6], parts[7]);
     let date = parse_unix_date(&date_str);
 
-    let name: String = if parts.len() > 9 && parts[8] == "->" {
-        parts[9..].join(" ")
-    } else {
-        parts[8..].join(" ")
+    // Reconstruct the remainder of the line after the first 8 whitespace-
+    // separated fields. This handles filenames and symlink targets that
+    // contain spaces.
+    //
+    // Unix listing format for symlinks:
+    //   lrwxrwxrwx  1 user group  1024 Jan 15 10:30 linkname -> target
+    // The ` -> ` delimiter separates the link name from the target.
+    let remainder = {
+        let mut idx = 0;
+        let mut fields_seen = 0;
+        let bytes = line.as_bytes();
+        while idx < bytes.len() && fields_seen < 8 {
+            // Skip whitespace
+            while idx < bytes.len() && bytes[idx].is_ascii_whitespace() {
+                idx += 1;
+            }
+            // Skip non-whitespace (the field)
+            while idx < bytes.len() && !bytes[idx].is_ascii_whitespace() {
+                idx += 1;
+            }
+            fields_seen += 1;
+        }
+        // Skip leading whitespace before the filename
+        while idx < bytes.len() && bytes[idx].is_ascii_whitespace() {
+            idx += 1;
+        }
+        line[idx..].trim_end()
     };
+
+    let (name, linkto): (String, Option<String>) = if is_symlink {
+        if let Some(pos) = remainder.find(" -> ") {
+            let name = remainder[..pos].to_string();
+            let target = remainder[pos + 4..].to_string();
+            (name, Some(target))
+        } else {
+            (remainder.to_string(), None)
+        }
+    } else {
+        (remainder.to_string(), None)
+    };
+
+    if name.is_empty() {
+        return None;
+    }
 
     Some(FtpEntry {
         name,
         is_dir,
+        is_symlink,
+        linkto,
         size: Some(size),
         date,
         perms: Some(perms),
@@ -345,6 +391,8 @@ fn parse_windows_entry(line: &str) -> Option<FtpEntry> {
     Some(FtpEntry {
         name,
         is_dir,
+        is_symlink: false,
+        linkto: None,
         size,
         date,
         perms: None,
@@ -456,6 +504,8 @@ fn parse_vms_entry(line: &str) -> Option<FtpEntry> {
         Some(FtpEntry {
             name,
             is_dir,
+            is_symlink: false,
+            linkto: None,
             size,
             date,
             perms: None,
@@ -468,6 +518,8 @@ fn parse_vms_entry(line: &str) -> Option<FtpEntry> {
         Some(FtpEntry {
             name,
             is_dir,
+            is_symlink: false,
+            linkto: None,
             size: None,
             date: None,
             perms: None,
