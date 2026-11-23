@@ -28,7 +28,7 @@ password mypass
 
     let creds = db.lookup("ftp.example.com").unwrap();
     assert_eq!(creds.username, "myuser");
-    assert_eq!(creds.password, "mypass");
+    assert_eq!(creds.password_str(), "mypass");
 }
 
 #[test]
@@ -220,7 +220,7 @@ password 'my pass'
 
     let creds = db.lookup("ftp.example.com").unwrap();
     assert_eq!(creds.username, "my user");
-    assert_eq!(creds.password, "my pass");
+    assert_eq!(creds.password_str(), "my pass");
 }
 
 #[test]

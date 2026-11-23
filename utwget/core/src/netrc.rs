@@ -222,20 +222,14 @@ impl NetrcDb {
         for entry in &self.entries {
             if entry.machine.to_ascii_lowercase() == host_lc {
                 if let (Some(user), Some(pass)) = (&entry.login, &entry.password) {
-                    return Some(Credentials {
-                        username: user.clone(),
-                        password: pass.clone(),
-                    });
+                    return Some(Credentials::new(user.clone(), pass.clone()));
                 }
             }
         }
 
         if let Some(ref def) = self.default {
             if let (Some(user), Some(pass)) = (&def.login, &def.password) {
-                return Some(Credentials {
-                    username: user.clone(),
-                    password: pass.clone(),
-                });
+                return Some(Credentials::new(user.clone(), pass.clone()));
             }
         }
 

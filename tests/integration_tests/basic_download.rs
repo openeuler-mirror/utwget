@@ -287,7 +287,7 @@ fn test_cookie_jar_save_to_writer() {
         "/",
     );
     let mut output = Vec::new();
-    jar.save_to_writer(&mut output).unwrap();
+    jar.save_to_writer(&mut output, false).unwrap();
     let text = String::from_utf8(output).unwrap();
     assert!(text.contains("# Netscape HTTP Cookie File"));
     assert!(text.contains("name"));
@@ -493,7 +493,7 @@ password mypass
 "#);
     let creds = db.lookup("ftp.example.com").unwrap();
     assert_eq!(creds.username, "myuser");
-    assert_eq!(creds.password, "mypass");
+    assert_eq!(creds.password_str(), "mypass");
 }
 
 #[test]
@@ -838,7 +838,7 @@ fn test_basic_auth_encode() {
         algorithm: None, charset: None, userhash: None,
         stale: None, domain: None, ntlm_type2_msg: None,
     };
-    let creds = Credentials { username: "alice".into(), password: "secret".into() };
+    let creds = Credentials::new("alice", "secret");
     let result = auth.authenticate(&challenge, &creds, "GET", "/", None).unwrap();
     let header = result.unwrap();
     assert!(header.starts_with("Basic "));
@@ -870,7 +870,7 @@ fn test_digest_auth_md5_known_vector() {
         charset: None, userhash: None, stale: None,
         domain: None, ntlm_type2_msg: None,
     };
-    let creds = Credentials { username: "Mufasa".into(), password: "Circle Of Life".into() };
+    let creds = Credentials::new("Mufasa", "Circle Of Life");
     let result = auth.authenticate(&challenge, &creds, "GET", "/dir/index.html", None).unwrap();
     assert!(result.is_some());
     let header = result.unwrap();
@@ -895,7 +895,7 @@ fn test_digest_auth_sha256() {
         charset: None, userhash: None, stale: None,
         domain: None, ntlm_type2_msg: None,
     };
-    let creds = Credentials { username: "user".into(), password: "pass".into() };
+    let creds = Credentials::new("user", "pass");
     let result = auth.authenticate(&challenge, &creds, "GET", "/", None).unwrap();
     assert!(result.is_some());
 }
@@ -912,7 +912,7 @@ fn test_digest_auth_missing_nonce_error() {
         algorithm: None, charset: None, userhash: None,
         stale: None, domain: None, ntlm_type2_msg: None,
     };
-    let creds = Credentials { username: "u".into(), password: "p".into() };
+    let creds = Credentials::new("u", "p");
     let result = auth.authenticate(&challenge, &creds, "GET", "/", None);
     assert!(result.is_err());
 }
@@ -933,7 +933,7 @@ fn test_digest_nonce_count_increments() {
         charset: None, userhash: None, stale: None,
         domain: None, ntlm_type2_msg: None,
     };
-    let creds = Credentials { username: "u".into(), password: "p".into() };
+    let creds = Credentials::new("u", "p");
     auth.authenticate(&challenge, &creds, "GET", "/", None).unwrap();
     auth.authenticate(&challenge, &creds, "GET", "/", None).unwrap();
 }

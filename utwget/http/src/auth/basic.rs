@@ -62,7 +62,7 @@ impl Authenticator for BasicAuthenticator {
         _request_uri: &str,
         _body: Option<&[u8]>,
     ) -> Result<Option<String>, AuthError> {
-        let combined = format!("{}:{}", credentials.username, credentials.password);
+        let combined = format!("{}:{}", credentials.username, credentials.password_str());
         let encoded = STANDARD.encode(combined);
         Ok(Some(format!("Basic {}", encoded)))
     }
