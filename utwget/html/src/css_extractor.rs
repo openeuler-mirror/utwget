@@ -161,6 +161,27 @@ fn extract_urls_recursive(
     }
 }
 
+/// Extracts CSS `url()` references from a CSS string.
+///
+/// This is used by the HTML extractor to parse inline `style` attributes
+/// and `<style>` block contents.
+///
+/// # Arguments
+///
+/// * `css` - The CSS text to parse.
+///
+/// # Returns
+///
+/// A vector of extracted URL strings.
+pub fn extract_css_urls_from_str(css: &str) -> Vec<String> {
+    let mut input = ParserInput::new(css);
+    let mut parser = Parser::new(&mut input);
+    let mut results = Vec::new();
+    let mut at_import_found = false;
+    extract_urls_recursive(&mut parser, &mut results, &mut at_import_found);
+    results.into_iter().map(|r| r.url).collect()
+}
+
 impl ContentExtractor for CssExtractor {
     /// Extracts URLs from CSS content.
     ///

@@ -7,9 +7,11 @@ use std::io::{BufReader, Read};
 use std::sync::{Arc, Mutex};
 
 use lol_html::element;
+use lol_html::text;
 use lol_html::{HtmlRewriter, Settings, MemorySettings};
 
 use crate::converter::ConvertError;
+use crate::css_extractor::extract_css_urls_from_str;
 use crate::types::{ContentExtractor, ContentKind};
 use crate::url_position::{ExtractOptions, LinkType, UrlPosition};
 
@@ -48,12 +50,52 @@ const URL_ATTR_MAP: &[(&str, &str)] = &[
 ///
 /// This selector matches all elements that have URL-containing attributes
 /// and should be processed during URL extraction.
+/// Also matches elements with `srcset` or `style` attributes, and
+/// `<style>` blocks for CSS URL extraction.
 const SELECTOR: &str = concat![
     "a[href], area[href], link[href], img[src], script[src], ",
     "iframe[src], frame[src], embed[src], object[data], ",
     "source[src], track[src], video[poster], body[background], ",
-    "applet[codebase], meta[content], base[href]",
+    "applet[codebase], meta[content], base[href], ",
+    "img[srcset], source[srcset], [style]",
 ];
+
+/// Parses a `srcset` attribute value and extracts individual URLs.
+///
+/// The srcset format is a comma-separated list of URL-descriptor pairs:
+///   `srcset="url1 1x, url2 2x"` or `srcset="url1 100w, url2 200w"`
+///
+/// Each URL is separated from its descriptor by whitespace, and entries
+/// are separated by commas. URLs themselves should not contain commas
+/// (per the HTML spec).
+///
+/// # Arguments
+///
+/// * `srcset` - The srcset attribute value.
+///
+/// # Returns
+///
+/// A vector of extracted URL strings.
+fn parse_srcset_urls(srcset: &str) -> Vec<String> {
+    let mut urls = Vec::new();
+    for entry in srcset.split(',') {
+        let entry = entry.trim();
+        if entry.is_empty() {
+            continue;
+        }
+        // URL is the first whitespace-delimited token; the rest is the descriptor
+        let url_end = entry.find(|c: char| c.is_ascii_whitespace());
+        let url = match url_end {
+            Some(idx) => &entry[..idx],
+            None => entry,
+        };
+        let url = url.trim();
+        if !url.is_empty() && !url.starts_with("data:") && !url.starts_with('#') {
+            urls.push(url.to_string());
+        }
+    }
+    urls
+}
 
 /// Checks if a tag represents an inline resource.
 ///
@@ -214,7 +256,9 @@ impl ContentExtractor for HtmlExtractor {
         let follow_tags: Vec<String> = opts.follow_tags.clone();
 
         let results_clone = results.clone();
+        let results_clone2 = results.clone();
         let nofollow_clone = nofollow_flag.clone();
+        let nofollow_clone2 = nofollow_flag.clone();
 
         let mut rewriter = HtmlRewriter::new(
             Settings {
@@ -225,6 +269,24 @@ impl ContentExtractor for HtmlExtractor {
 
                         if ignore_tags.iter().any(|t| t.eq_ignore_ascii_case(tag_str)) {
                             return Ok(());
+                        }
+
+                        // Extract URLs from inline style attribute for ALL elements,
+                        // regardless of follow_tags filter (matches GNU wget behavior
+                        // where check_style_attr is called for every tag).
+                        if let Some(style) = el.get_attribute("style") {
+                            for url in extract_css_urls_from_str(&style) {
+                                let link_type = classify_link(&url);
+                                results_clone.lock().unwrap().push(UrlPosition {
+                                    url,
+                                    link_type,
+                                    inline: true,
+                                    attr_name: Some("style".to_string()),
+                                    expect_html: false,
+                                    expect_css: false,
+                                    meta_disallow_follow: *nofollow_clone.lock().unwrap(),
+                                });
+                            }
                         }
 
                         if !follow_tags.iter().any(|t| t.eq_ignore_ascii_case(tag_str)) {
@@ -287,29 +349,64 @@ impl ContentExtractor for HtmlExtractor {
                                     || url.starts_with("javascript:")
                                     || url.starts_with("data:")
                                 {
-                                    return Ok(());
+                                    // Continue to check srcset/style below
+                                } else {
+                                    let link_type = classify_link(&url);
+                                    let inline = is_inline_tag(tag_str);
+                                    let expect_html = matches!(tag_str, "a" | "iframe" | "frame");
+                                    let expect_css = tag_str == "link"
+                                        && el.get_attribute("rel")
+                                            .map(|r| r.eq_ignore_ascii_case("stylesheet"))
+                                            .unwrap_or(false);
+
+                                    results_clone.lock().unwrap().push(UrlPosition {
+                                        url,
+                                        link_type,
+                                        inline,
+                                        attr_name: Some(attr_name.to_string()),
+                                        expect_html,
+                                        expect_css,
+                                        meta_disallow_follow: *nofollow_clone.lock().unwrap(),
+                                    });
                                 }
-
-                                let link_type = classify_link(&url);
-                                let inline = is_inline_tag(tag_str);
-                                let expect_html = matches!(tag_str, "a" | "iframe" | "frame");
-                                let expect_css = tag_str == "link"
-                                    && el.get_attribute("rel")
-                                        .map(|r| r.eq_ignore_ascii_case("stylesheet"))
-                                        .unwrap_or(false);
-
-                                results_clone.lock().unwrap().push(UrlPosition {
-                                    url,
-                                    link_type,
-                                    inline,
-                                    attr_name: Some(attr_name.to_string()),
-                                    expect_html,
-                                    expect_css,
-                                    meta_disallow_follow: *nofollow_clone.lock().unwrap(),
-                                });
                             }
                         }
 
+                        // Extract URLs from srcset attribute (img, source)
+                        if matches!(tag_str, "img" | "source") {
+                            if let Some(srcset) = el.get_attribute("srcset") {
+                                for url in parse_srcset_urls(&srcset) {
+                                    let link_type = classify_link(&url);
+                                    results_clone.lock().unwrap().push(UrlPosition {
+                                        url,
+                                        link_type,
+                                        inline: true,
+                                        attr_name: Some("srcset".to_string()),
+                                        expect_html: false,
+                                        expect_css: false,
+                                        meta_disallow_follow: *nofollow_clone.lock().unwrap(),
+                                    });
+                                }
+                            }
+                        }
+
+                        Ok(())
+                    }),
+                    // Extract URLs from <style> block text content
+                    text!("style", move |t| {
+                        let css = t.as_str();
+                        for url in extract_css_urls_from_str(css) {
+                            let link_type = classify_link(&url);
+                            results_clone2.lock().unwrap().push(UrlPosition {
+                                url,
+                                link_type,
+                                inline: true,
+                                attr_name: None,
+                                expect_html: false,
+                                expect_css: true,
+                                meta_disallow_follow: *nofollow_clone2.lock().unwrap(),
+                            });
+                        }
                         Ok(())
                     }),
                 ],

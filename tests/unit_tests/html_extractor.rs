@@ -2,6 +2,20 @@
 //!
 //! Tests for URL extraction from HTML content.
 
+use std::io::Cursor;
+use ut_html::html_extractor::HtmlExtractor;
+use ut_html::types::ContentExtractor;
+use ut_html::url_position::ExtractOptions;
+
+fn extract(html: &str) -> Vec<String> {
+    let extractor = HtmlExtractor;
+    let opts = ExtractOptions::default();
+    let results = extractor
+        .extract_urls(&mut Cursor::new(html), "http://example.com/", &opts)
+        .unwrap();
+    results.into_iter().map(|r| r.url).collect()
+}
+
 #[test]
 fn test_extract_urls_from_anchor() {
     let html = r#"<a href="https://example.com/page1">Link 1</a>
@@ -89,4 +103,74 @@ fn test_url_attribute_map() {
 
     assert_eq!(url_attrs.len(), 9);
     assert_eq!(url_attrs[0].1, "href");
+}
+
+// ===== srcset, style, <style> block tests =====
+
+#[test]
+fn test_srcset_simple() {
+    let html = r#"<img src="fallback.jpg" srcset="image1.jpg 1x, image2.jpg 2x">"#;
+    let urls = extract(html);
+    assert!(urls.contains(&"fallback.jpg".to_string()));
+    assert!(urls.contains(&"image1.jpg".to_string()));
+    assert!(urls.contains(&"image2.jpg".to_string()));
+}
+
+#[test]
+fn test_srcset_width_descriptors() {
+    let html = r#"<img srcset="small.jpg 100w, medium.jpg 500w, large.jpg 1000w">"#;
+    let urls = extract(html);
+    assert!(urls.contains(&"small.jpg".to_string()));
+    assert!(urls.contains(&"medium.jpg".to_string()));
+    assert!(urls.contains(&"large.jpg".to_string()));
+}
+
+#[test]
+fn test_srcset_source_element() {
+    let html = r#"<picture><source srcset="photo.webp" type="image/webp"><img src="photo.jpg"></picture>"#;
+    let urls = extract(html);
+    assert!(urls.contains(&"photo.webp".to_string()));
+    assert!(urls.contains(&"photo.jpg".to_string()));
+}
+
+#[test]
+fn test_style_attribute_url() {
+    let html = r#"<div style="background: url('bg.png')">text</div>"#;
+    let urls = extract(html);
+    assert!(urls.contains(&"bg.png".to_string()));
+}
+
+#[test]
+fn test_style_attribute_multiple_urls() {
+    let html = r#"<div style="background: url('a.png'); border-image: url('b.png')">text</div>"#;
+    let urls = extract(html);
+    assert!(urls.contains(&"a.png".to_string()));
+    assert!(urls.contains(&"b.png".to_string()));
+}
+
+#[test]
+fn test_style_block_url() {
+    let html = r#"<style>
+        body { background: url('bg.png'); }
+        .header { background-image: url("header.jpg"); }
+    </style>"#;
+    let urls = extract(html);
+    assert!(urls.contains(&"bg.png".to_string()));
+    assert!(urls.contains(&"header.jpg".to_string()));
+}
+
+#[test]
+fn test_style_block_with_import() {
+    let html = r#"<style>@import url("reset.css"); body { background: url(bg.png); }</style>"#;
+    let urls = extract(html);
+    assert!(urls.contains(&"reset.css".to_string()));
+    assert!(urls.contains(&"bg.png".to_string()));
+}
+
+#[test]
+fn test_combined_src_and_srcset() {
+    let html = r#"<img src="default.jpg" srcset="retina.jpg 2x">"#;
+    let urls = extract(html);
+    assert!(urls.contains(&"default.jpg".to_string()));
+    assert!(urls.contains(&"retina.jpg".to_string()));
 }
