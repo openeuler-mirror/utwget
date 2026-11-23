@@ -2,8 +2,6 @@ pub mod client;
 pub mod command;
 pub mod data_conn;
 pub mod listing;
-#[cfg(feature = "ftp-opie")]
-pub mod opie;
 #[cfg(feature = "ftps")]
 pub mod ftps;
 
