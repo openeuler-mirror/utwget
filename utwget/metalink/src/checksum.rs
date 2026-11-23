@@ -20,8 +20,14 @@ pub enum ChecksumType {
     Md5,
     /// SHA-1 hash algorithm (160-bit).
     Sha1,
+    /// SHA-224 hash algorithm (224-bit).
+    Sha224,
     /// SHA-256 hash algorithm (256-bit).
     Sha256,
+    /// SHA-384 hash algorithm (384-bit).
+    Sha384,
+    /// SHA-512 hash algorithm (512-bit).
+    Sha512,
 }
 
 impl ChecksumType {
@@ -49,7 +55,10 @@ impl ChecksumType {
         match s.to_ascii_lowercase().as_str() {
             "md5" => Some(ChecksumType::Md5),
             "sha1" | "sha-1" => Some(ChecksumType::Sha1),
+            "sha224" | "sha-224" => Some(ChecksumType::Sha224),
             "sha256" | "sha-256" => Some(ChecksumType::Sha256),
+            "sha384" | "sha-384" => Some(ChecksumType::Sha384),
+            "sha512" | "sha-512" => Some(ChecksumType::Sha512),
             _ => None,
         }
     }
@@ -171,6 +180,42 @@ impl FileChecksum {
         Ok(hasher.finalize().iter().map(|b| format!("{:02x}", b)).collect())
     }
 
+    /// Computes the SHA-224 hash of data from a reader.
+    pub fn compute_sha224(mut reader: impl Read) -> Result<String, MetalinkError> {
+        let mut hasher = sha2::Sha224::new();
+        let mut buf = [0u8; 8192];
+        loop {
+            let n = reader.read(&mut buf).map_err(MetalinkError::Io)?;
+            if n == 0 { break; }
+            hasher.update(&buf[..n]);
+        }
+        Ok(hasher.finalize().iter().map(|b| format!("{:02x}", b)).collect())
+    }
+
+    /// Computes the SHA-384 hash of data from a reader.
+    pub fn compute_sha384(mut reader: impl Read) -> Result<String, MetalinkError> {
+        let mut hasher = sha2::Sha384::new();
+        let mut buf = [0u8; 8192];
+        loop {
+            let n = reader.read(&mut buf).map_err(MetalinkError::Io)?;
+            if n == 0 { break; }
+            hasher.update(&buf[..n]);
+        }
+        Ok(hasher.finalize().iter().map(|b| format!("{:02x}", b)).collect())
+    }
+
+    /// Computes the SHA-512 hash of data from a reader.
+    pub fn compute_sha512(mut reader: impl Read) -> Result<String, MetalinkError> {
+        let mut hasher = sha2::Sha512::new();
+        let mut buf = [0u8; 8192];
+        loop {
+            let n = reader.read(&mut buf).map_err(MetalinkError::Io)?;
+            if n == 0 { break; }
+            hasher.update(&buf[..n]);
+        }
+        Ok(hasher.finalize().iter().map(|b| format!("{:02x}", b)).collect())
+    }
+
     /// Computes a hash of data from a reader using the specified algorithm.
     ///
     /// Dispatches to the appropriate hash function based on the checksum type.
@@ -191,7 +236,10 @@ impl FileChecksum {
         match hash_type {
             ChecksumType::Md5 => Self::compute_md5(reader),
             ChecksumType::Sha1 => Self::compute_sha1(reader),
+            ChecksumType::Sha224 => Self::compute_sha224(reader),
             ChecksumType::Sha256 => Self::compute_sha256(reader),
+            ChecksumType::Sha384 => Self::compute_sha384(reader),
+            ChecksumType::Sha512 => Self::compute_sha512(reader),
         }
     }
 }

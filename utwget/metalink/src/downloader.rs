@@ -260,13 +260,13 @@ impl MetalinkDownloader {
     ///
     /// Returns an error if an I/O error occurs during verification.
     pub fn verify_file(&self, file: &MetalinkFile, path: &Path) -> Result<bool, MetalinkError> {
+        // Verify all available full-file hashes.
+        // GNU wget verifies every hash and reports mismatches for each.
         if !file.hashes.is_empty() {
-            // Verify the first hash - if it matches, we're done
-            if let Some(checksum) = file.hashes.first() {
+            for checksum in &file.hashes {
                 match checksum.verify(path) {
                     Ok(true) => {
                         debug!("checksum verified ({:?})", checksum.hash_type);
-                        return Ok(true);
                     }
                     Ok(false) => {
                         warn!(
@@ -281,6 +281,8 @@ impl MetalinkDownloader {
                     }
                 }
             }
+            // All hashes passed
+            return Ok(true);
         }
 
         if !file.pieces.is_empty() {
