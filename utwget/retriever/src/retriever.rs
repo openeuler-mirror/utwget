@@ -439,13 +439,29 @@ impl Retriever {
             }
         }
 
-        let output_path = self.determine_output_path(&effective_url)?;
+        // Choose the URL used to derive the local file path.
+        //
+        // GNU wget 默认 (--trust-server-names 关闭) 用**原始** URL 路径作为
+        // 本地文件名基础；重定向后的 host/path 不影响本地文件名。仅当
+        // 用户显式传 `--trust-server-names` 时才使用 effective_url（重定向
+        // 最终 URL）。Content-Disposition 头的文件名提取由 --content-disposition
+        // 单独控制，与 trust_server_names 正交。
+        //
+        // 参考: GNU wget src/http.c: establish_location() 与
+        // src/retr.c: retrieve_url() 中对 opt.trust_server_names 的判断。
+        let path_source_url: &ParsedUrl = if self.config.trust_server_names {
+            &effective_url
+        } else {
+            url
+        };
+
+        let output_path = self.determine_output_path(path_source_url)?;
 
         // Debug: log output_path
         debug!("determine_output_path returned: {:?}", output_path);
         debug!("config.output_document: {:?}", self.config.output_document);
 
-        if self.check_existing(&output_path, &effective_url)? {
+        if self.check_existing(&output_path, path_source_url)? {
             return Ok(RetrieveOutcome::SpiderOnly);
         }
 
