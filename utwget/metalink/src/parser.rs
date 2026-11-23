@@ -163,6 +163,9 @@ impl MetalinkParser {
         let mut current_resource: Option<MetalinkResource> = None;
 
         let mut path_stack: Vec<String> = Vec::new();
+        // Context for parsing <pieces><hash>...</hash>...</pieces>:
+        // stores (piece_length, hash_type) from the <pieces> element attributes.
+        let mut pieces_ctx: Option<(u64, ChecksumType)> = None;
 
         loop {
             let event = xml_reader.read_event_into(&mut buf)?;
@@ -209,8 +212,18 @@ impl MetalinkParser {
                                 .and_then(|a| a.ok())
                                 .and_then(|a| String::from_utf8(a.value.to_vec()).ok())
                                 .and_then(|t| ChecksumType::from_str(&t));
-                            if let Some(ht) = hash_type {
-                                let value = read_text(&mut xml_reader, &mut buf)?;
+                            let value = read_text(&mut xml_reader, &mut buf)?;
+                            if let Some((length, ref ht)) = pieces_ctx {
+                                // Inside <pieces>: this hash is for a piece
+                                if let Some(ref mut f) = current_file {
+                                    f.pieces.push(MetalinkPiece {
+                                        length,
+                                        hash: value,
+                                        hash_type: ht.clone(),
+                                    });
+                                }
+                            } else if let Some(ht) = hash_type {
+                                // Top-level <hash>: full file checksum
                                 if let Some(ref mut f) = current_file {
                                     f.hashes.push(FileChecksum {
                                         hash_type: ht,
@@ -221,27 +234,23 @@ impl MetalinkParser {
                             path_stack.pop();
                         }
                         "pieces" => {
-                            if let Some(ref mut f) = current_file {
-                                let piece_length = e
-                                    .attributes()
-                                    .find(|a| a.as_ref().map(|a| a.key.as_ref() == b"length").unwrap_or(false))
-                                    .and_then(|a| a.ok())
-                                    .and_then(|a| String::from_utf8(a.value.to_vec()).ok())
-                                    .and_then(|v| v.parse::<u64>().ok());
-                                let piece_hash_type = e
-                                    .attributes()
-                                    .find(|a| a.as_ref().map(|a| a.key.as_ref() == b"type").unwrap_or(false))
-                                    .and_then(|a| a.ok())
-                                    .and_then(|a| String::from_utf8(a.value.to_vec()).ok())
-                                    .and_then(|t| ChecksumType::from_str(&t));
+                            // <pieces length="262144" type="sha1"> is a container;
+                            // child <hash> elements hold per-piece hashes.
+                            let piece_length = e
+                                .attributes()
+                                .find(|a| a.as_ref().map(|a| a.key.as_ref() == b"length").unwrap_or(false))
+                                .and_then(|a| a.ok())
+                                .and_then(|a| String::from_utf8(a.value.to_vec()).ok())
+                                .and_then(|v| v.parse::<u64>().ok());
+                            let piece_hash_type = e
+                                .attributes()
+                                .find(|a| a.as_ref().map(|a| a.key.as_ref() == b"type").unwrap_or(false))
+                                .and_then(|a| a.ok())
+                                .and_then(|a| String::from_utf8(a.value.to_vec()).ok())
+                                .and_then(|t| ChecksumType::from_str(&t));
 
-                                if let (Some(length), Some(hash_type)) = (piece_length, piece_hash_type) {
-                                    f.pieces.push(MetalinkPiece {
-                                        length,
-                                        hash: String::new(),
-                                        hash_type,
-                                    });
-                                }
+                            if let (Some(length), Some(ht)) = (piece_length, piece_hash_type) {
+                                pieces_ctx = Some((length, ht));
                             }
                         }
                         "resources" => {}
@@ -309,6 +318,9 @@ impl MetalinkParser {
                                     f.resources.push(res);
                                 }
                             }
+                        }
+                        "pieces" => {
+                            pieces_ctx = None;
                         }
                         "file" => {
                             if let Some(f) = current_file.take() {

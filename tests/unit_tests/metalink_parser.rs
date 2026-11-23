@@ -2,6 +2,10 @@
 //!
 //! Tests for Metalink XML parsing and file info extraction.
 
+use std::io::Cursor;
+use ut_metalink::MetalinkParser;
+use ut_metalink::checksum::ChecksumType;
+
 #[test]
 fn test_metalink_xml_structure() {
     // Basic Metalink XML structure validation
@@ -103,4 +107,71 @@ fn test_metalink_version() {
 
     assert!(v3.contains("3.0"));
     assert!(v4.contains("metalink"));
+}
+
+#[test]
+fn test_metalink_parse_pieces_with_hashes() {
+    let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<metalink version="3.0">
+  <file name="bigfile.iso">
+    <size>3145728</size>
+    <hash type="sha-256">aabbccdd</hash>
+    <pieces length="1048576" type="sha-1">
+      <hash>11111111111111111111</hash>
+      <hash>22222222222222222222</hash>
+      <hash>33333333333333333333</hash>
+    </pieces>
+    <url>http://example.com/bigfile.iso</url>
+  </file>
+</metalink>"#;
+    let files = MetalinkParser::parse(Cursor::new(xml)).unwrap();
+    assert_eq!(files.len(), 1);
+    let f = &files[0];
+    assert_eq!(f.name, "bigfile.iso");
+    assert_eq!(f.size, Some(3145728));
+    // Full file hash
+    assert_eq!(f.hashes.len(), 1);
+    assert_eq!(f.hashes[0].hash_type, ChecksumType::Sha256);
+    assert_eq!(f.hashes[0].expected, "aabbccdd");
+    // Pieces
+    assert_eq!(f.pieces.len(), 3);
+    assert_eq!(f.pieces[0].length, 1048576);
+    assert_eq!(f.pieces[0].hash_type, ChecksumType::Sha1);
+    assert_eq!(f.pieces[0].hash, "11111111111111111111");
+    assert_eq!(f.pieces[1].hash, "22222222222222222222");
+    assert_eq!(f.pieces[2].hash, "33333333333333333333");
+}
+
+#[test]
+fn test_metalink_parse_no_pieces() {
+    let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<metalink version="3.0">
+  <file name="small.txt">
+    <size>100</size>
+    <hash type="md5">abc123</hash>
+    <url>http://example.com/small.txt</url>
+  </file>
+</metalink>"#;
+    let files = MetalinkParser::parse(Cursor::new(xml)).unwrap();
+    assert_eq!(files[0].pieces.len(), 0);
+    assert_eq!(files[0].hashes.len(), 1);
+}
+
+#[test]
+fn test_metalink_parse_multiple_checksums() {
+    let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<metalink version="3.0">
+  <file name="file.zip">
+    <size>1000</size>
+    <hash type="md5">aaa</hash>
+    <hash type="sha-1">bbb</hash>
+    <hash type="sha-256">ccc</hash>
+    <url>http://example.com/file.zip</url>
+  </file>
+</metalink>"#;
+    let files = MetalinkParser::parse(Cursor::new(xml)).unwrap();
+    assert_eq!(files[0].hashes.len(), 3);
+    assert_eq!(files[0].hashes[0].hash_type, ChecksumType::Md5);
+    assert_eq!(files[0].hashes[1].hash_type, ChecksumType::Sha1);
+    assert_eq!(files[0].hashes[2].hash_type, ChecksumType::Sha256);
 }
