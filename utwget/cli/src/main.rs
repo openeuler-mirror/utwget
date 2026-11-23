@@ -368,7 +368,10 @@ fn main() -> ExitCode {
     }
 
     if !args.execute.is_empty() {
-        app::apply_execute_commands(&mut config, &args.execute);
+        if let Err(e) = app::apply_execute_commands(&mut config, &args.execute) {
+            safe_eprintln!("{}", e);
+            return ExitCode::from(2); // PARSE_ERROR
+        }
     }
 
     // Daemonize if --background is set

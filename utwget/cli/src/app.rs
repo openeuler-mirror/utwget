@@ -1972,26 +1972,34 @@ fn parse_progress_style_arg(s: &str) -> ut_core::ProgressStyle {
 /// # Arguments
 /// * `config` — The mutable configuration to modify.
 /// * `commands` — The list of `key=value` command strings from `--execute`.
-pub fn apply_execute_commands(config: &mut ut_core::Config, commands: &[String]) {
+pub fn apply_execute_commands(config: &mut ut_core::Config, commands: &[String]) -> Result<(), String> {
     for cmd in commands {
         let parts: Vec<&str> = cmd.splitn(2, '=').collect();
-        if parts.len() == 2 {
-            let key = parts[0].trim();
-            let value = parts[1].trim();
-            // GNU wget accepts on/yes/1 → true, off/no/0 → false
-            let v = value.trim();
-            let is_true = v.eq_ignore_ascii_case("on")
-                || v.eq_ignore_ascii_case("yes")
-                || v == "1";
-            let is_false = v.eq_ignore_ascii_case("off")
-                || v.eq_ignore_ascii_case("no")
-                || v == "0";
-            if is_true || is_false {
-                let flag = is_true;
-                let result = crate::wgetrc::WgetrcParser::apply_onoff(key, flag, config);
-            } else {
-                let _ = crate::wgetrc::WgetrcParser::apply_set(key, value, config);
-            }
+        if parts.len() != 2 {
+            // GNU wget: invalid --execute command (no '=') → exit 2
+            return Err(format!("invalid --execute command \"{}\" (expected key=value)", cmd));
+        }
+        let key = parts[0].trim();
+        let value = parts[1].trim();
+        // GNU wget accepts on/yes/1 → true, off/no/0 → false
+        let v = value.trim();
+        let is_true = v.eq_ignore_ascii_case("on")
+            || v.eq_ignore_ascii_case("yes")
+            || v == "1";
+        let is_false = v.eq_ignore_ascii_case("off")
+            || v.eq_ignore_ascii_case("no")
+            || v == "0";
+        let result = if is_true || is_false {
+            crate::wgetrc::WgetrcParser::apply_onoff(key, is_true, config)
+        } else {
+            crate::wgetrc::WgetrcParser::apply_set(key, value, config)
+        };
+        if let Err(e) = result {
+            // GNU wget exits with WGET_EXIT_PARSE_ERROR (2) on unknown
+            // --execute commands. Propagate the error instead of silently
+            // discarding it.
+            return Err(format!("--execute \"{}\": {}", cmd, e));
         }
     }
+    Ok(())
 }
