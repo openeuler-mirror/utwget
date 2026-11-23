@@ -1978,9 +1978,17 @@ pub fn apply_execute_commands(config: &mut ut_core::Config, commands: &[String])
         if parts.len() == 2 {
             let key = parts[0].trim();
             let value = parts[1].trim();
-            if value.eq_ignore_ascii_case("on") || value.eq_ignore_ascii_case("off") {
-                let flag = value.eq_ignore_ascii_case("on");
-                let _ = crate::wgetrc::WgetrcParser::apply_onoff(key, flag, config);
+            // GNU wget accepts on/yes/1 → true, off/no/0 → false
+            let v = value.trim();
+            let is_true = v.eq_ignore_ascii_case("on")
+                || v.eq_ignore_ascii_case("yes")
+                || v == "1";
+            let is_false = v.eq_ignore_ascii_case("off")
+                || v.eq_ignore_ascii_case("no")
+                || v == "0";
+            if is_true || is_false {
+                let flag = is_true;
+                let result = crate::wgetrc::WgetrcParser::apply_onoff(key, flag, config);
             } else {
                 let _ = crate::wgetrc::WgetrcParser::apply_set(key, value, config);
             }

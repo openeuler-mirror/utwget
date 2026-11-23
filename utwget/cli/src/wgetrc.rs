@@ -160,9 +160,18 @@ impl WgetrcParser {
                 return None;
             }
 
-            if value.eq_ignore_ascii_case("on") {
+            // GNU wget (init.c:1037-1043 cmd_boolean_internal) accepts:
+            // on/yes/1 → true, off/no/0 → false
+            let v = value.trim();
+            if v.eq_ignore_ascii_case("on")
+                || v.eq_ignore_ascii_case("yes")
+                || v == "1"
+            {
                 Some(WgetrcCommand::OnOff(key, true))
-            } else if value.eq_ignore_ascii_case("off") {
+            } else if v.eq_ignore_ascii_case("off")
+                || v.eq_ignore_ascii_case("no")
+                || v == "0"
+            {
                 Some(WgetrcCommand::OnOff(key, false))
             } else {
                 Some(WgetrcCommand::Set(key, value))
