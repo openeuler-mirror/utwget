@@ -67,17 +67,22 @@ pub(crate) struct ProxyInfo {
     pub host: String,
     /// Proxy TCP port.
     pub port: u16,
+    /// Credentials extracted from the proxy URL (user:pass@host:port), if any.
+    pub user: Option<String>,
+    pub password: Option<String>,
 }
 
 /// Resolve the proxy configuration for a given URL.
 ///
-/// Parse a proxy URL string into host and port.
+/// Parse a proxy URL string into host, port, and optional credentials.
 ///
 /// Supports formats:
 /// - `http://host:port`
+/// - `http://user:pass@host:port`
 /// - `host:port`
+/// - `user:pass@host:port`
 /// - `host`
-fn parse_proxy_url(proxy: &str) -> (String, u16) {
+fn parse_proxy_url(proxy: &str) -> (String, u16, Option<String>, Option<String>) {
     // Remove scheme prefix if present
     let addr = proxy
         .strip_prefix("http://")
@@ -88,17 +93,27 @@ fn parse_proxy_url(proxy: &str) -> (String, u16) {
     // Parse host:port. Strip trailing slash from port (e.g. "host:8080/").
     let addr = addr.trim_end_matches('/');
 
-    if let Some((host, port_str)) = addr.rsplit_once(':') {
-        // If the part after ':' looks like a port (all digits), parse it.
-        // If parsing fails (non-numeric), fall back to the default proxy port
-        // 8080 rather than silently connecting to the wrong port.
+    // Extract credentials (user:pass@host:port)
+    let (user, password, host_port) = if let Some(at_pos) = addr.rfind('@') {
+        let userinfo = &addr[..at_pos];
+        let rest = &addr[at_pos + 1..];
+        if let Some((user, pass)) = userinfo.split_once(':') {
+            (Some(user.to_string()), Some(pass.to_string()), rest)
+        } else {
+            (Some(userinfo.to_string()), None, rest)
+        }
+    } else {
+        (None, None, addr)
+    };
+
+    if let Some((host, port_str)) = host_port.rsplit_once(':') {
         let port = port_str.parse::<u16>().unwrap_or_else(|_| {
             log::warn!("proxy URL has invalid port '{}', using default 8080", port_str);
             8080
         });
-        (host.to_string(), port)
+        (host.to_string(), port, user, password)
     } else {
-        (addr.to_string(), 8080)
+        (host_port.to_string(), 8080, user, password)
     }
 }
 
@@ -108,18 +123,18 @@ pub(crate) fn resolve_proxy(url: &ParsedUrl, config: &Config) -> ProxyInfo {
     match url.scheme {
         Scheme::Http => {
             let proxy_str = config.proxy.http_proxy.as_deref().unwrap_or("");
-            let (host, port) = parse_proxy_url(proxy_str);
-            ProxyInfo { host, port }
+            let (host, port, user, password) = parse_proxy_url(proxy_str);
+            ProxyInfo { host, port, user, password }
         }
         Scheme::Https => {
             let proxy_str = config.proxy.https_proxy.as_deref().unwrap_or("");
-            let (host, port) = parse_proxy_url(proxy_str);
-            ProxyInfo { host, port }
+            let (host, port, user, password) = parse_proxy_url(proxy_str);
+            ProxyInfo { host, port, user, password }
         }
         Scheme::Ftp | Scheme::Ftps => {
             let proxy_str = config.proxy.ftp_proxy.as_deref().unwrap_or("");
-            let (host, port) = parse_proxy_url(proxy_str);
-            ProxyInfo { host, port }
+            let (host, port, user, password) = parse_proxy_url(proxy_str);
+            ProxyInfo { host, port, user, password }
         }
     }
 }
