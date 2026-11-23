@@ -105,6 +105,12 @@ impl ParsedUrl {
         let (user, password, host_port) = parse_authority(authority)?;
         let (host, port) = parse_host_port(&host_port, scheme)?;
 
+        // IDN/Punycode: convert international domain names to ASCII form
+        // (e.g. "münchen.de" → "xn--mnchen-3ya.de") so DNS resolution works.
+        // GNU wget calls idn_encode() at url.c:957-966. We skip the
+        // conversion for IP addresses (which aren't domain names).
+        let host = encode_idn_host(&host);
+
         let (path, query, fragment) = parse_path_query_fragment(after_slash);
         let (path_only, params) = split_params(&path);
         let path_only = if path_only.is_empty() { "/".to_string() } else { path_only };
@@ -452,6 +458,42 @@ pub fn encode_iri(url: &str) -> String {
         }
     }
     result
+}
+
+/// Convert an internationalized domain name (IDN) to Punycode (ASCII) form.
+///
+/// Mirrors GNU wget's `idn_encode()` (url.c:957-966). If the host contains
+/// non-ASCII characters, the `idna` crate converts each label to its
+/// `xn--` Punycode representation. IP addresses and pure-ASCII hosts are
+/// returned unchanged.
+///
+/// Falls back to the original host if the `idna` feature is disabled or
+/// the conversion fails (to avoid breaking existing ASCII URLs).
+#[cfg(feature = "idn")]
+fn encode_idn_host(host: &str) -> String {
+    // Skip IP addresses (they're not domain names).
+    if host.parse::<std::net::IpAddr>().is_ok() {
+        return host.to_string();
+    }
+    // Skip if already ASCII (no IDN conversion needed).
+    if host.is_ascii() {
+        return host.to_string();
+    }
+    match idna::domain_to_ascii(host) {
+        Ok(punycode) => {
+            log::debug!("IDN: {} → {}", host, punycode);
+            punycode
+        }
+        Err(e) => {
+            log::warn!("IDN: failed to convert '{}': {:?}; using as-is", host, e);
+            host.to_string()
+        }
+    }
+}
+
+#[cfg(not(feature = "idn"))]
+fn encode_idn_host(host: &str) -> String {
+    host.to_string()
 }
 
 /// Decode percent-encoded characters in URL for IRI support.
