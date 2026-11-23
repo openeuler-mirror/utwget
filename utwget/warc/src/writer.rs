@@ -289,7 +289,7 @@ impl WarcWriterImpl {
             truncated: None,
             wagon: None,
             payload_digest: None,
-            block_digest: None,
+            block_digest: self.block_digest_for(content.as_slice()),
         };
 
         self.write_record(&header, &content)?;
@@ -482,6 +482,7 @@ impl WarcWriterImpl {
         content_length: u64,
         date: String,
         payload_digest: Option<String>,
+        block_digest: Option<String>,
     ) -> Result<WarcHeader> {
         Ok(WarcHeader {
             record_type,
@@ -497,7 +498,8 @@ impl WarcWriterImpl {
             payload_digest,
             // WARC-Block-Digest: computed over the block content (the bytes
             // as stored, possibly compressed). Required by ISO 28500 §5.10.
-            block_digest: None,
+            // GNU wget always writes this when digests are enabled (warc.c:622-624).
+            block_digest,
         })
     }
     /// Compute the `WARC-Payload-Digest` header value for a payload.
@@ -507,7 +509,20 @@ impl WarcWriterImpl {
     /// payload (the original content), matching WARC §5.10.
     fn payload_digest_for(&self, payload: &[u8]) -> Option<String> {
         if self.digest_enabled {
-            Some(format!("sha1:{}", compute_sha1(payload)))
+            Some(compute_sha1(payload))
+        } else {
+            None
+        }
+    }
+
+    /// Compute the `WARC-Block-Digest` header value for the block content.
+    ///
+    /// Returns `Some("sha1:<base32>")` when digest computation is enabled.
+    /// The block digest is computed over the block content as stored
+    /// (the bytes that form the WARC record's content block).
+    fn block_digest_for(&self, block: &[u8]) -> Option<String> {
+        if self.digest_enabled {
+            Some(compute_sha1(block))
         } else {
             None
         }
@@ -566,6 +581,7 @@ impl WarcWriter for WarcWriterImpl {
             content.len() as u64,
             format_date(date),
             self.payload_digest_for(&payload),
+            self.block_digest_for(&content),
         )?;
 
         self.write_record(&header, &content)?;
@@ -617,6 +633,7 @@ impl WarcWriter for WarcWriterImpl {
             content.len() as u64,
             format_date(date),
             self.payload_digest_for(&payload),
+            self.block_digest_for(&content),
         )?;
 
         self.write_record(&header, &content)?;
@@ -663,6 +680,7 @@ impl WarcWriter for WarcWriterImpl {
             content.len() as u64,
             format_date(date),
             self.payload_digest_for(body),
+            self.block_digest_for(&content),
         )?;
 
         self.write_record(&header, &content)?;
@@ -709,6 +727,7 @@ impl WarcWriter for WarcWriterImpl {
             content.len() as u64,
             format_date(date),
             None,
+            self.block_digest_for(&content),
         )?;
         header.concurrent_to = concurrent_to.to_vec();
 
@@ -785,6 +804,7 @@ impl WarcWriter for WarcWriterImpl {
             content.len() as u64,
             format_date(date),
             self.payload_digest_for(&data),
+            self.block_digest_for(&content),
         )?;
 
         self.write_record(&header, &content)?;
