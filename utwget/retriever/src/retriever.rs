@@ -1130,6 +1130,10 @@ impl Retriever {
         });
 
         self.total_downloaded += body_bytes_read;
+        if self.total_downloaded > self.config.quota.unwrap_or(u64::MAX) {
+            log::warn!("quota exceeded ({} bytes downloaded, quota {})",
+                self.total_downloaded, self.config.quota.unwrap_or(0));
+        }
         state.last_content_length = Some(body_bytes_read);
         state.head_done = true;
 
@@ -1330,6 +1334,10 @@ impl Retriever {
             });
 
             self.total_downloaded += total_bytes;
+            if self.total_downloaded > self.config.quota.unwrap_or(u64::MAX) {
+                log::warn!("quota exceeded ({} bytes downloaded, quota {})",
+                    self.total_downloaded, self.config.quota.unwrap_or(0));
+            }
 
             self.download_registry.register_download(&url.display(), output_path);
 
@@ -1419,6 +1427,10 @@ impl Retriever {
         });
 
         self.total_downloaded += total_bytes;
+        if self.total_downloaded > self.config.quota.unwrap_or(u64::MAX) {
+            log::warn!("quota exceeded ({} bytes downloaded, quota {})",
+                self.total_downloaded, self.config.quota.unwrap_or(0));
+        }
 
         if let Some(mdtm) = mdtm {
             apply_file_timestamp(output_path, mdtm);
