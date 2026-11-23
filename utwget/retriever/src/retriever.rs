@@ -129,6 +129,9 @@ pub struct Retriever {
     pending_return_info: Option<ReturnInfo>,
     /// Whether the current pending response allows keep-alive connection reuse.
     pending_keep_alive: bool,
+    /// The HTTP method of the current request, used to skip body reading
+    /// for HEAD responses (RFC 7230 §3.3: a HEAD response has no body).
+    pending_method: ut_core::types::HttpMethod,
     /// URLs that were redirected from a POST/非GET request with 301/302/303,
     /// and therefore must be fetched with GET (and without body), per RFC 9110.
     redirect_get_method_urls: std::collections::HashSet<String>,
@@ -246,6 +249,7 @@ impl Retriever {
             pending_body_reader: None,
             pending_return_info: None,
             pending_keep_alive: false,
+            pending_method: ut_core::types::HttpMethod::Get,
             redirect_get_method_urls: std::collections::HashSet::new(),
         };
 
@@ -461,6 +465,7 @@ impl Retriever {
         state.resume_position = resume_pos;
 
         let mut opts = self.build_request_options(&effective_url, referer, Some(resume_pos));
+        self.pending_method = opts.method;
 
         match effective_url.scheme {
             Scheme::Http | Scheme::Https => {
@@ -1009,6 +1014,30 @@ impl Retriever {
 
         let mut body_bytes_read = 0u64;
         if let Some((leftover, mut source)) = self.pending_body_reader.take() {
+            // HEAD responses have no body (RFC 7230 §3.3). Skip body
+            // reading entirely to avoid hanging on a non-existent body
+            // when the server sends Content-Length but no data.
+            if self.pending_method == ut_core::types::HttpMethod::Head {
+                debug!("HEAD response: skipping body read");
+                // Drain any leftover bytes (should be empty for HEAD).
+                body_bytes_read = 0;
+                // Connection is reusable (no body to drain).
+                if self.pending_keep_alive {
+                    if let Some((host, port)) = self.pending_return_info.take() {
+                        match source {
+                            BodySource::Tls(mut t) => {
+                                if let Some(conn) = t.take_inner() {
+                                    self.connection_pool.put_tls(&host, port, conn);
+                                }
+                            }
+                            BodySource::Tcp(tcp) => {
+                                self.connection_pool.put_tcp(&host, port, tcp);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            } else if true {
             // Determine if the response body is compressed (Content-Encoding).
             // If so, wrap the writer in a flate2 decompressor so that compressed
             // bytes read from the transport are decompressed before hitting disk.
@@ -1088,6 +1117,7 @@ impl Retriever {
                     return Err(err);
                 }
             }
+            } // end else (non-HEAD)
         }
         // Note: file (wrapped in BufWriter, possibly in a decompressor) was
         // flushed and dropped inside the if-let above. If pending_body_reader
