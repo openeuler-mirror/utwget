@@ -3,7 +3,7 @@
 //! This module provides a visual progress bar for download operations,
 //! displaying download progress with percentage, speed, and ETA information.
 
-use crate::{format_duration, format_size, FinishStatus, ProgressDisplay};
+use crate::{format_duration, format_eta, format_size, FinishStatus, ProgressDisplay};
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
 
@@ -94,15 +94,11 @@ impl BarProgress {
         let secs = elapsed.as_secs_f64().max(1e-6);
         let speed = self.downloaded as f64 / secs;
 
-        // Detect terminal width for the progress bar. Falls back to 80 cols
-        // (and a 20-char bar) when not a TTY or detection fails. This avoids
-        // the previous hardcoded bar_width=20 that overflowed narrow terminals
-        // and underutilized wide ones.
+        // Detect terminal width for the progress bar.
         let term_width = terminal_size::terminal_size()
             .map(|(w, _)| w.0 as usize)
             .unwrap_or(80);
-        // Reserve space for: filename + bar(2 brackets) + pct(4) + size + speed + time + counters
-        // Roughly 50 chars of overhead → bar gets the remainder, clamped to [10, 50].
+        // Reserve space for: filename + pct(4) + bar(2 brackets) + size(8) + speed(10) + eta(15)
         let bar_width = (term_width.saturating_sub(60)).clamp(10, 50);
         let filled = if total > 0 {
             ((self.downloaded as f64 / total as f64) * bar_width as f64).round() as usize
@@ -126,44 +122,32 @@ impl BarProgress {
         }
         bar.push(']');
 
+        // Speed format: matches GNU wget's calc_rate + variable precision
         let speed_str = if self.report_speed_bytes {
-            format!("{:.0}B/s", speed)
-        } else if speed >= 1024.0 * 1024.0 * 1024.0 {
-            format!("{:.2}GB/s", speed / (1024.0 * 1024.0 * 1024.0))
-        } else if speed >= 1024.0 * 1024.0 {
-            format!("{:.2}MB/s", speed / (1024.0 * 1024.0))
-        } else if speed >= 1024.0 {
-            format!("{:.2}KB/s", speed / 1024.0)
+            format!("{:.0} B/s", speed)
         } else {
-            format!("{:.0}B/s", speed)
+            crate::format_speed(speed)
         };
 
-        // Compute ETA (estimated time remaining) when total size is known
-        // and some progress has been made. Format as HH:MM:SS or "??"
-        // when speed is too low to estimate.
+        // ETA format: "    eta 6m 51s" (matching GNU wget's eta_to_human_short)
         let eta_str = if total > self.downloaded && speed > 1.0 {
             let remaining = total - self.downloaded;
             let eta_secs = (remaining as f64 / speed) as u64;
-            let h = eta_secs / 3600;
-            let m = (eta_secs % 3600) / 60;
-            let s = eta_secs % 60;
-            format!("eta {:02}:{:02}:{:02}", h, m, s)
+            format!("    eta {}", format_eta(eta_secs))
         } else {
-            "eta --:--:--".to_string()
+            "    eta --:--".to_string()
         };
 
-        let time_str = format!("elapsed {}s {}", elapsed.as_secs(), eta_str);
-
+        // Format: "filename xx% [bar] downloaded_size  speed    eta X"
+        // (matching GNU wget's create_image format)
         format!(
-            "\r{} {} {:>3}% {}  {}  {}  [{}/{}]",
+            "\r{} {:>3}% {} {:>8} {:>10}{}",
             self.filename,
-            bar,
             pct,
-            format_size(total),
+            bar,
+            format_size(self.downloaded),
             speed_str,
-            time_str,
-            self.downloaded,
-            total,
+            eta_str,
         )
     }
 
@@ -180,19 +164,13 @@ impl BarProgress {
         let speed = self.downloaded as f64 / secs;
 
         let speed_str = if self.report_speed_bytes {
-            format!("{:.0}B/s", speed)
-        } else if speed >= 1024.0 * 1024.0 * 1024.0 {
-            format!("{:.2}GB/s", speed / (1024.0 * 1024.0 * 1024.0))
-        } else if speed >= 1024.0 * 1024.0 {
-            format!("{:.2}MB/s", speed / (1024.0 * 1024.0))
-        } else if speed >= 1024.0 {
-            format!("{:.2}KB/s", speed / 1024.0)
+            format!("{:.0} B/s", speed)
         } else {
-            format!("{:.0}B/s", speed)
+            crate::format_speed(speed)
         };
 
         format!(
-            "\r{:>10} downloaded  {:>10}",
+            "\r{:>10}  {:>10}",
             format_size(self.downloaded),
             speed_str,
         )
@@ -323,15 +301,9 @@ impl ProgressDisplay for BarProgress {
                 }
 
         let speed_str = if self.report_speed_bytes {
-            format!("{:.0}B/s", speed)
-        } else if speed >= 1024.0 * 1024.0 * 1024.0 {
-            format!("{:.2}GB/s", speed / (1024.0 * 1024.0 * 1024.0))
-        } else if speed >= 1024.0 * 1024.0 {
-            format!("{:.2}MB/s", speed / (1024.0 * 1024.0))
-        } else if speed >= 1024.0 {
-            format!("{:.2}KB/s", speed / 1024.0)
+            format!("{:.0} B/s", speed)
         } else {
-            format!("{:.0}B/s", speed)
+            crate::format_speed(speed)
         };
 
                 // Format timestamp like wget: YYYY-MM-DD HH:MM:SS in local time

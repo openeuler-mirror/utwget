@@ -2,77 +2,92 @@
 //!
 //! Tests for progress display, size formatting, and speed calculation.
 
+use ut_progress::{format_size, format_speed, format_eta};
+
 #[test]
 fn test_format_size_bytes() {
-    fn format_size(size: u64) -> String {
-        const UNITS: &[&str] = &["B", "K", "M", "G", "T"];
-        if size == 0 {
-            return "0B".to_string();
-        }
-        let mut size = size as f64;
-        let mut unit_idx = 0;
-        while size >= 1024.0 && unit_idx < UNITS.len() - 1 {
-            size /= 1024.0;
-            unit_idx += 1;
-        }
-        if unit_idx == 0 {
-            format!("{}{}", size as u64, UNITS[unit_idx])
-        } else {
-            format!("{:.1}{}", size, UNITS[unit_idx])
-        }
-    }
-
-    assert_eq!(format_size(0), "0B");
-    assert_eq!(format_size(100), "100B");
-    assert_eq!(format_size(1024), "1.0K");
-    assert_eq!(format_size(1536), "1.5K");
-    assert_eq!(format_size(1048576), "1.0M");
-    assert_eq!(format_size(1073741824), "1.0G");
+    // GNU wget human_readable: no suffix for < 1024
+    assert_eq!(format_size(0), "0");
+    assert_eq!(format_size(100), "100");
+    assert_eq!(format_size(1023), "1023");
 }
 
 #[test]
-fn test_format_duration() {
-    fn format_duration(secs: u64) -> String {
-        if secs < 60 {
-            format!("{}s", secs)
-        } else if secs < 3600 {
-            format!("{}m{}s", secs / 60, secs % 60)
-        } else {
-            format!("{}h{}m", secs / 3600, (secs % 3600) / 60)
-        }
-    }
-
-    assert_eq!(format_duration(0), "0s");
-    assert_eq!(format_duration(30), "30s");
-    assert_eq!(format_duration(60), "1m0s");
-    assert_eq!(format_duration(90), "1m30s");
-    assert_eq!(format_duration(3600), "1h0m");
-    assert_eq!(format_duration(3661), "1h1m");
+fn test_format_size_kilobytes() {
+    // 2 decimal places when value < 1000 in current unit
+    assert_eq!(format_size(1024), "1.00K");
+    assert_eq!(format_size(1536), "1.50K");
+    assert_eq!(format_size(10240), "10.00K");
+    assert_eq!(format_size(102400), "100.00K");
 }
 
 #[test]
-fn test_format_speed() {
-    fn format_speed(bytes_per_sec: u64) -> String {
-        if bytes_per_sec == 0 {
-            return "0B/s".to_string();
-        }
-        let mut speed = bytes_per_sec as f64;
-        let units = ["B/s", "K/s", "M/s", "G/s"];
-        let mut unit_idx = 0;
-        while speed >= 1024.0 && unit_idx < units.len() - 1 {
-            speed /= 1024.0;
-            unit_idx += 1;
-        }
-        if unit_idx == 0 {
-            format!("{}{}", speed as u64, units[unit_idx])
-        } else {
-            format!("{:.1}{}", speed, units[unit_idx])
-        }
-    }
+fn test_format_size_megabytes() {
+    assert_eq!(format_size(1048576), "1.00M");
+    assert_eq!(format_size(1572864), "1.50M");
+}
 
-    assert_eq!(format_speed(0), "0B/s");
-    assert_eq!(format_speed(1024), "1.0K/s");
-    assert_eq!(format_speed(1048576), "1.0M/s");
+#[test]
+fn test_format_size_gigabytes() {
+    assert_eq!(format_size(1073741824), "1.00G");
+}
+
+#[test]
+fn test_format_speed_bytes() {
+    // < 1024: " B/s" unit
+    // Precision: >= 99.95 → 0 decimals, >= 9.995 → 1 decimal, < 9.995 → 2 decimals
+    // Width: 4 chars total for the number
+    assert_eq!(format_speed(0.0), "0.00 B/s");
+    assert_eq!(format_speed(5.5), "5.50 B/s");
+    assert_eq!(format_speed(50.0), "50.0 B/s");
+    assert_eq!(format_speed(500.0), " 500 B/s");
+}
+
+#[test]
+fn test_format_speed_kilobytes() {
+    // 1.00-9.99: 2 decimals; 10.0-99.9: 1 decimal; >=100: 0 decimals
+    assert_eq!(format_speed(1024.0), "1.00KB/s");
+    assert_eq!(format_speed(10240.0), "10.0KB/s");
+    assert_eq!(format_speed(102400.0), " 100KB/s");
+}
+
+#[test]
+fn test_format_speed_megabytes() {
+    assert_eq!(format_speed(1048576.0), "1.00MB/s");
+    assert_eq!(format_speed(10485760.0), "10.0MB/s");
+}
+
+#[test]
+fn test_format_eta_short() {
+    // < 100s: "36s"
+    assert_eq!(format_eta(0), "0s");
+    assert_eq!(format_eta(36), "36s");
+    assert_eq!(format_eta(99), "99s");
+}
+
+#[test]
+fn test_format_eta_minutes() {
+    // < 6000s (100m): "6m 51s"
+    assert_eq!(format_eta(100), "1m 40s");
+    assert_eq!(format_eta(411), "6m 51s");
+    assert_eq!(format_eta(3600), "60m 0s");
+    assert_eq!(format_eta(5999), "99m 59s");
+}
+
+#[test]
+fn test_format_eta_hours() {
+    // >= 6000s and < 172800s (48h): "1h 23m"
+    assert_eq!(format_eta(6000), "1h 40m");
+    assert_eq!(format_eta(7200), "2h 0m");
+    assert_eq!(format_eta(86400), "24h 0m");
+    assert_eq!(format_eta(172799), "47h 59m");
+}
+
+#[test]
+fn test_format_eta_days() {
+    // < 8640000s (100d): "2d 5h"
+    assert_eq!(format_eta(172800), "2d 0h");
+    assert_eq!(format_eta(194400), "2d 6h");
 }
 
 #[test]
