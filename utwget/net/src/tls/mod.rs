@@ -110,6 +110,9 @@ pub struct TlsConfig {
     /// If set, restricts the cipher suites used for the connection.
     /// The format is implementation-specific.
     pub ciphers: Option<String>,
+
+    pub cert_type: ut_core::types::KeyFileType,
+    pub private_key_type: ut_core::types::KeyFileType,
 }
 
 impl Default for TlsConfig {
@@ -128,6 +131,8 @@ impl Default for TlsConfig {
             ca_directory: None,
             secure_protocol: SecureProtocol::Auto,
             ciphers: None,
+            cert_type: ut_core::types::KeyFileType::Pem,
+            private_key_type: ut_core::types::KeyFileType::Pem,
         }
     }
 }
@@ -154,6 +159,8 @@ impl TlsConfig {
             ca_directory: core.ca_directory.clone(),
             secure_protocol: core.secure_protocol,
             ciphers: core.ciphers.clone(),
+            cert_type: core.cert_type,
+            private_key_type: core.private_key_type,
         }
     }
 }

@@ -23,6 +23,7 @@ use std::time::Duration;
 
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName, UnixTime};
+use ut_core::types::KeyFileType;
 use rustls::{ClientConfig, ClientConnection, DigitallySignedStruct, RootCertStore, SignatureScheme};
 
 use super::{TlsConfig, TlsConnector, TlsError, CheckCertMode};
@@ -144,7 +145,7 @@ impl RustlsConnector {
         if should_verify {
             // Load CA certificates from file if specified
             if let Some(ref ca_cert_path) = config.ca_cert {
-                let certs = load_certs_from_file(ca_cert_path)?;
+                let certs = load_certs_from_file(ca_cert_path, KeyFileType::Pem)?;
                 for cert in certs {
                     root_store.add(cert).map_err(|e| TlsError::CertError(e.to_string()))?;
                 }
@@ -178,8 +179,8 @@ impl RustlsConnector {
         // Load client certificate and private key if specified
         let client_auth = match (&config.cert_file, &config.private_key) {
             (Some(cert_path), Some(key_path)) => {
-                let certs = load_certs_from_file(cert_path)?;
-                let key = load_private_key_from_file(key_path)?;
+                let certs = load_certs_from_file(cert_path, config.cert_type)?;
+                let key = load_private_key_from_file(key_path, config.private_key_type)?;
                 Some((certs, key))
             }
             _ => None,
@@ -681,8 +682,13 @@ impl Drop for TlsTransport {
 /// # Returns
 ///
 /// A vector of certificates on success, or a `TlsError` on failure.
-fn load_certs_from_file(path: &std::path::Path) -> Result<Vec<CertificateDer<'static>>, TlsError> {
+fn load_certs_from_file(path: &std::path::Path, cert_type: KeyFileType) -> Result<Vec<CertificateDer<'static>>, TlsError> {
     let data = std::fs::read(path).map_err(|_| TlsError::InvalidCertFile(path.to_path_buf()))?;
+
+    if cert_type == KeyFileType::Der || cert_type == KeyFileType::Asn1 {
+        return Ok(vec![CertificateDer::from(data)]);
+    }
+
     let certs = rustls_pemfile::certs(&mut data.as_slice())
         .collect::<Result<Vec<_>, _>>()
         .map_err(|_| TlsError::InvalidCertFile(path.to_path_buf()))?;
@@ -724,7 +730,7 @@ fn load_certs_from_dir(dir: &std::path::Path, root_store: &mut RootCertStore) ->
             continue;
         }
 
-        match load_certs_from_file(&path) {
+        match load_certs_from_file(&path, KeyFileType::Pem) {
             Ok(certs) => {
                 for cert in certs {
                     if let Err(e) = root_store.add(cert) {
@@ -755,17 +761,24 @@ fn load_certs_from_dir(dir: &std::path::Path, root_store: &mut RootCertStore) ->
 /// # Returns
 ///
 /// The private key on success, or a `TlsError` on failure.
-fn load_private_key_from_file(path: &std::path::Path) -> Result<PrivateKeyDer<'static>, TlsError> {
+fn load_private_key_from_file(path: &std::path::Path, key_type: KeyFileType) -> Result<PrivateKeyDer<'static>, TlsError> {
     let data = std::fs::read(path).map_err(|_| TlsError::InvalidCertFile(path.to_path_buf()))?;
 
-    // Try PKCS8 private key first
+    if key_type == KeyFileType::Der || key_type == KeyFileType::Asn1 {
+        if data.is_empty() {
+            return Err(TlsError::InvalidCertFile(path.to_path_buf()));
+        }
+        return Ok(PrivateKeyDer::Pkcs8(
+            rustls::pki_types::PrivatePkcs8KeyDer::from(data),
+        ));
+    }
+
     if let Some(key) = rustls_pemfile::private_key(&mut data.as_slice())
         .map_err(|_| TlsError::InvalidCertFile(path.to_path_buf()))?
     {
         return Ok(key);
     }
 
-    // Try RSA private key
     let rsa_keys: Vec<_> = rustls_pemfile::rsa_private_keys(&mut data.as_slice())
         .collect::<Result<Vec<_>, _>>()
         .map_err(|_| TlsError::InvalidCertFile(path.to_path_buf()))?;
@@ -774,7 +787,6 @@ fn load_private_key_from_file(path: &std::path::Path) -> Result<PrivateKeyDer<'s
         return Ok(PrivateKeyDer::Pkcs1(key));
     }
 
-    // Try EC private key
     let ec_keys: Vec<_> = rustls_pemfile::ec_private_keys(&mut data.as_slice())
         .collect::<Result<Vec<_>, _>>()
         .map_err(|_| TlsError::InvalidCertFile(path.to_path_buf()))?;
