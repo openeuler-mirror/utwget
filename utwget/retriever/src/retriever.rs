@@ -1868,6 +1868,8 @@ impl Retriever {
                         // force-terminate it, so we detach it. To prevent
                         // unbounded thread growth, track the count of detached
                         // threads and warn if it exceeds a limit.
+                        // The spawned thread will decrement the counter when
+                        // it eventually finishes (via a Drop guard).
                         let count = DETACHED_DNS_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         if count > 100 {
                             log::warn!(
@@ -1877,6 +1879,17 @@ impl Retriever {
                         } else {
                             log::debug!("DNS resolution timeout for {}, detaching resolver thread", host);
                         }
+                        // Spawn a watchdog to decrement the counter when the
+                        // original resolver thread finishes, so the count
+                        // reflects actually-live detached threads.
+                        let handle = handle;
+                        std::thread::Builder::new()
+                            .name(format!("dns-watchdog-{}", host))
+                            .spawn(move || {
+                                let _ = handle.join();
+                                DETACHED_DNS_COUNT.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+                            })
+                            .ok();
                         return Err(RetrieveError::Protocol(WgetError::Other(
                             "DNS resolution timeout".to_string()
                         )));
