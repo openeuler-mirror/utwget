@@ -689,6 +689,24 @@ impl Drop for TlsTransport {
 ///
 /// A vector of certificates on success, or a `TlsError` on failure.
 fn load_certs_from_file(path: &std::path::Path, cert_type: KeyFileType) -> Result<Vec<CertificateDer<'static>>, TlsError> {
+    // Soft warning when client certificate file is world/group readable.
+    // Certificates are public material; we still load it but warn the user.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(metadata) = std::fs::metadata(path) {
+            let mode = metadata.permissions().mode();
+            if mode & 0o022 != 0 {
+                log::warn!(
+                    "certificate file {} has permissive permissions (mode {:o}); \
+                     recommend 0644 or stricter",
+                    path.display(),
+                    mode & 0o777,
+                );
+            }
+        }
+    }
+
     let data = std::fs::read(path).map_err(|_| TlsError::InvalidCertFile(path.to_path_buf()))?;
 
     if cert_type == KeyFileType::Der || cert_type == KeyFileType::Asn1 {
@@ -768,6 +786,20 @@ fn load_certs_from_dir(dir: &std::path::Path, root_store: &mut RootCertStore) ->
 ///
 /// The private key on success, or a `TlsError` on failure.
 fn load_private_key_from_file(path: &std::path::Path, key_type: KeyFileType) -> Result<PrivateKeyDer<'static>, TlsError> {
+    // SSH-style permission check: refuse private keys readable by group/other.
+    // This prevents accidentally using a key copied from a shared mount with
+    // mode 0644. mode & 0o077 must be 0 (only owner has access).
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let metadata = std::fs::metadata(path)
+            .map_err(|_| TlsError::InvalidCertFile(path.to_path_buf()))?;
+        let mode = metadata.permissions().mode();
+        if mode & 0o077 != 0 {
+            return Err(TlsError::InsecureKeyFile(path.to_path_buf()));
+        }
+    }
+
     let data = std::fs::read(path).map_err(|_| TlsError::InvalidCertFile(path.to_path_buf()))?;
 
     if key_type == KeyFileType::Der || key_type == KeyFileType::Asn1 {
