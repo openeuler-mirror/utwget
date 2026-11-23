@@ -194,8 +194,14 @@ impl RustlsConnector {
             SecureProtocol::TlsV1_3 => {
                 Self::build_config_with_versions(&root_store, should_verify, client_auth, &[&rustls::version::TLS13])?
             }
-            SecureProtocol::Auto | SecureProtocol::Pfs => {
+            SecureProtocol::Auto => {
                 Self::build_config_with_versions(&root_store, should_verify, client_auth, rustls::ALL_VERSIONS)?
+            }
+            SecureProtocol::Pfs => {
+                let mut config = Self::build_config_with_versions(
+                    &root_store, should_verify, client_auth, rustls::ALL_VERSIONS)?;
+                config.resumption = rustls::client::Resumption::disabled();
+                config
             }
         };
 
