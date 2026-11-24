@@ -134,24 +134,25 @@ impl RustlsConnector {
     ///
     /// An `Arc<ClientConfig>` on success, or a `TlsError` on failure.
     pub fn build_config(config: &TlsConfig) -> Result<ClientConfig, TlsError> {
-        // --ciphers 选项兼容性声明：
-        // GNU wget 的 --ciphers 用 OpenSSL/GnuTLS 优先级字符串选择 cipher suite。
-        // utwget 用 rustls，其 cipher suite 列表在 build time 固定，无法运行时
-        // 切换。当前 config.ciphers 仅参与 CONFIG_CACHE 的 key（区分配置），
-        // 但不实际影响 TLS 握手选 cipher。给用户一个明确 warning 让他们知道
-        // 自己的输入被接受但未生效。
-        //
-        // 未来若需支持：可改为调用 ClientConfig::builder()
-        //     .with_cipher_suites(&[...]) 用 BoringSSL-style 列表，但需要把
-        // OpenSSL 语法解析为 rustls CipherSuite 枚举，工作量较大，列为 P2。
-        if let Some(ref c) = config.ciphers {
-            log::warn!(
-                "--ciphers=\"{}\" was accepted but is NOT applied to the TLS handshake. \
-                 rustls cipher suites are fixed at compile time; the GnuTLS/OpenSSL \
-                 priority string syntax is not supported. The option currently only \
-                 affects config cache keys.",
-                c
-            );
+        // --ciphers 选项：解析 OpenSSL/GnuTLS 风格的 cipher 字符串为 rustls
+        // cipher suite 列表。支持的格式：
+        // - IANA 名称: TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+        // - OpenSSL 短名: AES256-GCM-SHA384
+        // - 通配符: ALL, HIGH
+        // 用户传入的字符串按逗号/冒号分隔，每个名称映射到 rustls ALL_CIPHER_SUITES
+        // 中的对应项。不认识的名称跳过并 warn。
+        let custom_cipher_suites: Option<Vec<rustls::SupportedCipherSuite>> = config.ciphers.as_ref().map(|c| {
+            parse_cipher_list(c)
+        });
+
+        if let Some(ref suites) = custom_cipher_suites {
+            if suites.is_empty() {
+                log::warn!("--ciphers=\"{}\" matched no known cipher suites; falling back to default", config.ciphers.as_ref().unwrap());
+            } else {
+                log::info!("--ciphers matched {} cipher suite(s): {:?}",
+                    suites.len(),
+                    suites.iter().map(|s| s.suite()).collect::<Vec<_>>());
+            }
         }
 
         // Build root certificate store
@@ -207,19 +208,20 @@ impl RustlsConnector {
         };
 
         // Build client config based on secure protocol setting
+        let suites_ref = custom_cipher_suites.as_deref();
         let client_config = match config.secure_protocol {
             SecureProtocol::TlsV1_2 => {
-                Self::build_config_with_versions(&root_store, should_verify, client_auth, &[&rustls::version::TLS12])?
+                Self::build_config_with_versions(&root_store, should_verify, client_auth, &[&rustls::version::TLS12], suites_ref)?
             }
             SecureProtocol::TlsV1_3 => {
-                Self::build_config_with_versions(&root_store, should_verify, client_auth, &[&rustls::version::TLS13])?
+                Self::build_config_with_versions(&root_store, should_verify, client_auth, &[&rustls::version::TLS13], suites_ref)?
             }
             SecureProtocol::Auto => {
-                Self::build_config_with_versions(&root_store, should_verify, client_auth, rustls::ALL_VERSIONS)?
+                Self::build_config_with_versions(&root_store, should_verify, client_auth, rustls::ALL_VERSIONS, suites_ref)?
             }
             SecureProtocol::Pfs => {
                 let mut config = Self::build_config_with_versions(
-                    &root_store, should_verify, client_auth, rustls::ALL_VERSIONS)?;
+                    &root_store, should_verify, client_auth, rustls::ALL_VERSIONS, suites_ref)?;
                 config.resumption = rustls::client::Resumption::disabled();
                 config
             }
@@ -245,7 +247,40 @@ impl RustlsConnector {
         should_verify: bool,
         client_auth: Option<(Vec<CertificateDer<'static>>, PrivateKeyDer<'static>)>,
         versions: &[&'static rustls::SupportedProtocolVersion],
+        custom_suites: Option<&[rustls::SupportedCipherSuite]>,
     ) -> Result<ClientConfig, TlsError> {
+        // 如果用户通过 --ciphers 指定了 cipher suite 列表，用自定义 CryptoProvider。
+        // 否则使用默认 provider（包含 ring 的全部 cipher suite）。
+        if let Some(suites) = custom_suites {
+            if !suites.is_empty() {
+                // 构造自定义 CryptoProvider：ring 默认 provider 但 cipher_suites 被过滤
+                let provider = Arc::new(rustls::crypto::CryptoProvider {
+                    cipher_suites: suites.to_vec(),
+                    ..rustls::crypto::ring::default_provider()
+                });
+                let cfg = if !should_verify {
+                    let verifier: Arc<dyn ServerCertVerifier> = Arc::new(SkipServerVerification);
+                    ClientConfig::builder_with_provider(provider)
+                        .with_protocol_versions(versions)
+                        .map_err(|e| TlsError::HandshakeFailed(format!("protocol version error: {}", e)))?
+                        .dangerous()
+                        .with_custom_certificate_verifier(verifier)
+                } else {
+                    ClientConfig::builder_with_provider(provider)
+                        .with_protocol_versions(versions)
+                        .map_err(|e| TlsError::HandshakeFailed(format!("protocol version error: {}", e)))?
+                        .with_root_certificates(root_store.clone())
+                };
+
+                return match client_auth {
+                    Some((certs, key)) => cfg.with_client_auth_cert(certs, key)
+                        .map_err(|e| TlsError::CertError(e.to_string())),
+                    None => Ok(cfg.with_no_client_auth()),
+                };
+            }
+        }
+
+        // 默认路径（无 --ciphers 或匹配为空）
         let cfg = if !should_verify {
             // Skip certificate verification
             let verifier: Arc<dyn ServerCertVerifier> = Arc::new(SkipServerVerification);
@@ -913,5 +948,99 @@ impl ServerCertVerifier for SkipServerVerification {
             SignatureScheme::RSA_PSS_SHA512,
             SignatureScheme::ED25519,
         ]
+    }
+}
+
+/// Parse an OpenSSL/GnuTLS-style cipher list string into rustls cipher suites.
+///
+/// Supports the following formats (colon or comma separated):
+///
+/// - **IANA names**: `TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384`
+/// - **OpenSSL short names**: `AES256-GCM-SHA384`
+/// - **Keywords**: `ALL` (all available), `HIGH` (all AES/ChaCha suites)
+///
+/// Unknown names are silently skipped (with a debug log). The returned list
+/// preserves the order of the input, matching the server's preference.
+fn parse_cipher_list(ciphers: &str) -> Vec<rustls::SupportedCipherSuite> {
+    use rustls::crypto::ring;
+
+    // Build a lookup table mapping various cipher names to rustls suites.
+    let all_suites = ring::ALL_CIPHER_SUITES;
+
+    let mut result: Vec<rustls::SupportedCipherSuite> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    for token in ciphers.split(|c| c == ':' || c == ',') {
+        let token = token.trim().to_uppercase();
+        if token.is_empty() {
+            continue;
+        }
+
+        // Handle keywords
+        match token.as_str() {
+            "ALL" => {
+                for suite in all_suites {
+                    let key = format!("{:?}", suite.suite());
+                    if seen.insert(key) {
+                        result.push(*suite);
+                    }
+                }
+                continue;
+            }
+            "HIGH" => {
+                // HIGH = all AEAD suites (AES-GCM, ChaCha20-Poly1305)
+                for suite in all_suites {
+                    let name = format!("{:?}", suite.suite());
+                    if (name.contains("GCM") || name.contains("CHACHA20"))
+                        && seen.insert(name.clone())
+                    {
+                        result.push(*suite);
+                    }
+                }
+                continue;
+            }
+            _ => {}
+        }
+
+        // Match by IANA name or OpenSSL short name
+        let matched = all_suites.iter().find(|suite| {
+            let iana = format!("{:?}", suite.suite());
+            // IANA name match (case-insensitive)
+            if iana.eq_ignore_ascii_case(&token) {
+                return true;
+            }
+            // OpenSSL short name mapping
+            let openssl = iana_to_openssl(&iana);
+            if openssl.eq_ignore_ascii_case(&token) {
+                return true;
+            }
+            false
+        });
+
+        if let Some(suite) = matched {
+            let key = format!("{:?}", suite.suite());
+            if seen.insert(key) {
+                result.push(*suite);
+            }
+        } else {
+            log::debug!("--ciphers: unknown cipher \"{}\" (skipped)", token);
+        }
+    }
+
+    result
+}
+
+/// Map IANA cipher suite name to OpenSSL short name.
+fn iana_to_openssl(iana: &str) -> String {
+    // Common mappings: TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 -> AES256-GCM-SHA384
+    // This is a simplified mapping for the most common suites.
+    match iana {
+        "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384" | "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384" => "AES256-GCM-SHA384".into(),
+        "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256" | "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256" => "AES128-GCM-SHA256".into(),
+        "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256" | "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256" => "CHACHA20-POLY1305".into(),
+        "TLS13_AES_256_GCM_SHA384" => "TLS_AES_256_GCM_SHA384".into(),
+        "TLS13_AES_128_GCM_SHA256" => "TLS_AES_128_GCM_SHA256".into(),
+        "TLS13_CHACHA20_POLY1305_SHA256" => "TLS_CHACHA20_POLY1305_SHA256".into(),
+        _ => iana.to_string(),
     }
 }
