@@ -1284,8 +1284,14 @@ impl Retriever {
         if use_ftps {
             // Use FTPS client. Propagate --secure-protocol and --no-check-certificate
             // from the TLS config so FTPS honors them like the HTTPS path.
+            let verify = self.config.tls.check_certificate != ut_core::types::CheckCertMode::Off;
+            if !verify {
+                // 代码审查 P1 #2.4：FTPS 路径也打 warning（之前只 HTTPS 路径 build_config 有）
+                warn!("FTPS certificate verification is DISABLED (--no-check-certificate). \
+                       This makes the FTPS connection vulnerable to MITM attacks.");
+            }
             let ftps_cfg = ut_ftp::FtpsConfig {
-                verify_certificate: self.config.tls.check_certificate != ut_core::types::CheckCertMode::Off,
+                verify_certificate: verify,
                 ca_cert: self.config.tls.ca_cert.clone(),
                 client_cert: self.config.tls.cert_file.clone(),
                 client_key: self.config.tls.private_key.clone(),
