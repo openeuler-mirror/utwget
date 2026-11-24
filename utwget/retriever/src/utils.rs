@@ -557,10 +557,15 @@ pub(crate) fn url_decode(s: &str) -> String {
 }
 
 /// Serialize a HeaderMap into raw HTTP header bytes.
+///
+/// Key and value 中的 `\r`/`\n` 被剥离，防止 CRLF 注入到 WARC 归档文件中。
+/// 这与 `http/src/request.rs::serialize()` 的防护模式一致。
 pub(crate) fn serialize_headers(header_map: &HeaderMap) -> Vec<u8> {
     let mut result = Vec::new();
     for (key, value) in header_map.iter() {
-        result.extend_from_slice(format!("{}: {}\r\n", key, value).as_bytes());
+        let safe_key: String = key.chars().filter(|&c| c != '\r' && c != '\n').collect();
+        let safe_value: String = value.chars().filter(|&c| c != '\r' && c != '\n').collect();
+        result.extend_from_slice(format!("{}: {}\r\n", safe_key, safe_value).as_bytes());
     }
     result
 }
