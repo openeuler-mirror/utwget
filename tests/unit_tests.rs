@@ -5,6 +5,7 @@
 // 以保证两种入口都能正确解析。
 
 #[path = "unit_tests/cli_wgetrc.rs"] mod cli_wgetrc;
+#[path = "unit_tests/cli_args.rs"] mod cli_args;
 #[path = "unit_tests/connection_pool.rs"] mod connection_pool;
 #[path = "unit_tests/core_cookie.rs"] mod core_cookie;
 #[path = "unit_tests/core_hsts.rs"] mod core_hsts;
@@ -13,6 +14,7 @@
 #[path = "unit_tests/core_url.rs"] mod core_url;
 #[path = "unit_tests/core_utils.rs"] mod core_utils;
 #[path = "unit_tests/ftp_listing.rs"] mod ftp_listing;
+#[path = "unit_tests/ftps.rs"] mod ftps;
 #[path = "unit_tests/ftp_opie.rs"] mod ftp_opie;
 #[path = "unit_tests/html_extractor.rs"] mod html_extractor;
 #[path = "unit_tests/html_converter.rs"] mod html_converter;
@@ -28,6 +30,7 @@
 #[path = "unit_tests/net_proxy.rs"] mod net_proxy;
 #[path = "unit_tests/progress_bar.rs"] mod progress_bar;
 #[path = "unit_tests/retriever_types.rs"] mod retriever_types;
+#[path = "unit_tests/retriever_response.rs"] mod retriever_response;
 #[path = "unit_tests/retriever_url_queue.rs"] mod retriever_url_queue;
 #[path = "unit_tests/signal.rs"] mod signal;
 #[path = "unit_tests/warc_digest.rs"] mod warc_digest;
