@@ -537,9 +537,20 @@ pub fn parse_response_head(data: &[u8]) -> Option<HttpResponse> {
     Some(resp)
 }
 
-/// Finds the end of the HTTP header section.
+/// Finds the start of the HTTP response body, i.e. the exclusive end of the
+/// header section.
 ///
-/// The header section ends with a blank line (`\r\n\r\n`).
+/// The header section is terminated by a blank line. The standard terminator
+/// is `\r\n\r\n`, but non-compliant servers/proxies may use bare-LF endings,
+/// which GNU wget also tolerates. The following terminator forms are handled:
+///
+/// - `\r\n\r\n` (standard, 4 bytes)
+/// - `\n\r\n`   (LF-terminated header line + CRLF blank line, 3 bytes)
+/// - `\n\n`     (bare LF only; also covers the `\r\n\n` mixed form, 2 bytes)
+///
+/// If multiple terminator forms are present, the earliest match wins so that
+/// a body containing a later terminator-like sequence cannot misalign the
+/// header boundary.
 ///
 /// # Arguments
 ///
@@ -547,7 +558,8 @@ pub fn parse_response_head(data: &[u8]) -> Option<HttpResponse> {
 ///
 /// # Returns
 ///
-/// The byte offset of the header end, or `None` if not found.
+/// The byte offset at which the body begins (one past the last byte of the
+/// header terminator), or `None` if the header block is not yet complete.
 ///
 /// # Example
 ///
@@ -555,25 +567,41 @@ pub fn parse_response_head(data: &[u8]) -> Option<HttpResponse> {
 /// use ut_http::response::find_header_end;
 ///
 /// let data = b"HTTP/1.1 200 OK\r\n\r\nbody";
-/// assert_eq!(find_header_end(data), Some(15));
+/// assert_eq!(find_header_end(data), Some(19));
 /// ```
 pub fn find_header_end(data: &[u8]) -> Option<usize> {
-    // Look for \r\n\r\n (standard) or \n\n (bare-LF, tolerated by GNU wget
-    // for non-compliant servers/proxies). Also handle \r\n\n and \n\r\n
-    // (mixed line endings).
-    let windows = data.windows(4);
-    for (i, w) in windows.enumerate() {
+    // Earliest completion offset of each accepted terminator form.
+    let mut earliest: Option<usize> = None;
+
+    // Standard terminator: \r\n\r\n → body starts 4 bytes later.
+    for (i, w) in data.windows(4).enumerate() {
         if w == b"\r\n\r\n" {
-            return Some(i);
+            earliest = Some(i + 4);
+            break;
         }
     }
-    // Fall back to \n\n (bare LF only) — scan 2-byte windows.
-    let windows2 = data.windows(2);
-    for (i, w) in windows2.enumerate() {
+    // Mixed form: header line ends with \n, blank line is \r\n (\n\r\n)
+    // → body starts 3 bytes later.
+    for (i, w) in data.windows(3).enumerate() {
+        if w == b"\n\r\n" {
+            let end = i + 3;
+            if earliest.map_or(true, |cur| end < cur) {
+                earliest = Some(end);
+            }
+            break;
+        }
+    }
+    // Bare-LF fallback: \n\n (also covers the \r\n\n mixed form)
+    // → body starts 2 bytes later.
+    for (i, w) in data.windows(2).enumerate() {
         if w == b"\n\n" {
-            return Some(i);
+            let end = i + 2;
+            if earliest.map_or(true, |cur| end < cur) {
+                earliest = Some(end);
+            }
+            break;
         }
     }
-    None
+    earliest
 }
 

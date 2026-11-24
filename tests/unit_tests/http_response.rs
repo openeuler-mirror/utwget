@@ -432,16 +432,23 @@ fn test_parse_response_head_with_cookies() {
 // Find Header End Tests
 // =============================================================================
 
+// find_header_end returns the offset where the BODY begins (exclusive end of
+// the header section), so callers can slice `&buf[..end]` / `&buf[end..]`
+// without terminator-length arithmetic (P0 fix: bare-LF slice OOB panic).
+
 #[test]
 fn test_find_header_end_simple() {
     let data = b"HTTP/1.1 200 OK\r\n\r\nbody";
-    assert_eq!(find_header_end(data), Some(15));
+    // 15-byte status line + 4-byte \r\n\r\n terminator = 19.
+    assert_eq!(find_header_end(data), Some(19));
 }
 
 #[test]
 fn test_find_header_end_with_headers() {
     let data = b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello";
-    assert!(find_header_end(data).is_some());
+    let end = find_header_end(data).unwrap();
+    assert_eq!(&data[..end], b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\n");
+    assert_eq!(&data[end..], b"hello");
 }
 
 #[test]
@@ -454,6 +461,36 @@ fn test_find_header_end_incomplete() {
 fn test_find_header_end_empty() {
     let data = b"";
     assert_eq!(find_header_end(data), None);
+}
+
+#[test]
+fn test_find_header_end_bare_lf() {
+    // Bare-LF terminator: body must start right after \n\n (2 bytes), never
+    // out of bounds when the buffer ends exactly at the terminator.
+    let data = b"HTTP/1.1 200 OK\nA: b\n\n";
+    assert_eq!(find_header_end(data), Some(data.len()));
+    let data = b"HTTP/1.1 200 OK\nA: b\n\nBODY";
+    let end = find_header_end(data).unwrap();
+    assert_eq!(&data[end..], b"BODY");
+}
+
+#[test]
+fn test_find_header_end_mixed_line_endings() {
+    // \r\n\n (CRLF header line + bare-LF blank line).
+    let data = b"HTTP/1.1 200 OK\r\n\nBODY";
+    let end = find_header_end(data).unwrap();
+    assert_eq!(&data[end..], b"BODY");
+    // \n\r\n (bare-LF header line + CRLF blank line).
+    let data = b"HTTP/1.1 200 OK\nA: b\n\r\nBODY";
+    let end = find_header_end(data).unwrap();
+    assert_eq!(&data[end..], b"BODY");
+}
+
+#[test]
+fn test_find_header_end_earliest_terminator_wins() {
+    // A later \r\n\r\n inside the body must not shift the header boundary.
+    let data = b"HTTP/1.1 200 OK\nA: b\n\nX\r\n\r\n";
+    assert_eq!(find_header_end(data), Some(22));
 }
 
 // =============================================================================
