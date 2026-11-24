@@ -789,6 +789,11 @@ pub struct Args {
     #[arg(long = "trust-server-names")]
     pub trust_server_names: bool,
 
+    /// Block redirects to private/loopback IP addresses (SSRF protection).
+    /// utwget extension; GNU wget does not have this option.
+    #[arg(long = "block-private-redirects")]
+    pub block_private_redirects: bool,
+
     /// Output bandwidth as TYPE: bits or bytes.
     #[arg(long = "report-speed")]
     pub report_speed: Option<String>,

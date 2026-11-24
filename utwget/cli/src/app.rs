@@ -1706,6 +1706,9 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
     // Apply --trust-server-names
     if args.trust_server_names { config.trust_server_names = true; }
 
+    // Apply --block-private-redirects (SSRF protection, utwget extension)
+    if args.block_private_redirects { config.block_private_redirects = true; }
+
     if args.reject_log.is_some() {
         config.reject_log = args.reject_log.clone();
     }

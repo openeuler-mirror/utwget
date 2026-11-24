@@ -100,6 +100,11 @@ pub struct Config {
     pub trust_server_names: bool,
     /// Report bandwidth in bits/s (--report-speed=bits)
     pub report_bps: bool,
+    /// Block redirects to private/loopback IP addresses (--block-private-redirects)
+    /// utwget 扩展选项（GNU wget 不支持）。默认 false 保持 wget 兼容性。
+    /// 启用时重定向到 127.0.0.0/8 / 10/8 / 172.16/12 / 192.168/16 / 169.254/16
+    /// 等私有地址段会被阻断而非仅警告。
+    pub block_private_redirects: bool,
 
     /// HTTP-specific configuration
     pub http: HttpConfig,
@@ -230,6 +235,7 @@ impl Default for Config {
             use_netrc: true, // Default: use .netrc
             trust_server_names: false,
             report_bps: false,
+            block_private_redirects: false,
 
             http: HttpConfig::default(),
             ftp: FtpConfig::default(),

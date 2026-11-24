@@ -585,6 +585,7 @@ fn print_wget_help() {
     safe_println!("       --ask-password              {}", t("utwget.help_ask_password"));
     safe_println!("       --use-askpass=PROGRAM       {}", t("utwget.help_use_askpass"));
     safe_println!("       --trust-server-names         {}", t("utwget.help_trust_server_names"));
+    safe_println!("       --block-private-redirects    {}", t("utwget.help_block_private_redirects"));
     safe_println!("       --unlink                    {}", t("utwget.help_unlink"));
     safe_println!("       --xattr                     {}", t("utwget.help_xattr"));
     safe_println!("       --preserve-permissions      {}", t("utwget.help_preserve_permissions"));
