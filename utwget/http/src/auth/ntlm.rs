@@ -441,8 +441,23 @@ impl Authenticator for NtlmAuthenticator {
         _request_uri: &str,
         _body: Option<&[u8]>,
     ) -> Result<Option<String>, AuthError> {
-        // Get NTLM challenge from the challenge data
-        let challenge_data = STANDARD.decode(challenge.nonce.as_deref().unwrap_or(""))
+        // Locate the Type 2 message. Servers send it as the raw base64 blob
+        // after the scheme name (`WWW-Authenticate: NTLM TlRMTVNTUAAC...`),
+        // which AuthChallenge stores in ntlm_type2_msg. Fall back to the
+        // legacy `nonce` field for callers that pass it directly.
+        let type2_b64 = challenge
+            .ntlm_type2_msg
+            .as_deref()
+            .or(challenge.nonce.as_deref())
+            .unwrap_or("");
+        if type2_b64.is_empty() {
+            // No challenge data yet: emit the Type 1 negotiate message.
+            let type1 = self.create_type1_message();
+            let b64 = STANDARD.encode(&type1);
+            return Ok(Some(format!("NTLM {}", b64)));
+        }
+        let challenge_data = STANDARD
+            .decode(type2_b64)
             .map_err(|e| AuthError::InvalidChallenge(format!("base64 decode error: {}", e)))?;
 
         // Check if this is a Type 2 challenge

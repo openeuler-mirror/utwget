@@ -184,12 +184,31 @@ impl AuthChallenge {
 
             let rest = rest.trim_start();
 
+            // NTLM/Negotiate carry a single base64 blob (the Type 2 message)
+            // instead of key=value parameters, e.g.
+            // `WWW-Authenticate: NTLM TlRMTVNTUAACAAA...`. The blob's padding
+            // `=` would be misparsed as a key=value separator by
+            // parse_auth_params, so capture it verbatim before parameter
+            // parsing and before `scheme` is moved into the challenge.
+            // GNU wget treats the remainder as the Type 2 message
+            // (http.c check_auth / ntlm.c).
+            let ntlm_type2 = if scheme == AuthScheme::Ntlm {
+                let blob = rest.split(',').next().unwrap_or("").trim();
+                if blob.is_empty() {
+                    None
+                } else {
+                    Some(blob.to_string())
+                }
+            } else {
+                None
+            };
+
             let mut challenge = AuthChallenge {
                 scheme,
                 realm: None, nonce: None, opaque: None,
                 qop: None, algorithm: None, charset: None,
                 userhash: None, stale: None, domain: None,
-                ntlm_type2_msg: None,
+                ntlm_type2_msg: ntlm_type2,
             };
 
             let (params, next) = parse_auth_params(rest);
