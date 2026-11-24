@@ -1769,7 +1769,13 @@ impl Retriever {
                 if timeout.is_some() && (errno == libc::EINPROGRESS || errno == libc::EWOULDBLOCK) {
                     // Wait for connect with poll
                     let mut pfd = libc::pollfd { fd, events: libc::POLLOUT, revents: 0 };
-                    let timeout_ms = timeout.unwrap().as_millis() as libc::c_int;
+                    // is_some() 已检查过；用 if let 让编译器知道 timeout 在该分支内非 None，
+                    // 避免 unwrap 残留。
+                    let timeout_ms = if let Some(t) = timeout {
+                        t.as_millis() as libc::c_int
+                    } else {
+                        unreachable!("timeout.is_some() guarded above")
+                    };
                     let poll_ret = libc::poll(&mut pfd, 1, timeout_ms);
                     if poll_ret <= 0 {
                         libc::close(fd);
@@ -2020,7 +2026,11 @@ impl Retriever {
                 }
                 Err(e) => {
                     last_error = Some(e);
-                    debug!("failed to connect to {}: {}", addr, last_error.as_ref().unwrap());
+                    // 上一行刚 last_error = Some(e)，但用 if let 而非 unwrap
+                    // 让编译器类型推导更稳健，避免 review 提到的 unwrap 残留。
+                    if let Some(ref le) = last_error {
+                        debug!("failed to connect to {}: {}", addr, le);
+                    }
                 }
             }
         }
