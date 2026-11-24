@@ -20,6 +20,7 @@ pub mod spider;
 pub mod xattr;
 pub mod utils;
 pub mod tls_pool;
+pub mod dns;
 
 #[cfg(feature = "async")]
 pub mod async_retriever;
