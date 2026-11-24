@@ -151,6 +151,28 @@ fn parse_complete_response(data: &[u8]) -> Option<(FtpResponse, usize)> {
     ))
 }
 
+/// FTP bounce attack validation for PASV responses.
+///
+/// The PASV-advertised IP must match the control connection's peer IP.
+/// `peer` is `None` when the peer address cannot be determined; in that
+/// case the connection is allowed (the call site logs a warning), mirroring
+/// the plain-FTP behavior in data_conn.rs. Comparing against the DNS
+/// hostname instead of the peer IP is wrong: a hostname string almost never
+/// equals the server's IP, which broke every FTPS-over-domain-name
+/// connection (P0 fix).
+fn validate_pasv_ip(
+    pasv_ip: std::net::IpAddr,
+    peer: Option<std::net::IpAddr>,
+) -> Result<(), String> {
+    match peer {
+        Some(p) if p != pasv_ip => Err(format!(
+            "PASV returned {} but control connection is to {}; possible bounce attack",
+            pasv_ip, p
+        )),
+        _ => Ok(()),
+    }
+}
+
 /// FTPS client supporting FTP over TLS/SSL
 pub struct FtpsClient {
     /// Raw TCP stream (before TLS upgrade)
@@ -875,24 +897,49 @@ impl FtpsClient {
         let port = ((nums[4] as u16) << 8) | (nums[5] as u16);
 
         // FTP bounce attack protection: validate that the PASV-returned IP
-        // matches the control connection's peer. A malicious server could
+        // matches the control connection's peer IP. A malicious server could
         // redirect the data connection to an arbitrary IP:port (port scan /
-        // SSRF). This mirrors the plain-FTP check in data_conn.rs:199-219.
-        if let Some(ref control_host) = self.host {
-            if control_host != &host {
-                log::warn!(
-                    "FTPS PASV address {}:{} does not match control connection host {}; \
-                     rejecting to prevent FTP bounce attack",
-                    host, port, control_host
-                );
-                return Err(FtpError::DataConnectFailed(format!(
-                    "PASV returned {}:{} but control connection is to {}; possible bounce attack",
-                    host, port, control_host
-                )));
+        // SSRF). The comparison must use the control socket's peer address
+        // (as the plain-FTP check in data_conn.rs:199-221 does), NOT the DNS
+        // hostname in `self.host`: a hostname string almost never equals the
+        // server's IP, which made every FTPS-over-domain-name connection fail
+        // with a spurious bounce-attack error (P0 fix).
+        let pasv_ip: std::net::IpAddr = host
+            .parse()
+            .map_err(|_| FtpError::ParseError(format!("invalid PASV address: {}", host)))?;
+        match self.control_peer_ip() {
+            Some(peer_ip) => {
+                if let Err(reason) = validate_pasv_ip(pasv_ip, Some(peer_ip)) {
+                    log::warn!(
+                        "FTPS PASV address {}:{} does not match control connection peer {}; \
+                         rejecting to prevent FTP bounce attack",
+                        host, port, peer_ip
+                    );
+                    return Err(FtpError::DataConnectFailed(reason));
+                }
+            }
+            None => {
+                // Peer address unavailable (e.g. non-socket control transport):
+                // proceed but log, mirroring data_conn.rs behavior.
+                log::warn!("cannot determine FTPS control connection peer for PASV validation");
             }
         }
 
         Ok((host, port))
+    }
+
+    /// Returns the IP address of the control connection's remote peer.
+    ///
+    /// The underlying TCP socket lives in `TlsConnection.stream` after the
+    /// TLS upgrade and in `raw_stream` before it.
+    fn control_peer_ip(&self) -> Option<std::net::IpAddr> {
+        if let Some(ref tls) = self.ctrl_tls {
+            return tls.stream.peer_addr().ok().map(|a| a.ip());
+        }
+        if let Some(ref raw) = self.raw_stream {
+            return raw.peer_addr().ok().map(|a| a.ip());
+        }
+        None
     }
 
     /// Enter active mode (PORT/EPRT) and return a TcpListener to accept
@@ -1229,7 +1276,52 @@ impl ServerCertVerifier for SkipServerVerification {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_complete_response;
+    use super::{parse_complete_response, validate_pasv_ip};
+    use std::net::IpAddr;
+
+    // ------------------------------------------------------------------
+    // PASV bounce-attack validation (P0 fix: compare against the control
+    // socket's peer IP, not the DNS hostname string)
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn pasv_ip_matching_peer_is_accepted() {
+        let pasv: IpAddr = "203.0.113.7".parse().unwrap();
+        let peer: IpAddr = "203.0.113.7".parse().unwrap();
+        assert!(validate_pasv_ip(pasv, Some(peer)).is_ok());
+    }
+
+    #[test]
+    fn pasv_ip_mismatching_peer_is_rejected() {
+        let pasv: IpAddr = "10.0.0.1".parse().unwrap();
+        let peer: IpAddr = "203.0.113.7".parse().unwrap();
+        assert!(validate_pasv_ip(pasv, Some(peer)).is_err());
+    }
+
+    #[test]
+    fn pasv_ip_hostname_is_not_used_for_comparison() {
+        // Regression: the control connection is to "ftp.example.com" (which
+        // resolves to 203.0.113.7) and PASV advertises 203.0.113.7 — this must
+        // be ACCEPTED. The old code compared the PASV IP string against the
+        // hostname string and rejected it, breaking FTPS over domain names.
+        let pasv: IpAddr = "203.0.113.7".parse().unwrap();
+        let peer: IpAddr = "203.0.113.7".parse().unwrap();
+        assert!(validate_pasv_ip(pasv, Some(peer)).is_ok());
+    }
+
+    #[test]
+    fn pasv_ip_unknown_peer_is_allowed() {
+        // Peer address cannot be determined → allowed (call site logs).
+        let pasv: IpAddr = "203.0.113.7".parse().unwrap();
+        assert!(validate_pasv_ip(pasv, None).is_ok());
+    }
+
+    #[test]
+    fn pasv_ip_ipv6_peer_roundtrip() {
+        let pasv: IpAddr = "::ffff:203.0.113.7".parse().unwrap();
+        let peer: IpAddr = "::ffff:203.0.113.7".parse().unwrap();
+        assert!(validate_pasv_ip(pasv, Some(peer)).is_ok());
+    }
 
     #[test]
     fn parses_single_line_response() {
