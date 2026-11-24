@@ -134,6 +134,26 @@ impl RustlsConnector {
     ///
     /// An `Arc<ClientConfig>` on success, or a `TlsError` on failure.
     pub fn build_config(config: &TlsConfig) -> Result<ClientConfig, TlsError> {
+        // --ciphers 选项兼容性声明：
+        // GNU wget 的 --ciphers 用 OpenSSL/GnuTLS 优先级字符串选择 cipher suite。
+        // utwget 用 rustls，其 cipher suite 列表在 build time 固定，无法运行时
+        // 切换。当前 config.ciphers 仅参与 CONFIG_CACHE 的 key（区分配置），
+        // 但不实际影响 TLS 握手选 cipher。给用户一个明确 warning 让他们知道
+        // 自己的输入被接受但未生效。
+        //
+        // 未来若需支持：可改为调用 ClientConfig::builder()
+        //     .with_cipher_suites(&[...]) 用 BoringSSL-style 列表，但需要把
+        // OpenSSL 语法解析为 rustls CipherSuite 枚举，工作量较大，列为 P2。
+        if let Some(ref c) = config.ciphers {
+            log::warn!(
+                "--ciphers=\"{}\" was accepted but is NOT applied to the TLS handshake. \
+                 rustls cipher suites are fixed at compile time; the GnuTLS/OpenSSL \
+                 priority string syntax is not supported. The option currently only \
+                 affects config cache keys.",
+                c
+            );
+        }
+
         // Build root certificate store
         let mut root_store = RootCertStore::empty();
         let should_verify = config.check_certificate != CheckCertMode::Off;
