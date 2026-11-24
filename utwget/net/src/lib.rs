@@ -13,7 +13,7 @@ pub mod tcp;
 pub mod tls;
 pub mod transport;
 
-pub use dns::{DnsError, DnsResolver};
+pub use dns::DnsError;
 pub use tcp::connect_to_host;
 pub use tls::{TlsConfig, TlsConnector};
 pub use transport::{Interest, Transport, TcpTransport};
