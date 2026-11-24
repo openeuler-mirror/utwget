@@ -210,17 +210,22 @@ impl HstsStore {
     ///
     /// Returns an error if the file cannot be read or parsed.
     pub fn load_from_file(&mut self, path: &Path) -> Result<()> {
-        if !path.exists() {
-            return Ok(());
-        }
+        // 使用 File::open + fstat 消除 TOCTOU 窗口（代码审查 S7）。
+        // 先打开文件获取 fd，再对 fd 做权限检查，最后从同一 fd 读取。
+        let file = match std::fs::File::open(path) {
+            Ok(f) => f,
+            Err(_) => return Ok(()), // 文件不存在或其他错误，静默返回
+        };
 
         // Security check: refuse to load HSTS data from a world-writable file
         // (matches GNU wget hsts.c:344-361 hsts_file_access_valid). A
         // world-writable file can be tampered with by any user, which could
         // inject false HSTS entries or delete legitimate ones.
-        if let Ok(metadata) = fs::metadata(path) {
-            use std::os::unix::fs::PermissionsExt;
-            let mode = metadata.permissions().mode();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            let metadata = file.metadata().map_err(|e| WgetError::Other(e.to_string()))?;
+            let mode = metadata.mode();
             if mode & 0o002 != 0 {
                 return Err(WgetError::Other(format!(
                     "HSTS file {} is world-writable; refusing to load (security)",
@@ -229,7 +234,11 @@ impl HstsStore {
             }
         }
 
-        let data = fs::read_to_string(path).map_err(|e| WgetError::Other(e.to_string()))?;
+        // 从同一 fd 读取，消除 TOCTOU 窗口
+        use std::io::Read;
+        let mut data = String::new();
+        std::io::BufReader::new(file).read_to_string(&mut data)
+            .map_err(|e| WgetError::Other(e.to_string()))?;
 
         // GNU wget tab-separated format:
         //   # comment
