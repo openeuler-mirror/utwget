@@ -1039,14 +1039,32 @@ impl App {
             eprintln!("Found {} file(s) in Metalink", metalink_files.len());
         }
 
-        // Create a download function that uses our retriever
-        let download_fn = |url: &str, path: &std::path::Path| -> Result<(), MetalinkError> {
-            // This is a simplified download function
-            // In a real implementation, we would use the retriever
+        // Create a download function that downloads via utwget's own retriever.
+        // We spawn a subprocess of ourselves with -O to download each mirror URL.
+        let download_fn = move |url: &str, path: &std::path::Path| -> Result<(), MetalinkError> {
             eprintln!("{}", crate::i18n::translate_with_args("utwget.downloading_to", &[
                 ("url", url.to_string()),
                 ("path", path.display().to_string()),
             ]));
+
+            // Use a subprocess of ourselves to download: utwget -O <path> <url>
+            // This avoids complex Retriever state management in a closure.
+            let self_exe = std::env::current_exe()
+                .map_err(|e| MetalinkError::Download(format!("cannot find self executable: {}", e)))?;
+
+            let output = std::process::Command::new(&self_exe)
+                .arg("-O").arg(path)
+                .arg("--no-verbose")
+                .arg(url)
+                .output()
+                .map_err(|e| MetalinkError::Download(format!("failed to spawn download subprocess: {}", e)))?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(MetalinkError::Download(format!(
+                    "download of {} failed: {}", url, stderr.trim()
+                )));
+            }
             Ok(())
         };
 

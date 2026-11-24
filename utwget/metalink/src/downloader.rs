@@ -16,7 +16,8 @@ use crate::parser::{MetalinkError, MetalinkFile, MetalinkPiece, MetalinkResource
 /// Function type for performing the actual download.
 ///
 /// Takes a URL and destination path, returns success or an error.
-type DownloadFn = fn(&str, &Path) -> Result<(), MetalinkError>;
+/// 使用 Box<dyn Fn> 而非 fn 类型，允许闭包捕获环境（如 Retriever 实例）。
+type DownloadFn = Box<dyn Fn(&str, &Path) -> Result<(), MetalinkError> + Send>;
 
 /// Result of a Metalink file download operation.
 ///
@@ -77,9 +78,12 @@ impl MetalinkDownloader {
     /// # Returns
     ///
     /// A new `MetalinkDownloader` instance with no location or protocol filters.
-    pub fn new(download_fn: DownloadFn) -> Self {
+    pub fn new<F>(download_fn: F) -> Self
+    where
+        F: Fn(&str, &Path) -> Result<(), MetalinkError> + Send + 'static,
+    {
         MetalinkDownloader {
-            download_fn,
+            download_fn: Box::new(download_fn),
             preferred_location: None,
             allowed_protocols: Vec::new(),
         }
