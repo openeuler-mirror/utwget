@@ -88,7 +88,12 @@ pub struct Retriever {
     /// Composite filter for URL inclusion/exclusion rules.
     url_filter: CompositeFilter,
     /// Registry tracking downloaded files and URL redirections.
-    download_registry: DownloadRegistry,
+    ///
+    /// Shared behind `Arc<Mutex<>>` so parallel recursive workers
+    /// (`Retriever::with_connection_pool` + `set_shared_registry`) can
+    /// dedupe URLs across workers. Access through `registry()` which
+    /// transparently handles the shared/inlined distinction.
+    download_registry: std::sync::Arc<std::sync::Mutex<DownloadRegistry>>,
     /// Dispatcher for handling HTTP authentication challenges (Basic, Digest, NTLM).
     auth_dispatcher: AuthDispatcher,
     /// Total bytes downloaded across all requests in this session.
@@ -233,7 +238,7 @@ impl Retriever {
             #[cfg(feature = "hsts")]
             hsts: hsts_store,
             url_filter,
-            download_registry: DownloadRegistry::new(),
+            download_registry: std::sync::Arc::new(std::sync::Mutex::new(DownloadRegistry::new())),
             auth_dispatcher: AuthDispatcher::new(),
             total_downloaded: 0,
             start_time: Instant::now(),
@@ -855,7 +860,7 @@ impl Retriever {
                     }
                 }
 
-                self.download_registry.register_redirection(&url.display(), &redirect_url.display());
+                self.registry().register_redirection(&url.display(), &redirect_url.display());
                 self.progress.set_redirected(&redirect_url.display());
                 info!("redirected to {}", redirect_url.display());
                 return Ok(RetrieveOutcome::Redirected(redirect_url.display()));
@@ -1195,7 +1200,7 @@ impl Retriever {
         };
 
         // Register the *final* local path so link conversion resolves to it.
-        self.download_registry.register_download(&url.display(), &final_output_path);
+        self.registry().register_download(&url.display(), &final_output_path);
 
         // Preserve permissions if enabled
         if self.config.preserve_permissions {
@@ -1376,7 +1381,7 @@ impl Retriever {
                     self.total_downloaded, self.config.quota.unwrap_or(0));
             }
 
-            self.download_registry.register_download(&url.display(), output_path);
+            self.registry().register_download(&url.display(), output_path);
 
             let result = BodyResult {
                 bytes_read: total_bytes,
@@ -1473,7 +1478,7 @@ impl Retriever {
             apply_file_timestamp(output_path, mdtm);
         }
 
-        self.download_registry.register_download(&url.display(), output_path);
+        self.registry().register_download(&url.display(), output_path);
 
         // Set extended attributes if enabled
         if self.config.xattr {
@@ -2688,7 +2693,7 @@ impl Retriever {
     ///
     /// `Some(ParsedUrl)` if a redirect target is found, `None` otherwise.
     fn resolve_effective_url(&self, url: &ParsedUrl) -> Option<ParsedUrl> {
-        self.download_registry.resolve_redirect(&url.display())
+        self.registry().resolve_redirect(&url.display())
             .and_then(|s| ParsedUrl::parse(&s).ok())
     }
 
@@ -2849,14 +2854,54 @@ impl Retriever {
         }
     }
 
-    /// Get a reference to the download registry.
-    pub fn download_registry(&self) -> &DownloadRegistry {
-        &self.download_registry
+    /// Returns a locked handle to the download registry.
+    ///
+    /// The registry lives behind `Arc<Mutex<>>` so it can be shared across
+    /// parallel recursive workers (H-6); single-threaded callers use it
+    /// exactly as before through this guard.
+    fn registry(&self) -> std::sync::MutexGuard<'_, DownloadRegistry> {
+        self.download_registry
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
     }
 
-    /// Get a mutable reference to the download registry.
-    pub fn download_registry_mut(&mut self) -> &mut DownloadRegistry {
-        &mut self.download_registry
+    /// Get a locked handle to the download registry.
+    pub fn download_registry(&self) -> std::sync::MutexGuard<'_, DownloadRegistry> {
+        self.registry()
+    }
+
+    /// Share this Retriever's registry with another Retriever.
+    ///
+    /// Used by parallel recursive workers: all workers observe each other's
+    /// downloads, so a resource already fetched by one worker is skipped by
+    /// the rest (`is_visited` is a cross-worker check, not per-worker).
+    pub fn share_registry_with(&mut self, other: &Self) {
+        self.download_registry = other.download_registry.clone();
+    }
+
+    /// Returns a clone of the shared registry `Arc`.
+    ///
+    /// Used by parallel recursive workers to install the same registry into
+    /// every worker via [`Self::set_shared_registry`].
+    pub fn registry_arc_clone(&self) -> std::sync::Arc<std::sync::Mutex<DownloadRegistry>> {
+        self.download_registry.clone()
+    }
+
+    /// Replace this Retriever's registry with the given shared one.
+    ///
+    /// After this call, `is_visited` / `register_download` on `self` are
+    /// visible to every other Retriever sharing the same Arc (and vice
+    /// versa) — the cross-worker dedupe for parallel recursion (H-6).
+    pub fn set_shared_registry(
+        &mut self,
+        registry: std::sync::Arc<std::sync::Mutex<DownloadRegistry>>,
+    ) {
+        self.download_registry = registry;
+    }
+
+    /// Take a snapshot clone of the download registry (for conversion).
+    pub fn snapshot_registry(&self) -> DownloadRegistry {
+        self.registry().clone()
     }
 
     /// Get the total number of bytes downloaded so far.

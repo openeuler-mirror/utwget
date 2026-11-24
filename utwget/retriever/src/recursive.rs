@@ -24,6 +24,7 @@ use ut_progress::ProgressDisplay;
 
 use crate::retriever::Retriever;
 use crate::types::{content_type_is_css, content_type_is_html, RetrieveError, RetrieveOutcome};
+use crate::download_registry::DownloadRegistry;
 use crate::url_queue::{QueueEntry, UrlQueue};
 
 /// Exit status for recursive retrieval operations.
@@ -412,6 +413,11 @@ impl RecursiveRetriever {
         // Get config and TLS pool for cloning to each worker
         let config = self.retriever.config_arc_clone();
         let tls_pool = self.retriever.connection_pool_clone();
+        // H-6: clone the main retriever's registry Arc so every worker
+        // shares one registry (cross-worker dedupe + conversion). Cloning
+        // the Arc (not borrowing) keeps the closure Send.
+        let shared_registry: Arc<std::sync::Mutex<DownloadRegistry>> =
+            self.retriever.registry_arc_clone();
 
         // Build start_url for each worker to use as --no-parent reference
         let start_url_parsed = Arc::new(parsed);
@@ -431,6 +437,7 @@ impl RecursiveRetriever {
                 let start_url_parsed = start_url_parsed.clone();
                 let start_host = start_host.clone();
                 let active_count = active_count.clone();
+                let shared_registry = shared_registry.clone();
 
                 std::thread::Builder::new()
                     .name(format!("recursive-worker-{}", worker_id))
@@ -443,6 +450,16 @@ impl RecursiveRetriever {
                         let mut retriever = Retriever::with_connection_pool(
                             config.clone(), progress, tls_pool,
                         );
+                        // H-6: share ONE download registry across all workers.
+                        // With per-worker registries, `is_visited` only knew
+                        // about downloads made by the SAME worker, so the same
+                        // resource could be fetched repeatedly by different
+                        // workers (the queue's string blacklist only blocks
+                        // exact duplicate URLs). Sharing the registry makes
+                        // the visited check cross-worker, and also funnels
+                        // every worker's downloads into the single registry
+                        // used later for link conversion.
+                        retriever.set_shared_registry(shared_registry.clone());
                         let html_extractor = HtmlExtractor;
                         let css_extractor = CssExtractor;
                         let mut robots_cache: HashMap<String, bool> = HashMap::new();

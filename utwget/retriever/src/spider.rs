@@ -113,9 +113,6 @@ impl Spider {
             Err(e) => return Err(e),
         }
 
-        let _registry = self.inner.retriever().download_registry();
-        let _queue = self.inner.retriever().download_registry();
-
         let result = SpiderResult {
             broken_links: self.broken_links.clone(),
             total_checked: self.total_checked,
