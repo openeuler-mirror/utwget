@@ -847,12 +847,22 @@ impl Retriever {
                 }
 
                 // SSRF awareness: warn if redirect targets a private/loopback address.
-                // We do NOT block by default (wget follows all redirects), but warn so
-                // server-side users notice potential SSRF via redirect chains.
-                if let Some(ref host) = std::net::IpAddr::from_str(&redirect_url.host).ok() {
-                    if host.is_loopback() || is_private_ip(host) {
-                        warn!("redirect to private/loopback IP {} (potential SSRF): {}",
-                            host, redirect_url.display());
+                // GNU wget 默认跟随所有重定向（包括私有 IP），保持兼容性不阻断。
+                // 但通过 eprintln! 直接打到 stderr 让用户立即看到 —— 这是一个
+                // 重要的安全信号：如果该 URL 来自不可信来源（如用户输入或上游
+                // 重定向链），SSRF 攻击者可能借此触达云元数据端点（169.254.169.254）、
+                // 内网服务、loopback 上的管理端口。
+                //
+                // 想完全阻断：使用 --https-only + 限定 -D domains，或后续可加
+                // --block-private-redirects 选项（P2 跟进）。
+                if let Some(ref ip) = std::net::IpAddr::from_str(&redirect_url.host).ok() {
+                    if ip.is_loopback() || is_private_ip(ip) {
+                        // 同时打 log 和 stderr，因为 warn! 在 -q 模式下被静音，
+                        // 而 SSRF 是用户应该始终看到的安全信号。
+                        warn!("SSRF risk: redirect targets private/loopback IP {}: {}",
+                            ip, redirect_url.display());
+                        eprintln!("utwget: WARNING: redirect to private/loopback IP {} (potential SSRF): {}",
+                            ip, redirect_url.display());
                     }
                 }
 
