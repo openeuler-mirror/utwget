@@ -208,7 +208,7 @@ impl H2Retriever {
         tls_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
 
         let client = ut_http::h2::H2Client::connect(host, port, tls_config)
-            .map_err(|e| RetrieveError::Protocol(WgetError::Other(
+            .map_err(|e| RetrieveError::Protocol(WgetError::Http2(
                 format!("HTTP/2 connection failed: {}", e)
             )))?;
 
@@ -235,14 +235,14 @@ impl H2Retriever {
 
         // Connect to proxy
         let mut stream = std::net::TcpStream::connect(format!("{}:{}", proxy.host, proxy.port))
-            .map_err(|e| RetrieveError::Protocol(WgetError::Other(
+            .map_err(|e| RetrieveError::Protocol(WgetError::Http2(
                 format!("failed to connect to proxy: {}", e)
             )))?;
 
         // Set connection timeout
         if let Some(timeout) = config.connect_timeout {
             stream.set_read_timeout(Some(timeout))
-                .map_err(|e| RetrieveError::Protocol(WgetError::Other(
+                .map_err(|e| RetrieveError::Protocol(WgetError::Http2(
                     format!("failed to set timeout: {}", e)
                 )))?;
         }
@@ -274,11 +274,11 @@ impl H2Retriever {
         connect_req.push_str("\r\n");
         debug!("CONNECT request: {}", crate::utils::redact_sensitive_headers(connect_req.trim()));
         stream.write_all(connect_req.as_bytes())
-            .map_err(|e| RetrieveError::Protocol(WgetError::Other(
+            .map_err(|e| RetrieveError::Protocol(WgetError::Http2(
                 format!("failed to send CONNECT request: {}", e)
             )))?;
         stream.flush()
-            .map_err(|e| RetrieveError::Protocol(WgetError::Other(
+            .map_err(|e| RetrieveError::Protocol(WgetError::Http2(
                 format!("failed to flush CONNECT request: {}", e)
             )))?;
 
@@ -287,11 +287,11 @@ impl H2Retriever {
         let mut buf = [0u8; 1];
         loop {
             let n = stream.read(&mut buf)
-                .map_err(|e| RetrieveError::Protocol(WgetError::Other(
+                .map_err(|e| RetrieveError::Protocol(WgetError::Http2(
                     format!("failed to read CONNECT response: {}", e)
                 )))?;
             if n == 0 {
-                return Err(RetrieveError::Protocol(WgetError::Other(
+                return Err(RetrieveError::Protocol(WgetError::Http2(
                     "proxy connection closed".into()
                 )));
             }
@@ -312,7 +312,7 @@ impl H2Retriever {
             .nth(1)
             .and_then(|s| s.parse::<u16>().ok());
         if status_code != Some(200) {
-            return Err(RetrieveError::Protocol(WgetError::Other(format!(
+            return Err(RetrieveError::Protocol(WgetError::Http2(format!(
                 "proxy CONNECT failed: {}",
                 status_line
             ))));
@@ -320,12 +320,12 @@ impl H2Retriever {
 
         // Convert std TcpStream to tokio TcpStream for async HTTP/2
         stream.set_nonblocking(true)
-            .map_err(|e| RetrieveError::Protocol(WgetError::Other(
+            .map_err(|e| RetrieveError::Protocol(WgetError::Http2(
                 format!("failed to set nonblocking: {}", e)
             )))?;
 
         let tokio_stream = tokio::net::TcpStream::from_std(stream)
-            .map_err(|e| RetrieveError::Protocol(WgetError::Other(
+            .map_err(|e| RetrieveError::Protocol(WgetError::Http2(
                 format!("failed to convert to tokio stream: {}", e)
             )))?;
 
@@ -338,7 +338,7 @@ impl H2Retriever {
         let tls_connector = tokio_rustls::TlsConnector::from(Arc::new(tls_config));
 
         let server_name = rustls::pki_types::ServerName::try_from(host.to_string())
-            .map_err(|e| RetrieveError::Protocol(WgetError::Other(
+            .map_err(|e| RetrieveError::Protocol(WgetError::Http2(
                 format!("invalid server name: {}", e)
             )))?;
 
@@ -354,7 +354,7 @@ impl H2Retriever {
 
         // Perform HTTP/2 handshake over TLS using the shared runtime
         let (sender, conn) = rt.block_on(ut_http::h2::client::handshake(tls_stream))
-            .map_err(|e| RetrieveError::Protocol(WgetError::Other(
+            .map_err(|e| RetrieveError::Protocol(WgetError::Http2(
                 format!("HTTP/2 handshake failed: {}", e)
             )))?;
 
@@ -367,7 +367,7 @@ impl H2Retriever {
         });
 
         let client = ut_http::h2::H2Client::from_sender(sender)
-            .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("H2 client creation failed: {}", e))))?;
+            .map_err(|e| RetrieveError::Protocol(WgetError::Http2(format!("H2 client creation failed: {}", e))))?;
 
         Ok(H2Retriever {
             client: Some(client),
@@ -401,7 +401,7 @@ impl H2Retriever {
     /// The full HTTP response (status, headers, body).
     pub fn send_request(&mut self, request: &HttpRequest) -> Result<HttpResponse, RetrieveError> {
         let client = self.client.as_mut().ok_or_else(|| {
-            RetrieveError::Protocol(WgetError::Other("HTTP/2 client not available".into()))
+            RetrieveError::Protocol(WgetError::Http2("HTTP/2 client not available".into()))
         })?;
 
         // Convert ut_http request to http crate request
@@ -418,7 +418,7 @@ impl H2Retriever {
             .parse()
             .map_err(|e| {
                 self.reusable = false;
-                RetrieveError::Protocol(WgetError::Other(format!("invalid URI: {}", e)))
+                RetrieveError::Protocol(WgetError::Http2(format!("invalid URI: {}", e)))
             })?;
 
         let builder = http::Request::builder()
@@ -440,14 +440,14 @@ impl H2Retriever {
             .body(())
             .map_err(|e| {
                 self.reusable = false;
-                RetrieveError::Protocol(WgetError::Other(format!("failed to build request: {}", e)))
+                RetrieveError::Protocol(WgetError::Http2(format!("failed to build request: {}", e)))
             })?;
 
         // Send request via HTTP/2
         let (response, _send_stream) = client.send_request(http_request)
             .map_err(|e| {
                 self.reusable = false;
-                RetrieveError::Protocol(WgetError::Other(format!("HTTP/2 request failed: {}", e)))
+                RetrieveError::Protocol(WgetError::Http2(format!("request failed: {}", e)))
             })?;
 
         // Map the real response status and headers.
@@ -479,7 +479,7 @@ impl H2Retriever {
                 if let Ok(cl) = cl_str.trim().parse::<usize>() {
                     if cl > self.max_body_size {
                         self.reusable = false;
-                        return Err(RetrieveError::Protocol(WgetError::Other(format!(
+                        return Err(RetrieveError::Protocol(WgetError::Http2(format!(
                             "HTTP/2 response body is {} bytes (exceeds in-memory cap of {} bytes); falling back to HTTP/1.1 for streaming download",
                             cl, self.max_body_size
                         ))));
@@ -496,7 +496,7 @@ impl H2Retriever {
         let body = client.read_body_limited(&mut response.into_body(), self.max_body_size)
             .map_err(|e| {
                 self.reusable = false;
-                RetrieveError::Protocol(WgetError::Other(format!("HTTP/2 body read failed: {}", e)))
+                RetrieveError::Protocol(WgetError::Http2(format!("body read failed: {}", e)))
             })?;
 
         let mut resp = HttpResponse::new("2.0".to_string(), status, reason);
@@ -540,7 +540,7 @@ struct ProxyConfig {
 fn get_proxy_config(config: &Config) -> Result<ProxyConfig, RetrieveError> {
     let proxy_url = config.proxy.https_proxy.as_ref()
         .or(config.proxy.http_proxy.as_ref())
-        .ok_or_else(|| RetrieveError::Protocol(WgetError::Other(
+        .ok_or_else(|| RetrieveError::Protocol(WgetError::Http2(
             "HTTP/2 requires a proxy but no proxy is configured".into()
         )))?;
 
@@ -625,7 +625,7 @@ pub async fn download_with_http2(
     config: &Config,
 ) -> Result<HttpResponse, RetrieveError> {
     if !should_use_http2(url, config) {
-        return Err(RetrieveError::Protocol(WgetError::Other(
+        return Err(RetrieveError::Protocol(WgetError::Http2(
             "HTTP/2 not applicable for this URL".into()
         )));
     }

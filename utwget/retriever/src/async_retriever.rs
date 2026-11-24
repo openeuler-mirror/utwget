@@ -77,7 +77,7 @@ impl AsyncRetriever {
             retriever.retrieve_with_retry(&url)
         })
         .await
-        .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("task join error: {}", e))))?
+        .map_err(|e| RetrieveError::Protocol(WgetError::TaskJoin(format!("{}", e))))?
     }
 
     /// Download a URL with a custom progress display.
@@ -105,7 +105,7 @@ impl AsyncRetriever {
             retriever.retrieve_with_retry(&url)
         })
         .await
-        .map_err(|e| RetrieveError::Protocol(WgetError::Other(format!("task join error: {}", e))))?
+        .map_err(|e| RetrieveError::Protocol(WgetError::TaskJoin(format!("{}", e))))?
     }
 
     /// Download multiple URLs concurrently.
@@ -133,7 +133,7 @@ impl AsyncRetriever {
 
             let handle = tokio::spawn(async move {
                 let _permit = semaphore.acquire_owned().await
-                    .map_err(|_| RetrieveError::Protocol(WgetError::Other("semaphore closed".into())))?;
+                    .map_err(|_| RetrieveError::Protocol(WgetError::TaskJoin("semaphore closed".into())))?;
                 let url_clone = url.clone();
                 let result = tokio::task::spawn_blocking(move || {
                     let progress = create_silent_progress();
@@ -142,7 +142,7 @@ impl AsyncRetriever {
                 })
                 .await
                 .map_err(|e| {
-                    RetrieveError::Protocol(WgetError::Other(format!("task join error: {}", e)))
+                    RetrieveError::Protocol(WgetError::TaskJoin(format!("{}", e)))
                 })?;
                 Ok::<_, RetrieveError>((url, result))
             });
@@ -155,7 +155,7 @@ impl AsyncRetriever {
                 Ok(Ok((url, result))) => results.push((url, result)),
                 Ok(Err(e)) => results.push(("unknown".to_string(), Err(e))),
                 Err(e) => results.push(("unknown".to_string(), Err(RetrieveError::Protocol(
-                    WgetError::Other(format!("task join error: {}", e)),
+                    WgetError::TaskJoin(format!("{}", e)),
                 )))),
             }
         }
@@ -168,7 +168,7 @@ impl AsyncRetriever {
             .clone()
             .acquire_owned()
             .await
-            .map_err(|_| RetrieveError::Protocol(WgetError::Other("semaphore closed".into())))
+            .map_err(|_| RetrieveError::Protocol(WgetError::TaskJoin("semaphore closed".into())))
     }
 
     /// Get the shared configuration.

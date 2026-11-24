@@ -267,7 +267,7 @@ impl App {
                     if path.is_file() {
                         match self.read_html_file_urls(&path) {
                             Ok(file_urls) => force_html_urls.push((url.clone(), file_urls)),
-                            Err(_) => return Err(WgetError::Other(format!("failed to read HTML input file: {}", url))),
+                            Err(_) => return Err(WgetError::ProtocolIo(format!("failed to read HTML input file: {}", url))),
                         }
                     }
                 }
@@ -292,7 +292,7 @@ impl App {
                                     all_urls.push(trimmed.to_string());
                                 }
                             }
-                            Err(e) => return Err(WgetError::Other(format!("error reading input file: {}", e))),
+                            Err(e) => return Err(WgetError::ProtocolIo(format!("error reading input file: {}", e))),
                         }
                     }
                 }
@@ -521,7 +521,7 @@ impl App {
             .worker_threads(concurrency.min(num_cpus::get()))
             .enable_all()
             .build()
-            .map_err(|e| WgetError::Other(format!("failed to create tokio runtime: {}", e)))?;
+            .map_err(|e| WgetError::TaskJoin(format!("failed to create tokio runtime: {}", e)))?;
 
         runtime.block_on(async {
             // Create async retriever with concurrency limit
@@ -885,7 +885,7 @@ impl App {
             for url_str in urls {
                 // Download and check for Metalink headers
                 let parsed = ParsedUrl::parse(url_str)
-                    .map_err(|e| WgetError::Other(format!("URL parse error: {}", e)))?;
+                    .map_err(|e| WgetError::UrlParse(format!("{}", e)))?;
 
                 match self.retriever.retrieve(&parsed.display_with_credentials()) {
                     Ok(RetrieveOutcome::Success(body_result)) => {
@@ -914,7 +914,7 @@ impl App {
         // Process URLs as Metalink files directly
         for url_str in urls {
             let parsed = ParsedUrl::parse(url_str)
-                .map_err(|e| WgetError::Other(format!("URL parse error: {}", e)))?;
+                .map_err(|e| WgetError::UrlParse(format!("{}", e)))?;
 
             match self.retriever.retrieve(&parsed.display_with_credentials()) {
                 Ok(RetrieveOutcome::Success(body_result)) => {
@@ -962,11 +962,11 @@ impl App {
         }
 
         let file = fs::File::open(metalink_path)
-            .map_err(|e| WgetError::Other(format!("cannot open metalink file: {}", e)))?;
+            .map_err(|e| WgetError::MetalinkParse(format!("cannot open metalink file: {}", e)))?;
         let reader = std::io::BufReader::new(file);
 
         let metalink_files = MetalinkParser::parse(reader)
-            .map_err(|e| WgetError::Other(format!("metalink parse error: {}", e)))?;
+            .map_err(|e| WgetError::MetalinkParse(format!("parse error: {}", e)))?;
 
         if self.config.verbose >= 1 {
             eprintln!("Found {} file(s) in Metalink", metalink_files.len());
@@ -1055,7 +1055,7 @@ impl App {
         let opts = ut_html::url_position::ExtractOptions::default();
         let mut cursor = Cursor::new(content.as_bytes());
         let links = ut_html::ContentExtractor::extract_urls(&extractor, &mut cursor, "", &opts)
-            .map_err(|e| WgetError::Other(format!("HTML parse error: {}", e)))?;
+            .map_err(|e| WgetError::ProtocolIo(format!("HTML parse error: {}", e)))?;
         Ok(links.into_iter().map(|l| l.url).collect())
     }
 

@@ -125,6 +125,30 @@ pub enum WgetError {
     #[error("configuration error: {0}")]
     Config(#[from] ConfigError),
 
+    /// DNS resolution failure (hostname could not be resolved).
+    #[error("DNS resolution error: {0}")]
+    DnsResolution(String),
+
+    /// DNS resolution timed out.
+    #[error("DNS resolution timeout")]
+    DnsTimeout,
+
+    /// Async task join error (tokio spawn_blocking / spawn task panicked or was cancelled).
+    #[error("task join error: {0}")]
+    TaskJoin(String),
+
+    /// Protocol-level I/O error during HTTP/FTP request/response read/write.
+    #[error("protocol I/O error: {0}")]
+    ProtocolIo(String),
+
+    /// HTTP/2 specific error (h2 stream, HPACK, etc.).
+    #[error("HTTP/2 error: {0}")]
+    Http2(String),
+
+    /// FTP I/O error (connection, data transfer, control channel).
+    #[error("FTP I/O error: {0}")]
+    FtpIo(String),
+
     /// Generic error with message.
     #[error("{0}")]
     Other(String),
