@@ -289,7 +289,8 @@ pub fn get_xattr(path: &Path, name: &str) -> io::Result<Option<String>> {
     use std::ffi::CString;
     use std::os::unix::ffi::OsStringExt;
 
-    let key = CString::new(format!("user.{}", name)).unwrap();
+    let key = CString::new(format!("user.{}", name))
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("xattr name contains NUL byte: {}", e)))?;
     let path_c = CString::new(path.as_os_str().to_os_string().into_vec())
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
