@@ -1,6 +1,7 @@
 use std::fmt;
 
-/// WARC record types as defined in the WARC 1.1 specification.
+/// WARC record types as defined in the WARC 1.0 specification (ISO 28500),
+/// the version written by GNU wget 1.21.
 ///
 /// Each record type serves a specific purpose in web archiving:
 /// - `Warcinfo`: Metadata about the WARC file itself
@@ -48,8 +49,8 @@ impl fmt::Display for WarcRecordType {
 /// WARC record header containing all mandatory and optional fields.
 ///
 /// This struct represents the header portion of a WARC record, following
-/// the WARC 1.1 specification format. Headers are serialized to the
-/// WARC format with CRLF line endings.
+/// the WARC 1.0 specification format (as written by GNU wget). Headers are
+/// serialized to the WARC format with CRLF line endings.
 ///
 /// # Fields
 ///
@@ -94,7 +95,7 @@ pub struct WarcHeader {
 impl WarcHeader {
     /// Serializes the header to WARC format bytes.
     ///
-    /// Converts the header fields to the WARC 1.1 format with CRLF line endings.
+    /// Converts the header fields to the WARC 1.0 format with CRLF line endings.
     /// The output includes the WARC version line followed by all header fields
     /// in the standard format, ending with two CRLF sequences to separate
     /// the header from the content block.
@@ -107,7 +108,7 @@ impl WarcHeader {
     ///
     /// The output format is:
     /// ```text
-    /// WARC/1.1\r\n
+    /// WARC/1.0\r\n
     /// WARC-Type: <type>\r\n
     /// WARC-Date: <date>\r\n
     /// WARC-Record-ID: <id>\r\n
@@ -131,7 +132,7 @@ impl WarcHeader {
 
         let mut lines: Vec<String> = Vec::new();
 
-        lines.push("WARC/1.1".to_string());
+        lines.push(WARC_VERSION.to_string());
         lines.push(format!("WARC-Type: {}", self.record_type));
         lines.push(format!("WARC-Date: {}", sanitize(&self.date)));
         lines.push(format!("WARC-Record-ID: {}", sanitize(&self.record_id)));
@@ -173,48 +174,32 @@ impl WarcHeader {
 ///
 /// This constant defines the WARC specification version used in the
 /// version line of each WARC record header.
-pub const WARC_VERSION: &str = "WARC/1.1";
+pub const WARC_VERSION: &str = "WARC/1.0";
 
-/// Returns the default content type for WARC records.
+/// Returns the content type for WARC warcinfo records.
 ///
-/// The content type depends on whether gzip compression is enabled:
-/// - With gzip: `application/gzip`
-/// - Without gzip: `application/http;msgtype=response`
+/// Per ISO 28500 §5.6 and GNU wget (warc.c:796), warcinfo records use
+/// `application/warc-fields` regardless of file compression — with
+/// `--warc-compression` the whole record (header + block) becomes one gzip
+/// member, so the block itself is not individually compressed.
+pub fn warcinfo_content_type() -> &'static str {
+    "application/warc-fields"
+}
+
+/// Returns the content type for WARC Response records.
 ///
-/// # Arguments
-///
-/// * `gzip` - Whether gzip compression is enabled for the WARC file.
-///
-/// # Returns
-///
-/// A static string slice containing the appropriate MIME type.
-pub fn default_content_type(gzip: bool) -> &'static str {
-    if gzip {
-        "application/gzip"
-    } else {
-        "application/http;msgtype=response"
-    }
+/// Per ISO 28500 §5.7 and GNU wget (warc.c:1556), response records use
+/// `application/http;msgtype=response` regardless of file compression.
+pub fn response_content_type() -> &'static str {
+    "application/http;msgtype=response"
 }
 
 /// Returns the content type for WARC Request records.
 ///
-/// Per ISO 28500 §5.10, Request records use `application/http;msgtype=request`
-/// (not `msgtype=response`). When gzip is enabled, the content type is
-/// `application/gzip` (the payload is compressed, not the HTTP message).
-///
-/// # Arguments
-///
-/// * `gzip` - Whether gzip compression is enabled for the WARC file.
-///
-/// # Returns
-///
-/// A static string slice containing the appropriate MIME type.
-pub fn request_content_type(gzip: bool) -> &'static str {
-    if gzip {
-        "application/gzip"
-    } else {
-        "application/http;msgtype=request"
-    }
+/// Per ISO 28500 §5.10 and GNU wget, request records use
+/// `application/http;msgtype=request` (not `msgtype=response`).
+pub fn request_content_type() -> &'static str {
+    "application/http;msgtype=request"
 }
 
 /// Returns the WARC record separator sequence.

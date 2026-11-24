@@ -1092,7 +1092,7 @@ fn test_warc_writer_create_and_close() {
         assert!(!writer.timestamp().is_empty());
     }
     let content = std::fs::read_to_string(&path).unwrap();
-    assert!(content.contains("WARC/1.1"));
+    assert!(content.contains("WARC/1.0"));
     assert!(content.contains("warcinfo"));
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -1121,7 +1121,7 @@ fn test_warc_writer_write_resource() {
 fn test_warc_sha1_known_vector() {
     use ut_warc::digest::compute_sha1;
     let hash = compute_sha1(b"");
-    assert_eq!(hash, "sha1:da39a3ee5e6b4b0d3255bfef95601890afd80709");
+    assert_eq!(hash, "sha1:3i42h3s6nnfq2msvx7xzkyayscx5qbyj"); // base32(sha1("")) per GNU wget
 }
 
 #[test]
@@ -1129,7 +1129,8 @@ fn test_warc_sha1_nonempty() {
     use ut_warc::digest::compute_sha1;
     let hash = compute_sha1(b"abc");
     assert!(hash.starts_with("sha1:"));
-    assert_eq!(hash.len(), 45);
+    // base32 of a 20-byte SHA1 = 32 chars + "sha1:" prefix
+    assert_eq!(hash.len(), 37);
 }
 
 // ========== WARC 格式序列化测试 ==========
@@ -1153,7 +1154,7 @@ fn test_warc_header_serialize() {
     };
     let bytes = header.serialize();
     let text = String::from_utf8(bytes).unwrap();
-    assert!(text.starts_with("WARC/1.1\r\n"));
+    assert!(text.starts_with("WARC/1.0\r\n"));
     assert!(text.contains("WARC-Type: response\r\n"));
     assert!(text.contains("WARC-Target-URI: http://example.com/\r\n"));
     assert!(text.contains("Content-Length: 100\r\n"));
@@ -1182,18 +1183,22 @@ fn test_warc_cdx_entries() {
     {
         let mut writer = WarcWriterImpl::new(path.clone(), false, false, None, true).unwrap();
         let now = chrono::Utc::now();
-        writer.write_resource("http://example.com/index.html", "text/html", b"<html></html>", now).unwrap();
+        // GNU wget only indexes response records in the CDX (warc.c:1563).
+        writer.write_response("http://example.com/index.html", 200, b"", b"<html></html>", "text/html", now).unwrap();
     }
     let cdx_path = dir.join("test_cdx.warc.cdx");
     assert!(cdx_path.exists());
     let cdx_content = std::fs::read_to_string(&cdx_path).unwrap();
     let lines: Vec<&str> = cdx_content.lines().collect();
     assert!(!lines.is_empty());
-    // First line is warcinfo (URL is "-"), second line is the resource
-    let resource_line = lines.iter().find(|l| l.starts_with("http://")).expect("should have resource entry");
+    // First line is the CDX header, second line is the response record entry
+    assert_eq!(lines[0], " CDX a b a m s k r M V g u");
+    let resource_line = lines.iter().find(|l| l.starts_with("http://")).expect("should have response entry");
     let fields: Vec<&str> = resource_line.split(' ').collect();
-    assert!(fields.len() >= 10);
+    // wget CDX line: url ts url mime response_code checksum redirect - offset filename uuid
+    assert_eq!(fields.len(), 11);
     assert_eq!(fields[0], "http://example.com/index.html");
+    assert_eq!(fields[4], "200");
     let _ = std::fs::remove_dir_all(&dir);
 }
 

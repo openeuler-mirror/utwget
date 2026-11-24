@@ -7,7 +7,10 @@ use flate2::write::GzEncoder;
 use flate2::Compression;
 
 use crate::digest::compute_sha1;
-use crate::format::{default_content_type, request_content_type, record_separator, WarcHeader, WarcRecordType};
+use crate::format::{
+    record_separator, request_content_type, response_content_type, warcinfo_content_type,
+    WarcHeader, WarcRecordType,
+};
 use crate::{format_date, format_record_id, generate_uuid_v4, Result, WarcError};
 
 /// Open a file for writing with 0600 permissions (owner-only) to protect
@@ -73,6 +76,9 @@ pub struct WarcWriterImpl {
     /// The collection UUID for isPartOf (generated once per writer, reused
     /// across all warcinfo records in this WARC set, per ISO 28500).
     collection_id: String,
+    /// Start offset of the most recently written record in the current file
+    /// (compressed offset when gzip is enabled) — the CDX `offset` field.
+    last_record_offset: u64,
 }
 
 /// Returns a standard HTTP reason phrase for the given status code.
@@ -193,6 +199,7 @@ impl WarcWriterImpl {
             base_path,
             user_headers,
             collection_id,
+            last_record_offset: 0,
         };
         writer.open_file()?;
         Ok(writer)
@@ -201,8 +208,8 @@ impl WarcWriterImpl {
     /// Opens a new WARC file for writing.
     ///
     /// Increments the file counter and creates a new file with the appropriate
-    /// name and extension. If gzip is enabled, wraps the file in a GzEncoder.
-    /// Writes the warcinfo record as the first record in the file.
+    /// name and extension. Writes a warcinfo record as the first record in
+    /// every file, matching GNU wget (warc.c warc_start_new_file).
     ///
     /// # Errors
     ///
@@ -231,18 +238,12 @@ impl WarcWriterImpl {
         self.filename = path.to_string_lossy().to_string();
 
         let raw = create_restricted_file(&path).map_err(WarcError::Io)?;
-        let boxed: Box<dyn Write + Send> = if self.gzip_enabled {
-            Box::new(GzEncoder::new(raw, Compression::default()))
-        } else {
-            Box::new(raw)
-        };
-
-        self.file = Some(boxed);
+        self.file = Some(Box::new(raw));
         self.current_size = 0;
 
-        if self.file_counter == 1 {
-            self.write_warcinfo()?;
-        }
+        // GNU wget writes a warcinfo record at the start of EVERY file in
+        // the WARC set (warc.c warc_start_new_file), not just the first.
+        self.write_warcinfo()?;
 
         Ok(())
     }
@@ -251,52 +252,45 @@ impl WarcWriterImpl {
     ///
     /// The warcinfo record contains metadata about the WARC file including
     /// software version, format specification, and any user-defined headers.
+    /// Content-Type is `application/warc-fields` and the format version is
+    /// `WARC File Format 1.0`, matching GNU wget (warc.c:796,806). The
+    /// warcinfo record is not added to the CDX index (wget only indexes
+    /// response records).
     ///
     /// # Errors
     ///
     /// Returns `WarcError::Io` if writing fails.
     fn write_warcinfo(&mut self) -> Result<()> {
         let now = Utc::now();
-        let mut body = format!(
+        let body = format!(
             "software: wget-rs/0.1.0\r\n\
-             format: WARC File Format 1.1\r\n\
+             format: WARC File Format 1.0\r\n\
              isPartOf: <urn:uuid:{}>\r\n",
             self.collection_id
         );
+        let mut body_bytes = body.into_bytes();
         // Add user-defined headers
         for user_header in &self.user_headers {
-            body.push_str(user_header);
-            body.push_str("\r\n");
+            body_bytes.extend_from_slice(user_header.as_bytes());
+            body_bytes.extend_from_slice(b"\r\n");
         }
-        let body_bytes = body.as_bytes();
-        let content = if self.gzip_enabled {
-            let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-            encoder.write_all(body_bytes).map_err(WarcError::Io)?;
-            encoder.finish().map_err(WarcError::Io)?
-        } else {
-            body_bytes.to_vec()
-        };
 
         let header = WarcHeader {
             record_type: WarcRecordType::Warcinfo,
             record_id: format_record_id()?,
             date: format_date(now),
-            content_length: content.len() as u64,
+            content_length: body_bytes.len() as u64,
             concurrent_to: Vec::new(),
-            content_type: default_content_type(self.gzip_enabled).to_string(),
+            content_type: warcinfo_content_type().to_string(),
             target_uri: String::new(),
             gzip_compressed: self.gzip_enabled,
             truncated: None,
             wagon: None,
             payload_digest: None,
-            block_digest: self.block_digest_for(content.as_slice()),
+            block_digest: self.block_digest_for(body_bytes.as_slice()),
         };
 
-        self.write_record(&header, &content)?;
-
-        if self.cdx_enabled {
-            self.add_cdx_entry(&header, body_bytes.len(), "");
-        }
+        self.write_record(&header, &body_bytes)?;
 
         Ok(())
     }
@@ -304,12 +298,18 @@ impl WarcWriterImpl {
     /// Writes a WARC record to the current file.
     ///
     /// Checks if the record would exceed the maximum file size and rotates
-    /// the file if necessary. Writes the header, content, and record separator.
+    /// the file if necessary. With gzip enabled the ENTIRE record (header +
+    /// content block + separator) is written as a single gzip member —
+    /// matching GNU wget (warc.c warc_write_start_record / end_record, "We
+    /// start a new gzip stream for each record") — so a `.warc.gz` file is a
+    /// valid multi-member gzip stream and `Content-Length` counts the
+    /// *uncompressed* block size. Without gzip the record is written as-is.
     ///
     /// # Arguments
     ///
-    /// * `header` - The WARC header to write
-    /// * `content` - The content block bytes
+    /// * `header` - The WARC header to write (`content_length` must be the
+    ///   uncompressed block size)
+    /// * `content` - The uncompressed content block bytes
     ///
     /// # Errors
     ///
@@ -323,14 +323,33 @@ impl WarcWriterImpl {
             }
         }
 
+        // The record's start offset in the file (compressed offset when gzip
+        // is enabled) — used as the CDX `offset` field, matching wget's
+        // ftello(warc_current_file) semantics.
+        self.last_record_offset = self.current_size;
+
         let header_bytes = header.serialize();
-        if let Some(ref mut f) = self.file {
+        if self.gzip_enabled {
+            // One gzip member per record: header + block + separator go
+            // through the compressor together (warc.c warc_write_buffer).
+            let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+            encoder.write_all(&header_bytes).map_err(WarcError::Io)?;
+            encoder.write_all(content).map_err(WarcError::Io)?;
+            encoder
+                .write_all(record_separator())
+                .map_err(WarcError::Io)?;
+            let member = encoder.finish().map_err(WarcError::Io)?;
+            if let Some(ref mut f) = self.file {
+                f.write_all(&member).map_err(WarcError::Io)?;
+            }
+            self.current_size += member.len() as u64;
+        } else if let Some(ref mut f) = self.file {
             f.write_all(&header_bytes).map_err(WarcError::Io)?;
             f.write_all(content).map_err(WarcError::Io)?;
             f.write_all(record_separator()).map_err(WarcError::Io)?;
+            self.current_size += header_bytes.len() as u64 + content.len() as u64 + 4;
         }
 
-        self.current_size += header_bytes.len() as u64 + content.len() as u64 + 4;
         Ok(())
     }
 
@@ -347,28 +366,11 @@ impl WarcWriterImpl {
         self.open_file()
     }
 
-    /// Builds the response record payload.
-    ///
-    /// Constructs a payload containing the request line, headers, and response
-    /// status line, headers, and body in the WARC response record format.
-    ///
-    /// # Arguments
-    ///
-    /// * `url` - The request URL
-    /// * `status_code` - The HTTP response status code
-    /// * `headers` - The HTTP headers (both request and response)
-    /// * `body` - The response body bytes
-    ///
-    /// # Returns
-    ///
-    /// A byte vector containing the formatted response payload.
     /// Build the WARC response record payload.
     ///
     /// GNU wget stores only the actual HTTP response (status line + response
     /// headers + body) in the response record. The request is a separate
-    /// *request* record. The previous implementation fabricated a fake
-    /// request line and duplicated the headers block, producing malformed
-    /// response records.
+    /// *request* record.
     fn build_response_payload(_url: &str, status_code: u16, headers: &[u8], body: &[u8]) -> Vec<u8> {
         let crlf: &[u8] = b"\r\n";
         let mut payload = Vec::new();
@@ -389,74 +391,73 @@ impl WarcWriterImpl {
         payload
     }
 
-    /// Compresses the payload if gzip is enabled.
-    ///
-    /// # Arguments
-    ///
-    /// * `data` - The data to potentially compress
-    ///
-    /// # Returns
-    ///
-    /// A `Result` containing the compressed data if gzip is enabled,
-    /// or the original data if not.
-    ///
-    /// # Errors
-    ///
-    /// Returns `WarcError::Io` if compression fails.
-    fn compress_payload(&self, data: &[u8]) -> Result<Vec<u8>> {
-        if self.gzip_enabled {
-            let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-            encoder.write_all(data).map_err(WarcError::Io)?;
-            encoder.finish().map_err(WarcError::Io)
-        } else {
-            Ok(data.to_vec())
-        }
-    }
-
     /// Adds an entry to the CDX index.
     ///
-    /// CDX is a compact index format for WARC files, containing one line
-    /// per record with URL, timestamp, MIME type, and other metadata.
+    /// Reproduces GNU wget's CDX line format exactly (warc.c:1412-1416):
+    ///
+    /// ```text
+    /// url ts url mime response_code checksum redirect - offset filename record_uuid
+    /// ```
+    ///
+    /// where `ts` is the 14-digit timestamp (`YYYYmmddHHMMSS`), `checksum` is
+    /// the payload digest with the `sha1:` prefix stripped (warc.c:1400-1403),
+    /// and `offset` is the record's start offset in the (possibly compressed)
+    /// WARC file. Only response records are indexed (warc.c:1563-1566).
     ///
     /// # Arguments
     ///
-    /// * `header` - The WARC header for the record
-    /// * `body_len` - The length of the uncompressed body
-    /// * `digest` - The SHA-1 digest string (or empty if not computed)
-    fn add_cdx_entry(&mut self, header: &WarcHeader, body_len: usize, digest: &str) {
+    /// * `header` - The WARC header of the response record
+    /// * `mime` - The MIME type of the response body ("-" if unknown)
+    /// * `response_code` - The HTTP response status code
+    /// * `redirect` - The redirect Location value (empty = "-")
+    /// * `payload_digest` - The `sha1:<base32>` payload digest (empty = "-")
+    fn add_cdx_entry(
+        &mut self,
+        header: &WarcHeader,
+        mime: &str,
+        response_code: u16,
+        redirect: &str,
+        payload_digest: &str,
+    ) {
         let url = if header.target_uri.is_empty() {
             "-".to_string()
         } else {
             header.target_uri.clone()
         };
-        let ts = header
+        // 14-digit CDX timestamp: "YYYY-mm-ddTHH:MM:SSZ" → "YYYYmmddHHMMSS"
+        // (warc.c:1384-1394 strips '-', 'T', ':' and the trailing 'Z').
+        let ts: String = header
             .date
-            .replace('-', "")
-            .replace(':', "")
-            .replace('T', "")
-            .replace('Z', "");
-        let mime = if header.content_type.contains(';') {
-            header.content_type.split(';').next().unwrap_or("-")
+            .chars()
+            .filter(|c| c.is_ascii_digit())
+            .collect();
+        let ts = ts[..14].to_string();
+        let mime = if mime.trim().is_empty() {
+            "-"
         } else {
-            &header.content_type
+            mime.trim()
         };
-        let digest_str = if digest.is_empty() {
+        let checksum = payload_digest
+            .strip_prefix("sha1:")
+            .unwrap_or("-")
+            .to_string();
+        let redirect = if redirect.trim().is_empty() {
             "-".to_string()
         } else {
-            digest.to_string()
+            redirect.trim().to_string()
         };
         let line = format!(
-            "{} {} {} {} {} {} {} - - {} {} {}",
+            "{} {} {} {} {} {} {} - {} {} {}",
             url,
             ts,
-            "-",
-            mime.trim(),
-            body_len,
-            "-",
+            url,
+            mime,
+            response_code,
+            checksum,
+            redirect,
+            self.last_record_offset,
+            self.filename,
             header.record_id,
-            "-",
-            "-",
-            digest_str,
         );
         self.cdx_entries.push(line);
     }
@@ -507,7 +508,7 @@ impl WarcWriterImpl {
     }
     /// Compute the `WARC-Payload-Digest` header value for a payload.
     ///
-    /// Returns `Some("sha1:<hex>")` when digest computation is enabled, or
+    /// Returns `Some("sha1:<base32>")` when digest computation is enabled, or
     /// `None` otherwise. The digest is computed over the *uncompressed*
     /// payload (the original content), matching WARC §5.10.
     fn payload_digest_for(&self, payload: &[u8]) -> Option<String> {
@@ -577,23 +578,21 @@ impl WarcWriterImpl {
         payload.extend_from_slice(crlf);
         payload.extend_from_slice(body);
 
-        let content = self.compress_payload(&payload)?;
-        let digest = compute_sha1(&payload);
+        // GNU wget's request records carry no digests and use
+        // application/http;msgtype=request regardless of compression
+        // (warc.c warc_write_request_record); the record itself is
+        // compressed as a whole at the write_record level.
         let header = self.make_header(
             WarcRecordType::Request,
             url,
-            request_content_type(self.gzip_enabled),
-            content.len() as u64,
+            request_content_type(),
+            payload.len() as u64,
             format_date(date),
-            self.payload_digest_for(&payload),
-            self.block_digest_for(&content),
+            None,
+            self.block_digest_for(&payload),
         )?;
 
-        self.write_record(&header, &content)?;
-
-        if self.cdx_enabled {
-            self.add_cdx_entry(&header, payload.len(), &digest);
-        }
+        self.write_record(&header, &payload)?;
 
         Ok(())
     }
@@ -629,22 +628,25 @@ impl WarcWriterImpl {
         date: chrono::DateTime<Utc>,
     ) -> Result<()> {
         let payload = Self::build_response_payload(url, status_code, headers, body);
-        let content = self.compress_payload(&payload)?;
-        let digest = compute_sha1(&payload);
+        // Content-Type is always application/http;msgtype=response for
+        // response records (warc.c:1556); the entity MIME goes to the CDX
+        // index instead (warc.c:1563-1566).
         let header = self.make_header(
             WarcRecordType::Response,
             url,
-            content_type,
-            content.len() as u64,
+            response_content_type(),
+            payload.len() as u64,
             format_date(date),
-            self.payload_digest_for(&payload),
-            self.block_digest_for(&content),
+            // WARC-Payload-Digest covers the response BODY only
+            // (warc_sha1_stream_with_payload, warc.c:1508-1510).
+            self.payload_digest_for(body),
+            self.block_digest_for(&payload),
         )?;
 
-        self.write_record(&header, &content)?;
+        self.write_record(&header, &payload)?;
 
         if self.cdx_enabled {
-            self.add_cdx_entry(&header, payload.len(), &digest);
+            self.add_cdx_entry(&header, content_type, status_code, "", &compute_sha1(body));
         }
 
         Ok(())
@@ -676,23 +678,17 @@ impl WarcWriterImpl {
         body: &[u8],
         date: chrono::DateTime<Utc>,
     ) -> Result<()> {
-        let content = self.compress_payload(body)?;
-        let digest = compute_sha1(body);
         let header = self.make_header(
             WarcRecordType::Resource,
             url,
             content_type,
-            content.len() as u64,
+            body.len() as u64,
             format_date(date),
             self.payload_digest_for(body),
-            self.block_digest_for(&content),
+            self.block_digest_for(body),
         )?;
 
-        self.write_record(&header, &content)?;
-
-        if self.cdx_enabled {
-            self.add_cdx_entry(&header, body.len(), &digest);
-        }
+        self.write_record(&header, body)?;
 
         Ok(())
     }
@@ -724,23 +720,18 @@ impl WarcWriterImpl {
         date: chrono::DateTime<Utc>,
     ) -> Result<()> {
         let meta_bytes = metadata.as_bytes();
-        let content = self.compress_payload(meta_bytes)?;
         let mut header = self.make_header(
             WarcRecordType::Metadata,
             url,
             "application/warc-fields",
-            content.len() as u64,
+            meta_bytes.len() as u64,
             format_date(date),
             None,
-            self.block_digest_for(&content),
+            self.block_digest_for(meta_bytes),
         )?;
         header.concurrent_to = concurrent_to.to_vec();
 
-        self.write_record(&header, &content)?;
-
-        if self.cdx_enabled {
-            self.add_cdx_entry(&header, meta_bytes.len(), "");
-        }
+        self.write_record(&header, meta_bytes)?;
 
         Ok(())
     }
@@ -791,32 +782,21 @@ impl WarcWriterImpl {
         url: &str,
         content_type: &str,
         date: chrono::DateTime<Utc>,
-        digest_enabled: bool,
+        _digest_enabled: bool,
     ) -> Result<()> {
         let data = fs::read(temp_path).map_err(WarcError::Io)?;
 
-        let digest = if digest_enabled || self.digest_enabled {
-            compute_sha1(&data)
-        } else {
-            String::new()
-        };
-
-        let content = self.compress_payload(&data)?;
         let header = self.make_header(
             WarcRecordType::Resource,
             url,
             content_type,
-            content.len() as u64,
+            data.len() as u64,
             format_date(date),
             self.payload_digest_for(&data),
-            self.block_digest_for(&content),
+            self.block_digest_for(&data),
         )?;
 
-        self.write_record(&header, &content)?;
-
-        if self.cdx_enabled {
-            self.add_cdx_entry(&header, data.len(), &digest);
-        }
+        self.write_record(&header, &data)?;
 
         let _ = fs::remove_file(temp_path);
         Ok(())
@@ -871,13 +851,8 @@ impl WarcWriterImpl {
         self.current_size = 0;
 
         let raw = create_restricted_file(&path).map_err(WarcError::Io)?;
-        let boxed: Box<dyn Write + Send> = if self.gzip_enabled {
-            Box::new(GzEncoder::new(raw, Compression::default()))
-        } else {
-            Box::new(raw)
-        };
-
-        self.file = Some(boxed);
+        self.file = Some(Box::new(raw));
+        self.current_size = 0;
         self.cdx_entries.clear();
         self.write_warcinfo()?;
 
@@ -902,6 +877,10 @@ impl WarcWriterImpl {
         if self.cdx_enabled && !self.cdx_entries.is_empty() {
             let cdx_name = format!("{}.cdx", self.filename);
             let mut cdx_file = create_restricted_file(Path::new(&cdx_name)).map_err(WarcError::Io)?;
+            // CDX header line, matching GNU wget (warc.c:938).
+            cdx_file
+                .write_all(b" CDX a b a m s k r M V g u\n")
+                .map_err(WarcError::Io)?;
             let newline: &[u8] = b"\n";
             for entry in &self.cdx_entries {
                 cdx_file
