@@ -27,11 +27,15 @@ pub trait Transport {
     /// Return the remote peer address, if available.
     fn peer_addr(&self) -> Result<std::net::SocketAddr, Self::Error>;
 
-    /// Provide a mutable reference as `&mut dyn Any` for downcasting.
+    /// Provide a mutable reference as `Option<&mut dyn Any>` for downcasting.
     /// This allows `read_line_from` to detect and use `BufferedTransport`
     /// for line-aware reads that preserve leftover bytes.
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        unimplemented!("as_any_mut not implemented for this Transport")
+    ///
+    /// 默认返回 `None`，downcast 失败时 `read_line_from` 回退到普通 read。
+    /// 之前是 `unimplemented!()` 会在非 `BufferedTransport` 的 Transport 上
+    /// 调用 `read_line_from` 时 panic。
+    fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
+        None
     }
 }
 
@@ -116,8 +120,8 @@ impl Transport for BufferedTransport {
         self.inner.peer_addr()
     }
 
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
+    fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
+        Some(self)
     }
 }
 
@@ -250,10 +254,12 @@ impl FtpResponse {
         // If the transport is a BufferedTransport, use its line-aware read
         // which preserves leftover bytes. Otherwise, fall back to the
         // direct read (which may lose bytes after \n on multi-line responses).
-        if let Some(buf) = transport.as_any_mut().downcast_mut::<BufferedTransport>() {
-            let line_bytes = buf.read_line_buffered()?;
-            return String::from_utf8(line_bytes)
-                .map_err(|e| FtpCommandError::Io(io::Error::new(io::ErrorKind::InvalidData, e.to_string())));
+        if let Some(any) = transport.as_any_mut() {
+            if let Some(buf) = any.downcast_mut::<BufferedTransport>() {
+                let line_bytes = buf.read_line_buffered()?;
+                return String::from_utf8(line_bytes)
+                    .map_err(|e| FtpCommandError::Io(io::Error::new(io::ErrorKind::InvalidData, e.to_string())));
+            }
         }
 
         // Legacy path for non-buffered transports (e.g. in tests).
