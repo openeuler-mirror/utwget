@@ -55,17 +55,11 @@ static DNS_CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap
 /// DNS cache entry TTL (seconds).
 const DNS_CACHE_TTL: Duration = Duration::from_secs(60);
 
-/// Counter for detached DNS resolver threads (threads that timed out and
-/// are still running in the background). Used to warn about potential
-/// unbounded thread growth during recursive crawls with DNS timeouts.
-static DETACHED_DNS_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-
-/// Decremented when a previously-detached DNS thread finishes. Since we
-/// cannot actually track this (the thread is detached), this is a no-op
-/// placeholder for future enhancement. The count only grows during a session.
-/// In practice, DNS cache hits (60s TTL) prevent most repeated lookups, so
-/// detached threads are bounded by the number of *distinct* hosts that time
-/// out within a 60s window.
+// 2026-09-09: DETACHED_DNS_COUNT 计数器 + watchdog 线程已删除。
+// 原 DNS 超时实现用 3 线程拼装（resolver + 主线程 + watchdog），现简化为
+// 单 resolver 线程 + channel。timeout 时 resolver 线程被 detach，
+// to_socket_addrs() 返回后线程自然退出，channel send 失败被静默丢弃。
+// 不再需要全局计数器跟踪 detached 线程。
 
 fn dns_cache() -> &'static std::sync::Mutex<std::collections::HashMap<(String, u16), (Vec<std::net::SocketAddr>, Instant)>> {
     DNS_CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
@@ -1896,60 +1890,35 @@ impl Retriever {
             addresses
         } else {
             let addrs = if let Some(dns_timeout) = self.config.dns_timeout.or(self.config.timeout) {
-                // Use a background thread with channel-based timeout for DNS resolution
+                // DNS resolution with timeout using a single background thread + channel.
+                // 代码审查 P2 #3.4：简化原三线程拼装（resolver + watchdog + 主线程）
+                // 为单 resolver 线程。timeout 时直接 detach resolver 线程
+                // （to_socket_addrs 最终会返回，channel send 失败被静默丢弃），
+                // 不再维护 DETACHED_DNS_COUNT 计数器 + watchdog 线程。
                 let host_owned = host.to_string();
                 let (tx, rx) = std::sync::mpsc::channel();
 
-                // Spawn thread and track handle for cleanup
-                let handle = std::thread::Builder::new()
+                let _handle = std::thread::Builder::new()
                     .name(format!("dns-resolve-{}", host))
                     .spawn(move || {
                         let result = (host_owned.as_str(), port).to_socket_addrs();
-                        let _ = tx.send(result);
+                        let _ = tx.send(result); // receiver 可能已超时 drop，send 失败被静默忽略
                     })
                     .map_err(|e| RetrieveError::Protocol(WgetError::Other(
                         format!("failed to spawn DNS thread: {}", e)
                     )))?;
 
+                // 等待结果或超时。timeout 时 _handle 被 drop（线程 detach），
+                // resolver 线程会在 to_socket_addrs 返回后自然退出，无内存泄漏。
                 match rx.recv_timeout(dns_timeout) {
-                    Ok(Ok(addrs)) => {
-                        // DNS resolved successfully, thread will exit naturally
-                        let _ = handle.join(); // Wait for thread to clean up
-                        addrs
-                    }
+                    Ok(Ok(addrs)) => addrs,
                     Ok(Err(e)) => {
-                        let _ = handle.join(); // Wait for thread to clean up
                         return Err(RetrieveError::Protocol(WgetError::Other(
                             format!("DNS resolution error: {}", e)
                         )));
                     }
                     Err(_) => {
-                        // Timeout: thread may still be running. We cannot
-                        // force-terminate it, so we detach it. To prevent
-                        // unbounded thread growth, track the count of detached
-                        // threads and warn if it exceeds a limit.
-                        // The spawned thread will decrement the counter when
-                        // it eventually finishes (via a Drop guard).
-                        let count = DETACHED_DNS_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        if count > 100 {
-                            log::warn!(
-                                "DNS resolution timeout for {}, detaching resolver thread ({} detached threads active)",
-                                host, count
-                            );
-                        } else {
-                            log::debug!("DNS resolution timeout for {}, detaching resolver thread", host);
-                        }
-                        // Spawn a watchdog to decrement the counter when the
-                        // original resolver thread finishes, so the count
-                        // reflects actually-live detached threads.
-                        let handle = handle;
-                        std::thread::Builder::new()
-                            .name(format!("dns-watchdog-{}", host))
-                            .spawn(move || {
-                                let _ = handle.join();
-                                DETACHED_DNS_COUNT.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
-                            })
-                            .ok();
+                        log::debug!("DNS resolution timeout for {}, detaching resolver thread", host);
                         return Err(RetrieveError::Protocol(WgetError::Other(
                             "DNS resolution timeout".to_string()
                         )));
