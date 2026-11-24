@@ -1285,6 +1285,7 @@ impl Retriever {
                 secure_protocol: self.config.tls.secure_protocol,
                 clear_data_connection: self.config.ftp.ftps_clear_data,
                 resume_ssl: self.config.ftp.ftps_resume_ssl,
+                active_mode: !self.config.ftp.passive,
             };
             let mut ftps_client = ut_ftp::FtpsClient::with_config(ftps_cfg);
 
@@ -1551,6 +1552,7 @@ impl Retriever {
                 secure_protocol: self.config.tls.secure_protocol,
                 clear_data_connection: self.config.ftp.ftps_clear_data,
                 resume_ssl: self.config.ftp.ftps_resume_ssl,
+                active_mode: !self.config.ftp.passive,
             };
             let mut ftps = ut_ftp::FtpsClient::with_config(ftps_cfg);
             if self.config.ftp.ftps_implicit {

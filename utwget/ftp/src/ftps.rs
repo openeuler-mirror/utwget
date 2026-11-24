@@ -43,6 +43,12 @@ pub struct FtpsConfig {
     /// connection. This flag is accepted for compatibility but the
     /// optimization is not yet active.
     pub resume_ssl: bool,
+    /// Use active mode (PORT/EPRT) for data connections instead of
+    /// passive mode (PASV). Matches GNU wget's --no-passive-ftp behavior.
+    /// When true, the client binds a local listener and the server
+    /// connects to it. This is useful when the client is behind a
+    /// firewall that blocks incoming connections to the server's PASV port.
+    pub active_mode: bool,
 }
 
 impl Default for FtpsConfig {
@@ -56,6 +62,7 @@ impl Default for FtpsConfig {
             secure_protocol: SecureProtocol::Auto,
             clear_data_connection: false,
             resume_ssl: false,
+            active_mode: false,
         }
     }
 }
@@ -888,6 +895,53 @@ impl FtpsClient {
         Ok((host, port))
     }
 
+    /// Enter active mode (PORT/EPRT) and return a TcpListener to accept
+    /// the server's data connection.
+    ///
+    /// In active mode, the client binds a local TCP listener and sends
+    /// the PORT (IPv4) or EPRT (IPv6) command. The server then connects
+    /// to the client's listener for data transfer.
+    ///
+    /// This is the FTPS counterpart of plain FTP's `enter_active_mode()`
+    /// in data_conn.rs. The control channel is already TLS-wrapped.
+    fn enter_active(&mut self) -> Result<std::net::TcpListener, FtpError> {
+        use std::net::TcpListener;
+
+        // Bind a listener on any available port on all interfaces.
+        let listener = TcpListener::bind("0.0.0.0:0")
+            .map_err(|e| FtpError::DataConnectFailed(format!("cannot bind listener for active mode: {}", e)))?;
+        listener.set_nonblocking(false)
+            .map_err(|e| FtpError::DataConnectFailed(format!("cannot set blocking mode: {}", e)))?;
+
+        let local_addr = listener.local_addr()
+            .map_err(|e| FtpError::DataConnectFailed(format!("cannot get local addr: {}", e)))?;
+
+        // Send PORT or EPRT command depending on address family
+        let cmd = match local_addr {
+            std::net::SocketAddr::V4(v4) => {
+                let octets = v4.ip().octets();
+                let port_hi = v4.port() / 256;
+                let port_lo = v4.port() % 256;
+                format!("PORT {},{},{},{},{},{}",
+                    octets[0], octets[1], octets[2], octets[3], port_hi, port_lo)
+            }
+            std::net::SocketAddr::V6(v6) => {
+                format!("EPRT |2|{}|{}|", v6.ip(), v6.port())
+            }
+        };
+
+        self.send_cmd(&cmd)?;
+        let resp = self.read_response()?;
+        if !resp.is_positive_completion {
+            return Err(FtpError::DataConnectFailed(format!(
+                "{} failed: {} {}", cmd, resp.code, resp.text
+            )));
+        }
+        log::debug!("FTPS active mode: {}", cmd);
+
+        Ok(listener)
+    }
+
     /// Retrieve a file from the server.
     ///
     /// # Arguments
@@ -905,8 +959,17 @@ impl FtpsClient {
         output: &mut W,
         resume_pos: Option<u64>,
     ) -> Result<u64, FtpError> {
-        // Enter passive mode
-        let (data_host, data_port) = self.enter_passive()?;
+        // Enter data connection mode (passive or active)
+        let listener = if self.config.active_mode {
+            Some(self.enter_active()?)
+        } else {
+            None
+        };
+        let (data_host, data_port) = if self.config.active_mode {
+            (String::new(), 0) // not used in active mode
+        } else {
+            self.enter_passive()?
+        };
 
         // Send REST if resuming
         if let Some(pos) = resume_pos {
@@ -934,9 +997,19 @@ impl FtpsClient {
             )));
         }
 
-        // Connect to data port
-        let mut data_tcp = TcpStream::connect(format!("{}:{}", data_host, data_port))
-            .map_err(|e| FtpError::DataConnectFailed(e.to_string()))?;
+        // Establish data connection: accept (active) or connect (passive)
+        let mut data_tcp = if let Some(listener) = listener {
+            // Active mode: accept the server's incoming connection
+            let (stream, addr) = listener.accept()
+                .map_err(|e| FtpError::DataConnectFailed(format!("active mode accept failed: {}", e)))?;
+            log::debug!("FTPS active mode data connection from {}", addr);
+            stream
+        } else {
+            // Passive mode: connect to the server's data port
+            let stream = TcpStream::connect(format!("{}:{}", data_host, data_port))
+                .map_err(|e| FtpError::DataConnectFailed(e.to_string()))?;
+            stream
+        };
         // Apply 60s read/write timeouts to the data connection, matching the
         // plain-FTP data_conn.rs behaviour. Without this, a server that stops
         // sending but keeps the socket open would block indefinitely.
@@ -1010,7 +1083,17 @@ impl FtpsClient {
         if let Some(dir) = directory {
             validate_ftp_input(dir)?;
         }
-        let (data_host, data_port) = self.enter_passive()?;
+        // Enter data connection mode (passive or active)
+        let listener = if self.config.active_mode {
+            Some(self.enter_active()?)
+        } else {
+            None
+        };
+        let (data_host, data_port) = if self.config.active_mode {
+            (String::new(), 0)
+        } else {
+            self.enter_passive()?
+        };
         let cmd = match directory {
             Some(dir) => format!("NLST {}", dir),
             None => "NLST".to_string(),
@@ -1023,8 +1106,15 @@ impl FtpsClient {
             )));
         }
 
-        let mut data_tcp = TcpStream::connect(format!("{}:{}", data_host, data_port))
-            .map_err(|e| FtpError::DataConnectFailed(e.to_string()))?;
+        let mut data_tcp = if let Some(listener) = listener {
+            let (stream, addr) = listener.accept()
+                .map_err(|e| FtpError::DataConnectFailed(format!("active mode accept failed: {}", e)))?;
+            log::debug!("FTPS active mode data connection from {}", addr);
+            stream
+        } else {
+            TcpStream::connect(format!("{}:{}", data_host, data_port))
+                .map_err(|e| FtpError::DataConnectFailed(e.to_string()))?
+        };
         // Apply 60s read/write timeouts, matching plain-FTP data_conn.rs.
         data_tcp
             .set_read_timeout(Some(Duration::from_secs(60)))
