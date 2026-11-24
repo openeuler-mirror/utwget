@@ -1984,6 +1984,34 @@ impl Retriever {
             )));
         }
 
+        // Connect-time SSRF protection: when --block-private-redirects is
+        // set, also check the RESOLVED address of every connection target,
+        // not just literal IPs in the redirect Location. A redirect to
+        // `http://internal.corp/` (hostname resolving to 169.254.169.254)
+        // or a DNS-rebinding host never matches the literal-IP check in
+        // the redirect handler — here the hostname has become a concrete
+        // socket address, so this is the single choke point that catches
+        // all connection targets (initial URL, redirects, recursive).
+        if self.config.block_private_redirects {
+            for addr in &sorted_addresses {
+                if is_private_ip(&addr.ip()) {
+                    warn!("SSRF risk: {} resolves to private/loopback IP {}", host, addr.ip());
+                    eprintln!(
+                        "utwget: WARNING: {} resolves to private/loopback IP {} (potential SSRF); blocked by --block-private-redirects",
+                        host,
+                        addr.ip()
+                    );
+                    return Err(RetrieveError::Protocol(WgetError::Other(
+                        format!(
+                            "connection to private/loopback address {} (host {}) blocked (--block-private-redirects)",
+                            addr.ip(),
+                            host
+                        ),
+                    )));
+                }
+            }
+        }
+
         // Try to connect to each address
         let connect_timeout = self.config.connect_timeout.or(self.config.timeout);
         let mut last_error = None;
