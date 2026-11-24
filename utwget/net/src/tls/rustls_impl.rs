@@ -207,21 +207,42 @@ impl RustlsConnector {
             _ => None,
         };
 
+        // Load CRL file if --crl-file is specified.
+        // CRLs (Certificate Revocation Lists) allow the client to reject
+        // certificates that have been revoked by the CA before their expiry.
+        // Supports both PEM (-----BEGIN X509 CRL-----) and DER formats.
+        let crls: Vec<rustls::pki_types::CertificateRevocationListDer<'static>> = if let Some(ref crl_path) = config.crl_file {
+            match load_crls_from_file(crl_path) {
+                Ok(c) => {
+                    log::info!("loaded {} CRL(s) from {}", c.len(), crl_path.display());
+                    c
+                }
+                Err(e) => {
+                    return Err(TlsError::CertError(format!(
+                        "failed to load CRL file {}: {}", crl_path.display(), e
+                    )));
+                }
+            }
+        } else {
+            Vec::new()
+        };
+
         // Build client config based on secure protocol setting
         let suites_ref = custom_cipher_suites.as_deref();
+        let crls_ref = if crls.is_empty() { None } else { Some(&crls[..]) };
         let client_config = match config.secure_protocol {
             SecureProtocol::TlsV1_2 => {
-                Self::build_config_with_versions(&root_store, should_verify, client_auth, &[&rustls::version::TLS12], suites_ref)?
+                Self::build_config_with_versions(&root_store, should_verify, client_auth, &[&rustls::version::TLS12], suites_ref, crls_ref)?
             }
             SecureProtocol::TlsV1_3 => {
-                Self::build_config_with_versions(&root_store, should_verify, client_auth, &[&rustls::version::TLS13], suites_ref)?
+                Self::build_config_with_versions(&root_store, should_verify, client_auth, &[&rustls::version::TLS13], suites_ref, crls_ref)?
             }
             SecureProtocol::Auto => {
-                Self::build_config_with_versions(&root_store, should_verify, client_auth, rustls::ALL_VERSIONS, suites_ref)?
+                Self::build_config_with_versions(&root_store, should_verify, client_auth, rustls::ALL_VERSIONS, suites_ref, crls_ref)?
             }
             SecureProtocol::Pfs => {
                 let mut config = Self::build_config_with_versions(
-                    &root_store, should_verify, client_auth, rustls::ALL_VERSIONS, suites_ref)?;
+                    &root_store, should_verify, client_auth, rustls::ALL_VERSIONS, suites_ref, crls_ref)?;
                 config.resumption = rustls::client::Resumption::disabled();
                 config
             }
@@ -248,6 +269,7 @@ impl RustlsConnector {
         client_auth: Option<(Vec<CertificateDer<'static>>, PrivateKeyDer<'static>)>,
         versions: &[&'static rustls::SupportedProtocolVersion],
         custom_suites: Option<&[rustls::SupportedCipherSuite]>,
+        crls: Option<&[rustls::pki_types::CertificateRevocationListDer<'static>]>,
     ) -> Result<ClientConfig, TlsError> {
         // 如果用户通过 --ciphers 指定了 cipher suite 列表，用自定义 CryptoProvider。
         // 否则使用默认 provider（包含 ring 的全部 cipher suite）。
@@ -260,6 +282,20 @@ impl RustlsConnector {
                 });
                 let cfg = if !should_verify {
                     let verifier: Arc<dyn ServerCertVerifier> = Arc::new(SkipServerVerification);
+                    ClientConfig::builder_with_provider(provider)
+                        .with_protocol_versions(versions)
+                        .map_err(|e| TlsError::HandshakeFailed(format!("protocol version error: {}", e)))?
+                        .dangerous()
+                        .with_custom_certificate_verifier(verifier)
+                } else if let Some(crl_list) = crls {
+                    // 有 CRL 时，用 WebPkiServerVerifier + with_crls 做吊销检查
+                    let verifier = rustls::client::WebPkiServerVerifier::builder_with_provider(
+                        Arc::new(root_store.clone()),
+                        provider.clone(),
+                    )
+                    .with_crls(crl_list.iter().cloned())
+                    .build()
+                    .map_err(|e| TlsError::CertError(format!("CRL verifier build error: {}", e)))?;
                     ClientConfig::builder_with_provider(provider)
                         .with_protocol_versions(versions)
                         .map_err(|e| TlsError::HandshakeFailed(format!("protocol version error: {}", e)))?
@@ -284,6 +320,16 @@ impl RustlsConnector {
         let cfg = if !should_verify {
             // Skip certificate verification
             let verifier: Arc<dyn ServerCertVerifier> = Arc::new(SkipServerVerification);
+            ClientConfig::builder_with_protocol_versions(versions)
+                .dangerous()
+                .with_custom_certificate_verifier(verifier)
+        } else if let Some(crl_list) = crls {
+            // 有 CRL 时，用 WebPkiServerVerifier + with_crls 做吊销检查
+            // 用默认 ring provider
+            let verifier = rustls::client::WebPkiServerVerifier::builder(Arc::new(root_store.clone()))
+                .with_crls(crl_list.iter().cloned())
+                .build()
+                .map_err(|e| TlsError::CertError(format!("CRL verifier build error: {}", e)))?;
             ClientConfig::builder_with_protocol_versions(versions)
                 .dangerous()
                 .with_custom_certificate_verifier(verifier)
@@ -1042,5 +1088,45 @@ fn iana_to_openssl(iana: &str) -> String {
         "TLS13_AES_128_GCM_SHA256" => "TLS_AES_128_GCM_SHA256".into(),
         "TLS13_CHACHA20_POLY1305_SHA256" => "TLS_CHACHA20_POLY1305_SHA256".into(),
         _ => iana.to_string(),
+    }
+}
+
+/// Load CRLs (Certificate Revocation Lists) from a file.
+///
+/// Supports both PEM (-----BEGIN X509 CRL-----) and DER formats.
+/// A PEM file may contain multiple CRLs; a DER file contains exactly one.
+///
+/// # Arguments
+///
+/// * `path` - Path to the CRL file.
+///
+/// # Returns
+///
+/// A vector of `CertificateRevocationListDer` on success.
+fn load_crls_from_file(path: &std::path::Path) -> Result<Vec<rustls::pki_types::CertificateRevocationListDer<'static>>, String> {
+    let data = std::fs::read(path).map_err(|e| e.to_string())?;
+
+    // Check if the file is PEM (ASCII armor) or DER (binary).
+    let is_pem = data.windows(5).any(|w| w == b"-----");
+    if is_pem {
+        // Parse PEM using rustls_pemfile::crls()
+        let cursor = std::io::Cursor::new(&data);
+        let mut buf_reader = std::io::BufReader::new(cursor);
+        let mut crls = Vec::new();
+        for item in rustls_pemfile::crls(&mut buf_reader) {
+            match item {
+                Ok(crl) => crls.push(crl),
+                Err(e) => {
+                    log::warn!("skipping unparseable CRL block in {}: {}", path.display(), e);
+                }
+            }
+        }
+        if crls.is_empty() {
+            return Err(format!("no valid CRLs found in PEM file {}", path.display()));
+        }
+        Ok(crls)
+    } else {
+        // DER format: single CRL
+        Ok(vec![rustls::pki_types::CertificateRevocationListDer::from(data)])
     }
 }

@@ -111,6 +111,19 @@ pub struct TlsConfig {
     /// The format is implementation-specific.
     pub ciphers: Option<String>,
 
+    /// Path to a CRL (Certificate Revocation List) file.
+    ///
+    /// When set, the TLS client will check the server certificate against
+    /// the provided CRLs and reject any certificate that has been revoked.
+    /// Supports both PEM and DER formats.
+    pub crl_file: Option<PathBuf>,
+
+    /// Public key hash(es) to pin (--pinnedpubkey).
+    ///
+    /// Currently not implemented (fail-closed in App::new). Reserved for
+    /// future implementation.
+    pub pinned_pubkey: Option<String>,
+
     pub cert_type: ut_core::types::KeyFileType,
     pub private_key_type: ut_core::types::KeyFileType,
 }
@@ -131,6 +144,8 @@ impl Default for TlsConfig {
             ca_directory: None,
             secure_protocol: SecureProtocol::Auto,
             ciphers: None,
+            crl_file: None,
+            pinned_pubkey: None,
             cert_type: ut_core::types::KeyFileType::Pem,
             private_key_type: ut_core::types::KeyFileType::Pem,
         }
@@ -159,6 +174,8 @@ impl TlsConfig {
             ca_directory: core.ca_directory.clone(),
             secure_protocol: core.secure_protocol,
             ciphers: core.ciphers.clone(),
+            crl_file: core.crl_file.clone(),
+            pinned_pubkey: core.pinned_pubkey.clone(),
             cert_type: core.cert_type,
             private_key_type: core.private_key_type,
         }
