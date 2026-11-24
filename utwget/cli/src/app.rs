@@ -200,16 +200,9 @@ impl App {
     /// # Returns
     /// A configured `App` instance, or a `WgetError` if construction fails.
     pub fn new(config: ut_core::Config) -> Result<Self, WgetError> {
-        // --pinnedpubkey is accepted for wget compatibility, but the current
-        // TLS backend (rustls) does not implement public-key pinning.
-        // Fail closed: refuse to start so that scripts cannot silently run
-        // without the requested protection (security-by-warning is unsafe).
-        // --crl-file is now implemented (CRL loading + revocation checking).
-        if config.tls.pinned_pubkey.is_some() {
-            return Err(WgetError::Other(
-                "--pinnedpubkey is not implemented in this build; refusing to start to avoid running without the requested public-key pinning".into(),
-            ));
-        }
+        // --crl-file and --pinnedpubkey are now implemented (CRL loading +
+        // public-key pinning via SHA-256 hash verification).
+        // See net/src/tls/rustls_impl.rs for implementation details.
 
         let config = Arc::new(config);
 

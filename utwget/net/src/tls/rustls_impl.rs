@@ -230,19 +230,25 @@ impl RustlsConnector {
         // Build client config based on secure protocol setting
         let suites_ref = custom_cipher_suites.as_deref();
         let crls_ref = if crls.is_empty() { None } else { Some(&crls[..]) };
+        // Parse --pinnedpubkey into SHA-256 hash digests
+        let pinned_pins: Vec<Vec<u8>> = config.pinned_pubkey
+            .as_ref()
+            .map(|s| parse_pinnedpubkey(s))
+            .unwrap_or_default();
+        let pinned_ref = if pinned_pins.is_empty() { None } else { Some(&pinned_pins[..]) };
         let client_config = match config.secure_protocol {
             SecureProtocol::TlsV1_2 => {
-                Self::build_config_with_versions(&root_store, should_verify, client_auth, &[&rustls::version::TLS12], suites_ref, crls_ref)?
+                Self::build_config_with_versions(&root_store, should_verify, client_auth, &[&rustls::version::TLS12], suites_ref, crls_ref, pinned_ref)?
             }
             SecureProtocol::TlsV1_3 => {
-                Self::build_config_with_versions(&root_store, should_verify, client_auth, &[&rustls::version::TLS13], suites_ref, crls_ref)?
+                Self::build_config_with_versions(&root_store, should_verify, client_auth, &[&rustls::version::TLS13], suites_ref, crls_ref, pinned_ref)?
             }
             SecureProtocol::Auto => {
-                Self::build_config_with_versions(&root_store, should_verify, client_auth, rustls::ALL_VERSIONS, suites_ref, crls_ref)?
+                Self::build_config_with_versions(&root_store, should_verify, client_auth, rustls::ALL_VERSIONS, suites_ref, crls_ref, pinned_ref)?
             }
             SecureProtocol::Pfs => {
                 let mut config = Self::build_config_with_versions(
-                    &root_store, should_verify, client_auth, rustls::ALL_VERSIONS, suites_ref, crls_ref)?;
+                    &root_store, should_verify, client_auth, rustls::ALL_VERSIONS, suites_ref, crls_ref, pinned_ref)?;
                 config.resumption = rustls::client::Resumption::disabled();
                 config
             }
@@ -270,7 +276,21 @@ impl RustlsConnector {
         versions: &[&'static rustls::SupportedProtocolVersion],
         custom_suites: Option<&[rustls::SupportedCipherSuite]>,
         crls: Option<&[rustls::pki_types::CertificateRevocationListDer<'static>]>,
+        pinned_pins: Option<&[Vec<u8>]>,
     ) -> Result<ClientConfig, TlsError> {
+        // Helper: wrap a verifier with PinnedPubKeyVerifier if pinned_pins is set.
+        let wrap_verifier = |verifier: Arc<dyn ServerCertVerifier>| -> Arc<dyn ServerCertVerifier> {
+            if let Some(pins) = pinned_pins {
+                if !pins.is_empty() {
+                    return Arc::new(PinnedPubKeyVerifier {
+                        inner: verifier,
+                        pins: pins.to_vec(),
+                    });
+                }
+            }
+            verifier
+        };
+
         // 如果用户通过 --ciphers 指定了 cipher suite 列表，用自定义 CryptoProvider。
         // 否则使用默认 provider（包含 ring 的全部 cipher suite）。
         if let Some(suites) = custom_suites {
@@ -281,7 +301,7 @@ impl RustlsConnector {
                     ..rustls::crypto::ring::default_provider()
                 });
                 let cfg = if !should_verify {
-                    let verifier: Arc<dyn ServerCertVerifier> = Arc::new(SkipServerVerification);
+                    let verifier: Arc<dyn ServerCertVerifier> = wrap_verifier(Arc::new(SkipServerVerification));
                     ClientConfig::builder_with_provider(provider)
                         .with_protocol_versions(versions)
                         .map_err(|e| TlsError::HandshakeFailed(format!("protocol version error: {}", e)))?
@@ -296,16 +316,33 @@ impl RustlsConnector {
                     .with_crls(crl_list.iter().cloned())
                     .build()
                     .map_err(|e| TlsError::CertError(format!("CRL verifier build error: {}", e)))?;
+                    let verifier = wrap_verifier(verifier as Arc<dyn ServerCertVerifier>);
                     ClientConfig::builder_with_provider(provider)
                         .with_protocol_versions(versions)
                         .map_err(|e| TlsError::HandshakeFailed(format!("protocol version error: {}", e)))?
                         .dangerous()
                         .with_custom_certificate_verifier(verifier)
                 } else {
-                    ClientConfig::builder_with_provider(provider)
-                        .with_protocol_versions(versions)
-                        .map_err(|e| TlsError::HandshakeFailed(format!("protocol version error: {}", e)))?
-                        .with_root_certificates(root_store.clone())
+                    // 无 CRL 但可能有 pinnedpubkey
+                    if pinned_pins.is_some() {
+                        let verifier = rustls::client::WebPkiServerVerifier::builder_with_provider(
+                            Arc::new(root_store.clone()),
+                            provider.clone(),
+                        )
+                        .build()
+                        .map_err(|e| TlsError::CertError(format!("verifier build error: {}", e)))?;
+                        let verifier = wrap_verifier(verifier as Arc<dyn ServerCertVerifier>);
+                        ClientConfig::builder_with_provider(provider)
+                            .with_protocol_versions(versions)
+                            .map_err(|e| TlsError::HandshakeFailed(format!("protocol version error: {}", e)))?
+                            .dangerous()
+                            .with_custom_certificate_verifier(verifier)
+                    } else {
+                        ClientConfig::builder_with_provider(provider)
+                            .with_protocol_versions(versions)
+                            .map_err(|e| TlsError::HandshakeFailed(format!("protocol version error: {}", e)))?
+                            .with_root_certificates(root_store.clone())
+                    }
                 };
 
                 return match client_auth {
@@ -318,18 +355,26 @@ impl RustlsConnector {
 
         // 默认路径（无 --ciphers 或匹配为空）
         let cfg = if !should_verify {
-            // Skip certificate verification
-            let verifier: Arc<dyn ServerCertVerifier> = Arc::new(SkipServerVerification);
+            let verifier: Arc<dyn ServerCertVerifier> = wrap_verifier(Arc::new(SkipServerVerification));
             ClientConfig::builder_with_protocol_versions(versions)
                 .dangerous()
                 .with_custom_certificate_verifier(verifier)
         } else if let Some(crl_list) = crls {
             // 有 CRL 时，用 WebPkiServerVerifier + with_crls 做吊销检查
-            // 用默认 ring provider
             let verifier = rustls::client::WebPkiServerVerifier::builder(Arc::new(root_store.clone()))
                 .with_crls(crl_list.iter().cloned())
                 .build()
                 .map_err(|e| TlsError::CertError(format!("CRL verifier build error: {}", e)))?;
+            let verifier = wrap_verifier(verifier as Arc<dyn ServerCertVerifier>);
+            ClientConfig::builder_with_protocol_versions(versions)
+                .dangerous()
+                .with_custom_certificate_verifier(verifier)
+        } else if pinned_pins.is_some() {
+            // 有 pinnedpubkey 但无 CRL
+            let verifier = rustls::client::WebPkiServerVerifier::builder(Arc::new(root_store.clone()))
+                .build()
+                .map_err(|e| TlsError::CertError(format!("verifier build error: {}", e)))?;
+            let verifier = wrap_verifier(verifier as Arc<dyn ServerCertVerifier>);
             ClientConfig::builder_with_protocol_versions(versions)
                 .dangerous()
                 .with_custom_certificate_verifier(verifier)
@@ -997,7 +1042,191 @@ impl ServerCertVerifier for SkipServerVerification {
     }
 }
 
-/// Parse an OpenSSL/GnuTLS-style cipher list string into rustls cipher suites.
+/// A certificate verifier that enforces public-key pinning (--pinnedpubkey).
+///
+/// Wraps an inner verifier (either the standard `WebPkiServerVerifier` or
+/// `SkipServerVerification`). After the inner verifier runs, this verifier
+/// additionally checks that the SHA-256 hash of the server's public key
+/// (SubjectPublicKeyInfo) matches one of the pinned hashes.
+///
+/// Format: `sha256//<base64-hash>` (matching curl/wget --pinnedpubkey syntax).
+/// Multiple pins separated by `;`.
+struct PinnedPubKeyVerifier {
+    inner: Arc<dyn ServerCertVerifier>,
+    /// Pinned SHA-256 hashes (raw 32-byte digests, base64-decoded).
+    pins: Vec<Vec<u8>>,
+}
+
+impl std::fmt::Debug for PinnedPubKeyVerifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PinnedPubKeyVerifier")
+            .field("pins_count", &self.pins.len())
+            .finish()
+    }
+}
+
+impl ServerCertVerifier for PinnedPubKeyVerifier {
+    fn verify_server_cert(
+        &self,
+        end_entity: &CertificateDer<'_>,
+        intermediates: &[CertificateDer<'_>],
+        server_name: &ServerName<'_>,
+        ocsp_response: &[u8],
+        now: UnixTime,
+    ) -> Result<ServerCertVerified, rustls::Error> {
+        // First, let the inner verifier do its job (chain validation, etc.)
+        let verified = self.inner.verify_server_cert(
+            end_entity, intermediates, server_name, ocsp_response, now,
+        )?;
+
+        // Then, check public key pinning.
+        let spki = extract_spki(end_entity.as_ref()).ok_or_else(|| {
+            rustls::Error::General("pinnedpubkey: failed to extract SubjectPublicKeyInfo".into())
+        })?;
+        use sha2::{Sha256, Digest};
+        let hash = Sha256::digest(spki);
+
+        for pin in &self.pins {
+            if pin == hash.as_slice() {
+                return Ok(verified);
+            }
+        }
+
+        Err(rustls::Error::General(
+            "pinnedpubkey: server public key does not match any pinned hash".into(),
+        ))
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        self.inner.verify_tls12_signature(message, cert, dss)
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        self.inner.verify_tls13_signature(message, cert, dss)
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        self.inner.supported_verify_schemes()
+    }
+}
+
+/// Parse a --pinnedpubkey string into a list of SHA-256 hash digests.
+///
+/// Format: `sha256//<base64>` (matching curl/wget). Multiple pins
+/// separated by `;`. Returns an empty vec if no valid pins found.
+fn parse_pinnedpubkey(s: &str) -> Vec<Vec<u8>> {
+    let mut pins = Vec::new();
+    for entry in s.split(';') {
+        let entry = entry.trim();
+        if let Some(rest) = entry.strip_prefix("sha256//") {
+            // base64 standard (with padding) or URL-safe
+            let hash = base64_decode(rest);
+            if hash.len() == 32 {
+                pins.push(hash);
+            } else {
+                log::warn!("--pinnedpubkey: invalid sha256 hash length ({}), expected 32", hash.len());
+            }
+        } else {
+            log::warn!("--pinnedpubkey: unsupported format '{}' (only sha256// is supported)", entry);
+        }
+    }
+    pins
+}
+
+/// Base64 decoder supporting both standard and URL-safe alphabets.
+fn base64_decode(s: &str) -> Vec<u8> {
+    // Try standard base64 first, then URL-safe
+    use base64::Engine;
+    if let Ok(v) = base64::engine::general_purpose::STANDARD.decode(s) {
+        return v;
+    }
+    if let Ok(v) = base64::engine::general_purpose::URL_SAFE.decode(s) {
+        return v;
+    }
+    Vec::new()
+}
+
+/// Extract the SubjectPublicKeyInfo (SPKI) from a DER-encoded X.509 certificate.
+///
+/// The SPKI is the raw DER bytes including the outer SEQUENCE tag, matching
+/// what curl/wget hash for --pinnedpubkey. Uses a minimal DER walker.
+fn extract_spki(cert_der: &[u8]) -> Option<&[u8]> {
+    let mut pos = 0;
+    // Outer SEQUENCE (Certificate)
+    let (_, body) = read_der_tlv(cert_der, &mut pos)?;
+    // Inner SEQUENCE (TBSCertificate)
+    let mut tbs_pos = 0;
+    let (tbs_tag, tbs_body) = read_der_tlv(body, &mut tbs_pos)?;
+    if tbs_tag != 0x30 { return None; } // must be SEQUENCE
+    // Now walk through TBSCertificate fields:
+    let mut field_pos = 0;
+    // 1. version: [0] EXPLICIT (optional, context-specific tag 0xA0)
+    let (_, _) = read_der_tlv(tbs_body, &mut field_pos)?;
+    // Actually, version may or may not be present (context tag [0]).
+    // Let's handle both cases: if first byte is 0xA0, skip version;
+    // otherwise it's serialNumber.
+    // Re-parse more carefully:
+    let mut fp = 0;
+    // Optional: version [0] (0xA0)
+    if tbs_body.first() == Some(&0xA0) {
+        let _ = read_der_tlv(tbs_body, &mut fp)?;
+    }
+    // serialNumber (INTEGER)
+    let _ = read_der_tlv(tbs_body, &mut fp)?;
+    // signature (AlgorithmIdentifier SEQUENCE)
+    let _ = read_der_tlv(tbs_body, &mut fp)?;
+    // issuer (SEQUENCE)
+    let _ = read_der_tlv(tbs_body, &mut fp)?;
+    // validity (SEQUENCE)
+    let _ = read_der_tlv(tbs_body, &mut fp)?;
+    // subject (SEQUENCE)
+    let _ = read_der_tlv(tbs_body, &mut fp)?;
+    // Next field: SubjectPublicKeyInfo (SEQUENCE) - this is what we want
+    let spki_start = fp;
+    let (spki_tag, _) = read_der_tlv(tbs_body, &mut fp)?;
+    if spki_tag != 0x30 { return None; } // must be SEQUENCE
+    let spki_end = fp;
+    Some(&tbs_body[spki_start..spki_end])
+}
+
+/// Read a DER Tag-Length-Value element, returning (tag_byte, value_slice)
+/// and advancing `pos` past the entire TLV.
+fn read_der_tlv<'a>(buf: &'a [u8], pos: &mut usize) -> Option<(u8, &'a [u8])> {
+    if *pos >= buf.len() { return None; }
+    let tag = buf[*pos];
+    *pos += 1;
+    if *pos >= buf.len() { return None; }
+    let first_len_byte = buf[*pos];
+    *pos += 1;
+    let len = if first_len_byte & 0x80 == 0 {
+        // Short form: length is the byte itself
+        first_len_byte as usize
+    } else {
+        // Long form: lower 7 bits give number of subsequent length bytes
+        let num_bytes = (first_len_byte & 0x7F) as usize;
+        if num_bytes > 4 || *pos + num_bytes > buf.len() { return None; }
+        let mut l = 0usize;
+        for i in 0..num_bytes {
+            l = (l << 8) | (buf[*pos + i] as usize);
+        }
+        *pos += num_bytes;
+        l
+    };
+    if *pos + len > buf.len() { return None; }
+    let value = &buf[*pos..*pos + len];
+    *pos += len;
+    Some((tag, value))
+}
 ///
 /// Supports the following formats (colon or comma separated):
 ///

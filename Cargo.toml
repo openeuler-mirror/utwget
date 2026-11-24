@@ -29,6 +29,7 @@ ut-warc = { path = "utwget/warc" }
 ut-metalink = { path = "utwget/metalink" }
 utwget-cli = { path = "utwget/cli" }
 base64 = "0.22"
+sha2 = "0.10"
 flate2 = "1"
 
 # Pin dependencies that require edition2024 to older versions for Rust 1.82.0 compatibility
