@@ -833,8 +833,11 @@ impl Retriever {
                 // 内网服务、loopback 上的管理端口。
                 //
                 // --block-private-redirects 启用时阻断而非仅警告。
+                // is_private_ip 覆盖 loopback（V4/V6）、IPv4-mapped IPv6
+                // （::ffff:127.0.0.1 等已归一化为内嵌 IPv4 再分类）与
+                // ULA/link-local，无需再单独检查 is_loopback。
                 if let Some(ref ip) = std::net::IpAddr::from_str(&redirect_url.host).ok() {
-                    if ip.is_loopback() || is_private_ip(ip) {
+                    if is_private_ip(ip) {
                         // 同时打 log 和 stderr，因为 warn! 在 -q 模式下被静音，
                         // 而 SSRF 是用户应该始终看到的安全信号。
                         warn!("SSRF risk: redirect targets private/loopback IP {}: {}",
