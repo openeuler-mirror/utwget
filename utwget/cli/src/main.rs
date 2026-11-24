@@ -193,15 +193,22 @@ fn rearrange_args() -> Vec<String> {
         "http-keep-alive", "compression",
     ];
 
-    // --no-FOO already declared in args.rs (don't interfere with them)
+    // --no-FOO already declared in args.rs (don't interfere with them).
+    // NOTE: the comparison strips the "--no-" prefix first (see the map
+    // below), so this list holds option names WITHOUT the prefix. Storing
+    // prefixed names here ("no-check-certificate") made every declared
+    // --no-FOO whose FOO appears in boolean_opts_needing_no fall through to
+    // the hidden --_no-FOO conversion, silently inverting its meaning
+    // (e.g. --no-check-certificate re-enabled verification, --no-parent
+    // re-enabled parent traversal).
     let existing_no_opts: std::collections::HashSet<&str> = [
-        "no-cache", "no-check-certificate", "no-clobber", "no-compression",
-        "no-config", "no-cookies", "no-directories", "no-dns-cache",
-        "no-glob", "no-host-directories", "no-hsts", "no-http-keep-alive",
-        "no-if-modified-since", "no-iri", "no-netrc", "no-parent",
-        "no-passive-ftp", "no-proxy", "no-remove-listing",
-        "no-use-server-timestamps", "no-verbose", "no-warc-compression",
-        "no-warc-digests", "no-warc-keep-log",
+        "cache", "check-certificate", "clobber", "compression",
+        "config", "cookies", "directories", "dns-cache",
+        "glob", "host-directories", "hsts", "http-keep-alive",
+        "if-modified-since", "iri", "netrc", "parent",
+        "passive-ftp", "proxy", "remove-listing",
+        "use-server-timestamps", "verbose", "warc-compression",
+        "warc-digests", "warc-keep-log",
     ].iter().copied().collect();
 
     let result: Vec<String> = result
