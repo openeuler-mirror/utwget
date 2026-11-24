@@ -2231,6 +2231,7 @@ dependencies = [
  "libc",
  "log",
  "num_cpus",
+ "rustc_version_runtime",
  "tokio",
  "ut-core",
  "ut-html",
