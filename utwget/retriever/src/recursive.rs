@@ -10,7 +10,7 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::io::Write;
 
 use log::{debug, info, warn};
@@ -37,6 +37,35 @@ pub enum ExitStatus {
     Error,
     /// No URLs were found to download.
     NoUrlsFound,
+}
+
+/// RAII guard for the parallel-recursive `active_count` atomic: increments
+/// on construction and decrements on drop, so EVERY exit path of the worker
+/// loop body (quota break, visited/robots continue, retrieve error, normal
+/// completion) reliably decrements the counter. A leak would keep
+/// active_count > 0 forever, and all workers would then spin in the
+/// queue-empty wait loop instead of exiting (process hang).
+struct ActiveGuard<'a>(&'a AtomicUsize);
+
+impl<'a> ActiveGuard<'a> {
+    fn new(counter: &'a AtomicUsize) -> ActiveGuard<'a> {
+        counter.fetch_add(1, Ordering::Relaxed);
+        ActiveGuard(counter)
+    }
+}
+
+impl Drop for ActiveGuard<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
+/// Test-only accessor exercising the private [`ActiveGuard`] from the
+/// integration test suite (`tests/unit_tests/recursive_parallel.rs`).
+/// Increments `counter` and returns a guard that decrements on drop.
+#[doc(hidden)]
+pub fn test_guard(counter: &AtomicUsize) -> impl Drop + '_ {
+    ActiveGuard::new(counter)
 }
 
 /// Recursive downloader for retrieving entire website trees.
@@ -439,8 +468,15 @@ impl RecursiveRetriever {
                                 continue;
                             };
 
-                            // Mark this worker as active before processing
-                            active_count.fetch_add(1, Ordering::Relaxed);
+                            // Mark this worker as active before processing.
+                            // RAII guard: decremented on EVERY exit path of the
+                            // loop body (quota break, visited/robots continue,
+                            // retrieve error, normal completion). The previous
+                            // manual fetch_sub at the end of the loop was
+                            // skipped by three early-exit paths, permanently
+                            // inflating active_count and hanging all workers
+                            // in the queue-empty wait loop above.
+                            let _active = ActiveGuard::new(&active_count);
 
                             let url_str = entry.url.clone();
 
@@ -523,10 +559,9 @@ impl RecursiveRetriever {
                                 std::thread::sleep(wait);
                             }
 
-                            // Mark this worker as no longer active (done
-                            // processing this URL). Must happen AFTER all
-                            // queue pushes so other workers don't exit early.
-                            active_count.fetch_sub(1, Ordering::Relaxed);
+                            // _active guard drops here: active_count is
+                            // decremented AFTER all queue pushes so other
+                            // workers don't exit early.
                         }
                     })
                     .expect("failed to spawn worker thread")

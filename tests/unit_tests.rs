@@ -33,6 +33,7 @@
 #[path = "unit_tests/retriever_types.rs"] mod retriever_types;
 #[path = "unit_tests/retriever_response.rs"] mod retriever_response;
 #[path = "unit_tests/retriever_url_queue.rs"] mod retriever_url_queue;
+#[path = "unit_tests/recursive_parallel.rs"] mod recursive_parallel;
 #[path = "unit_tests/signal.rs"] mod signal;
 #[path = "unit_tests/warc_digest.rs"] mod warc_digest;
 #[path = "unit_tests/warc_format.rs"] mod warc_format;
