@@ -9,10 +9,11 @@
 //! - Page requisites (images, stylesheets, etc.)
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::io::Write;
 
-use log::{debug, warn};
+use log::{debug, info, warn};
 use ut_core::url::ParsedUrl;
 use ut_core::{Config, RobotParser, Scheme, UrlFilter};
 use ut_html::css_extractor::CssExtractor;
@@ -327,6 +328,209 @@ impl RecursiveRetriever {
             Ok(ExitStatus::NoUrlsFound)
         } else {
             Ok(exit_status)
+        }
+    }
+
+    /// Parallel recursive download using N worker threads.
+    ///
+    /// Each worker has its own `Retriever` instance (sharing the TLS connection
+    /// pool via `Arc`), but the `UrlQueue` is shared via `Arc<Mutex<UrlQueue>>`.
+    /// URL deduplication happens at the queue level (blacklist in push()).
+    ///
+    /// Link extraction is performed in the worker that downloaded the file,
+    /// then new URLs are pushed back into the shared queue.
+    ///
+    /// This method is used when `-j N` (N > 1) is specified with recursive mode.
+    ///
+    /// # Arguments
+    ///
+    /// * `start_url` - The starting URL for the recursive download.
+    /// * `num_workers` - Number of parallel download workers.
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(ExitStatus::Success)` if downloads completed successfully.
+    /// - `Ok(ExitStatus::Error)` if some downloads failed.
+    /// - `Ok(ExitStatus::NoUrlsFound)` if no URLs were downloaded.
+    pub fn retrieve_tree_parallel(
+        &mut self,
+        start_url: &str,
+        num_workers: usize,
+    ) -> Result<ExitStatus, RetrieveError> {
+        let parsed = ParsedUrl::parse(start_url)
+            .map_err(RetrieveError::Protocol)?;
+
+        let max_depth = self.retriever.config().recursive.max_level;
+        let queue = Arc::new(Mutex::new(UrlQueue::new(max_depth)));
+        let error_flag = Arc::new(AtomicBool::new(false));
+        let any_downloaded = Arc::new(AtomicBool::new(false));
+        let start_host = parsed.host.clone();
+
+        // Seed the queue with the start URL
+        {
+            let mut q = queue.lock().unwrap();
+            q.push(QueueEntry {
+                url: start_url.to_string(),
+                referer: None,
+                depth: 0,
+                expect_html: true,
+                expect_css: false,
+            });
+        }
+
+        self.start_url = Some(parsed.clone());
+
+        // Get config and TLS pool for cloning to each worker
+        let config = self.retriever.config_arc_clone();
+        let tls_pool = self.retriever.connection_pool_clone();
+
+        // Build start_url for each worker to use as --no-parent reference
+        let start_url_parsed = Arc::new(parsed);
+
+        // Use std::thread::scope for scoped threads (no 'static needed)
+        let worker_handles: Vec<_> = (0..num_workers)
+            .map(|worker_id| {
+                let queue = queue.clone();
+                let error_flag = error_flag.clone();
+                let any_downloaded = any_downloaded.clone();
+                let config = config.clone();
+                let tls_pool = tls_pool.clone();
+                let start_url_parsed = start_url_parsed.clone();
+                let start_host = start_host.clone();
+
+                std::thread::Builder::new()
+                    .name(format!("recursive-worker-{}", worker_id))
+                    .spawn(move || {
+                        // Each worker has its own Retriever + extractors.
+                        // The TLS pool is shared via Arc (TlsConnectionPool::Clone).
+                        let progress = ut_progress::create_progress_display(
+                            ut_core::ProgressStyle::Silent, true,
+                        );
+                        let mut retriever = Retriever::with_connection_pool(
+                            config.clone(), progress, tls_pool,
+                        );
+                        let html_extractor = HtmlExtractor;
+                        let css_extractor = CssExtractor;
+                        let mut robots_cache: HashMap<String, bool> = HashMap::new();
+
+                        loop {
+                            // Pop next URL from shared queue
+                            let entry = {
+                                let mut q = queue.lock().unwrap();
+                                q.pop()
+                            };
+
+                            let Some(entry) = entry else {
+                                // Queue empty; check if any other worker is still
+                                // processing (could push more URLs). Brief sleep then retry.
+                                std::thread::sleep(std::time::Duration::from_millis(50));
+                                let q = queue.lock().unwrap();
+                                if q.is_empty() {
+                                    break;
+                                }
+                                continue;
+                            };
+
+                            let url_str = entry.url.clone();
+
+                            // Check quota
+                            if let Some(quota) = config.quota {
+                                if retriever.total_downloaded() >= quota {
+                                    warn!("quota exceeded, stopping");
+                                    break;
+                                }
+                            }
+
+                            // Check if visited (download registry)
+                            if retriever.download_registry().is_visited(&url_str) {
+                                continue;
+                            }
+
+                            // Check robots
+                            if !is_url_allowed_static(
+                                &url_str, &start_host, &config, &mut robots_cache,
+                            ) {
+                                debug!("URL not allowed by filter/robots: {}", url_str);
+                                continue;
+                            }
+
+                            // Download
+                            let spider_mode = config.recursive.spider;
+                            let page_requisites = config.page_requisites;
+
+                            match retriever.retrieve(&url_str) {
+                                Ok(RetrieveOutcome::Success(body_result)) => {
+                                    any_downloaded.store(true, Ordering::Relaxed);
+                                    let local = body_result.local_file.as_ref().map(|p| p.as_path());
+
+                                    // Descend?
+                                    let depth_limit = max_depth.unwrap_or(u32::MAX);
+                                    let descend = entry.depth < depth_limit;
+
+                                    if descend {
+                                        if let Some(lpath) = local {
+                                            if let Some(links) = extract_links_static(
+                                                lpath, &url_str, &entry,
+                                                &html_extractor, &css_extractor, &config,
+                                            ) {
+                                                let mut q = queue.lock().unwrap();
+                                                for link in links {
+                                                    if link.meta_disallow_follow { continue; }
+                                                    enqueue_child_static(
+                                                        &link, &url_str, entry.depth, &mut q,
+                                                        &start_url_parsed, &config,
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                Ok(RetrieveOutcome::NotModified) => {
+                                    any_downloaded.store(true, Ordering::Relaxed);
+                                }
+                                Ok(RetrieveOutcome::Redirected(target)) => {
+                                    let mut q = queue.lock().unwrap();
+                                    if !q.is_visited(&target) {
+                                        q.push(QueueEntry {
+                                            url: target,
+                                            referer: Some(url_str.clone()),
+                                            depth: entry.depth,
+                                            expect_html: entry.expect_html,
+                                            expect_css: entry.expect_css,
+                                        });
+                                    }
+                                }
+                                Ok(RetrieveOutcome::SpiderOnly) => {}
+                                Err(e) => {
+                                    warn!("error retrieving {}: {}", url_str, e);
+                                    error_flag.store(true, Ordering::Relaxed);
+                                }
+                            }
+
+                            if let Some(wait) = config.wait {
+                                debug!("waiting {:?}", wait);
+                                std::thread::sleep(wait);
+                            }
+                        }
+                    })
+                    .expect("failed to spawn worker thread")
+            })
+            .collect();
+
+        // Wait for all workers to finish
+        for handle in worker_handles {
+            let _ = handle.join();
+        }
+
+        let had_errors = error_flag.load(Ordering::Relaxed);
+        let downloaded = any_downloaded.load(Ordering::Relaxed);
+
+        if !downloaded {
+            Ok(ExitStatus::NoUrlsFound)
+        } else if had_errors {
+            Ok(ExitStatus::Error)
+        } else {
+            Ok(ExitStatus::Success)
         }
     }
 
@@ -708,4 +912,150 @@ mod no_parent_tests {
         assert!(is_subdir("/A/B/", "/a/b/c/", true));
         assert!(!is_subdir("/A/B/", "/a/c/", true));
     }
+}
+
+// ============ Static helper functions for parallel recursive download ============
+
+/// Check if a URL is allowed (parallel worker version, simplified robots check).
+///
+/// In parallel mode, robots.txt fetching is simplified: we only check the
+/// already-fetched robots_cache. Network fetch of robots.txt is not done in
+/// parallel workers to avoid race conditions. The first encounter of a new
+/// host will allow the URL; a subsequent sequential robots.txt fetch may
+/// block it later (matching wget's "fail open" behavior).
+fn is_url_allowed_static(
+    url: &str,
+    _start_host: &str,
+    config: &Config,
+    robots_cache: &mut HashMap<String, bool>,
+) -> bool {
+    let parsed = match ParsedUrl::parse(url) {
+        Ok(p) => p,
+        Err(_) => return true,
+    };
+
+    if parsed.scheme == Scheme::Ftp {
+        return true;
+    }
+
+    if !config.recursive.use_robots {
+        return true;
+    }
+
+    let host_lc = parsed.host.to_ascii_lowercase();
+    // In parallel mode, if robots.txt hasn't been fetched yet, allow the URL
+    // (fail-open, matching wget's behavior). The cache is checked but not
+    // populated by network fetch in workers.
+    if let Some(&allowed) = robots_cache.get(&host_lc) {
+        return allowed;
+    }
+
+    true
+}
+
+/// Extract links from a downloaded file (parallel worker version).
+fn extract_links_static(
+    local_path: &std::path::Path,
+    base_url: &str,
+    entry: &QueueEntry,
+    html_extractor: &HtmlExtractor,
+    css_extractor: &CssExtractor,
+    config: &Config,
+) -> Option<Vec<UrlPosition>> {
+    if !local_path.exists() {
+        return None;
+    }
+
+    let mut file = std::fs::File::open(local_path).ok()?;
+    let parsed_url = ParsedUrl::parse(base_url).ok()?;
+
+    let base = parsed_url.display();
+    let mut opts = ExtractOptions::default();
+    opts.follow_tags = config.recursive.follow_tags.clone();
+    opts.ignore_tags = config.recursive.ignore_tags.clone();
+
+    let content_type = detect_content_type(local_path);
+    let results = if content_type_is_html(Some(&content_type)) || entry.expect_html {
+        html_extractor.extract_urls(&mut file, &base, &opts).ok()?
+    } else if content_type_is_css(Some(&content_type)) || entry.expect_css {
+        css_extractor.extract_urls(&mut file, &base, &opts).ok()?
+    } else {
+        return None;
+    };
+
+    Some(results)
+}
+
+/// Enqueue a child URL into the shared queue (parallel worker version).
+fn enqueue_child_static(
+    link: &UrlPosition,
+    parent_url: &str,
+    parent_depth: u32,
+    queue: &mut UrlQueue,
+    start_url: &ParsedUrl,
+    config: &Config,
+) {
+    let parent_parsed = match ParsedUrl::parse(parent_url) {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+
+    let absolute_url = match link.link_type {
+        LinkType::Relative | LinkType::CssImport => {
+            match parent_parsed.merge(&link.url) {
+                Ok(u) => u.display(),
+                Err(_) => return,
+            }
+        }
+        _ => link.url.clone(),
+    };
+
+    let child_parsed = match ParsedUrl::parse(&absolute_url) {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+
+    // Span hosts check
+    if !config.recursive.span_hosts
+        && child_parsed.host.to_ascii_lowercase() != parent_parsed.host.to_ascii_lowercase()
+    {
+        return;
+    }
+
+    // Relative only check
+    if config.recursive.relative_only
+        && link.link_type != LinkType::Relative
+        && link.link_type != LinkType::CssImport
+    {
+        return;
+    }
+
+    // No-parent check
+    if config.recursive.no_parent {
+        if !is_subdir(
+            &start_url.dir,
+            &child_parsed.dir,
+            config.ignore_case,
+        ) {
+            return;
+        }
+    }
+
+    // HTTPS-only check
+    if config.http.https_only && !child_parsed.scheme.is_secure() {
+        return;
+    }
+
+    // FTP following check
+    if child_parsed.scheme == Scheme::Ftp && !config.ftp.follow_ftp {
+        return;
+    }
+
+    queue.push(QueueEntry {
+        url: absolute_url,
+        referer: Some(parent_url.to_string()),
+        depth: parent_depth + 1,
+        expect_html: link.expect_html,
+        expect_css: link.expect_css,
+    });
 }

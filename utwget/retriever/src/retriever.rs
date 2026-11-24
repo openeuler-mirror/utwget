@@ -2855,6 +2855,19 @@ impl Retriever {
         &self.config
     }
 
+    /// Clone the shared `Arc<Config>` for use in a parallel worker.
+    pub fn config_arc_clone(&self) -> Arc<Config> {
+        self.config.clone()
+    }
+
+    /// Clone the shared TLS connection pool for use in a parallel worker.
+    ///
+    /// `TlsConnectionPool` uses `Arc<Mutex<...>>` internally, so cloning is
+    /// cheap (reference count increment) and all clones share the same pool.
+    pub fn connection_pool_clone(&self) -> TlsConnectionPool {
+        self.connection_pool.clone()
+    }
+
     /// Persist session state to disk.
     ///
     /// Saves cookies to `--save-cookies` file (if configured) and the HSTS
