@@ -19,6 +19,7 @@ use ut_core::{Config, WgetError};
 use ut_progress::ProgressDisplay;
 
 use crate::retriever::Retriever;
+use crate::tls_pool::TlsConnectionPool;
 use crate::types::{RetrieveError, RetrieveOutcome};
 
 /// Async retriever wrapper that provides async versions of download operations.
@@ -31,6 +32,10 @@ pub struct AsyncRetriever {
     config: Arc<Config>,
     /// Concurrency limit semaphore.
     semaphore: Arc<Semaphore>,
+    /// 共享 TLS 连接池。所有 `spawn_blocking` 任务 clone 同一池，从而
+    /// 真正复用 keep-alive 连接（之前每次 Retriever::new 新建一个 pool，
+    /// 8 个并发下载到同一 host 互不可见）。
+    connection_pool: TlsConnectionPool,
 }
 
 impl AsyncRetriever {
@@ -44,6 +49,7 @@ impl AsyncRetriever {
         AsyncRetriever {
             config,
             semaphore: Arc::new(Semaphore::new(max_concurrent)),
+            connection_pool: TlsConnectionPool::new(5),
         }
     }
 
@@ -62,11 +68,12 @@ impl AsyncRetriever {
     pub async fn retrieve(&self, url: &str) -> Result<RetrieveOutcome, RetrieveError> {
         let _permit = self.acquire_permit().await?;
         let config = self.config.clone();
+        let pool = self.connection_pool.clone();
         let url = url.to_string();
 
         tokio::task::spawn_blocking(move || {
             let progress = create_silent_progress();
-            let mut retriever = Retriever::new(config, progress);
+            let mut retriever = Retriever::with_connection_pool(config, progress, pool);
             retriever.retrieve_with_retry(&url)
         })
         .await
@@ -90,10 +97,11 @@ impl AsyncRetriever {
     ) -> Result<RetrieveOutcome, RetrieveError> {
         let _permit = self.acquire_permit().await?;
         let config = self.config.clone();
+        let pool = self.connection_pool.clone();
         let url = url.to_string();
 
         tokio::task::spawn_blocking(move || {
-            let mut retriever = Retriever::new(config, progress);
+            let mut retriever = Retriever::with_connection_pool(config, progress, pool);
             retriever.retrieve_with_retry(&url)
         })
         .await
@@ -121,6 +129,7 @@ impl AsyncRetriever {
             let url = url.clone();
             let config = self.config.clone();
             let semaphore = self.semaphore.clone();
+            let pool = self.connection_pool.clone();
 
             let handle = tokio::spawn(async move {
                 let _permit = semaphore.acquire_owned().await
@@ -128,7 +137,7 @@ impl AsyncRetriever {
                 let url_clone = url.clone();
                 let result = tokio::task::spawn_blocking(move || {
                     let progress = create_silent_progress();
-                    let mut retriever = Retriever::new(config, progress);
+                    let mut retriever = Retriever::with_connection_pool(config, progress, pool);
                     retriever.retrieve_with_retry(&url_clone)
                 })
                 .await

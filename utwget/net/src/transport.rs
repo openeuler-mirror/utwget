@@ -48,7 +48,7 @@ use std::time::Duration;
 ///
 /// - `TcpTransport` - Plain TCP connections (error: `io::Error`)
 /// - TLS transports - Secure connections (error: `TlsError`)
-pub trait Transport {
+pub trait Transport: Send {
     /// The error type for transport operations.
     type Error: std::error::Error + Send + Sync + 'static;
 
