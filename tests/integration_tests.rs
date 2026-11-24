@@ -9,3 +9,4 @@
 #[path = "integration_tests/redirect.rs"] mod redirect;
 #[path = "integration_tests/resume.rs"] mod resume;
 #[path = "integration_tests/warc.rs"] mod warc;
+#[path = "integration_tests/ftps_e2e.rs"] mod ftps_e2e;
