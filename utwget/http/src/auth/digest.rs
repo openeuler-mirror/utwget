@@ -123,15 +123,20 @@ fn sha256_hex(data: &[u8]) -> Result<String, AuthError> {
 /// let header = auth.authenticate(&challenge, &creds, "GET", "/path", None);
 /// ```
 pub struct DigestAuthenticator {
-    /// Monotonically increasing counter for the number of requests authenticated
-    /// with this session.  Sent as the `nc` directive in the Authorization header.
+    /// Request counter for the CURRENT nonce — sent as the `nc` directive.
+    /// Reset to 0 whenever the server issues a new nonce: RFC 7616 §3.4
+    /// defines `nc` as "the number of requests sent with THIS nonce", and a
+    /// server that rotates nonces (or a counter shared across hosts/realms)
+    /// rejects a continuously increasing `nc` with another 401.
     nonce_count: u32,
+    /// The nonce `nonce_count` belongs to.
+    last_nonce: Option<String>,
 }
 
 impl Default for DigestAuthenticator {
     /// Creates a `DigestAuthenticator` with a nonce count of zero.
     fn default() -> Self {
-        DigestAuthenticator { nonce_count: 0 }
+        DigestAuthenticator { nonce_count: 0, last_nonce: None }
     }
 }
 
@@ -278,6 +283,12 @@ impl Authenticator for DigestAuthenticator {
         let algorithm = DigestAlgorithm::from_str(algorithm_str)
             .ok_or_else(|| AuthError::AlgorithmUnsupported(algorithm_str.to_string()))?;
 
+        // RFC 7616 §3.4: nc counts requests per nonce. Reset when the server
+        // rotates the nonce (stale=true re-challenges, new sessions, etc.).
+        if self.last_nonce.as_deref() != Some(nonce.as_str()) {
+            self.nonce_count = 0;
+            self.last_nonce = Some(nonce.clone());
+        }
         self.nonce_count += 1;
         let nc = self.nonce_count;
         let cnonce = Self::generate_cnonce();
@@ -285,10 +296,20 @@ impl Authenticator for DigestAuthenticator {
         let realm = challenge.realm.as_deref().unwrap_or("");
         let ha1 = self.compute_ha1(algorithm, credentials, realm, nonce, &cnonce)?;
 
+        // GNU wget always selects qop="auth" (http.c digest_authentication
+        // only understands "auth"). Preferring "auth-int" here computed an
+        // integrity hash over a body wget never includes, producing 401s
+        // against servers offering both qops. Pick "auth" first, and only
+        // fall back to "auth-int" if "auth" is genuinely absent.
         let qop_value = challenge.qop.as_ref().and_then(|qops| {
             qops.split(',')
                 .map(|s| s.trim())
-                .find(|s| *s == "auth-int" || *s == "auth")
+                .find(|s| *s == "auth")
+                .or_else(|| {
+                    qops.split(',')
+                        .map(|s| s.trim())
+                        .find(|s| *s == "auth-int")
+                })
         });
 
         let response = self.compute_response(

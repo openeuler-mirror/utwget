@@ -433,6 +433,47 @@ mod digest_tests {
         let auth = DigestAuthenticator::new();
         assert_eq!(auth.scheme(), AuthScheme::Digest);
     }
+
+
+#[test]
+fn digest_qop_prefers_auth_over_auth_int() {
+    // GNU wget only implements qop="auth"; a server offering "auth,auth-int"
+    // must get "auth" (the previous code preferred "auth-int", whose
+    // body-hash never matched what wget sends, causing persistent 401s).
+    let challenge = make_digest_challenge("r", "n1", Some("auth-int,auth"), "MD5");
+    let mut dispatcher = AuthDispatcher::new();
+    let creds = make_credentials("u", "p");
+    let header = dispatcher
+        .authenticate(&challenge, &creds, "GET", "/", None)
+        .unwrap()
+        .unwrap();
+    assert!(
+        header.contains("qop=auth,") || header.ends_with("qop=auth") || header.contains("qop=auth"),
+        "must select qop=auth, got: {}",
+        header
+    );
+}
+
+#[test]
+fn digest_nc_resets_on_nonce_change() {
+    // RFC 7616 §3.4: nc counts requests per nonce. A server that rotates
+    // nonces must see nc restart at 00000001 (a shared monotonic counter
+    // produced 00000002+ on the first request of each new nonce → 401).
+    let creds = make_credentials("u", "p");
+    let mut auth = DigestAuthenticator::default();
+
+    let c1 = make_digest_challenge("r", "nonce-one", Some("auth"), "MD5");
+    let h1 = auth.authenticate(&c1, &creds, "GET", "/", None).unwrap().unwrap();
+    assert!(h1.contains("nc=00000001"), "first request: {}", h1);
+
+    let h2 = auth.authenticate(&c1, &creds, "GET", "/", None).unwrap().unwrap();
+    assert!(h2.contains("nc=00000002"), "second request, same nonce: {}", h2);
+
+    // Server rotates the nonce → nc restarts.
+    let c2 = make_digest_challenge("r", "nonce-two", Some("auth"), "MD5");
+    let h3 = auth.authenticate(&c2, &creds, "GET", "/", None).unwrap().unwrap();
+    assert!(h3.contains("nc=00000001"), "nc must reset on nonce change: {}", h3);
+}
 }
 
 // =============================================================================
