@@ -187,6 +187,7 @@ impl RecursiveRetriever {
             .map_err(RetrieveError::Protocol)?;
 
         let max_depth = self.retriever.config().recursive.max_level;
+        let max_redirect = self.retriever.config().max_redirect;
         let mut queue = UrlQueue::new(max_depth);
 
         if self.retriever.config().recursive.spider {
@@ -196,6 +197,7 @@ impl RecursiveRetriever {
                 depth: 0,
                 expect_html: true,
                 expect_css: false,
+                redirect_count: 0,
             });
         } else {
             queue.push(QueueEntry {
@@ -204,6 +206,7 @@ impl RecursiveRetriever {
                 depth: 0,
                 expect_html: true,
                 expect_css: false,
+                redirect_count: 0,
             });
         }
 
@@ -251,14 +254,26 @@ impl RecursiveRetriever {
                         any_downloaded = true;
                     }
                     Ok(RetrieveOutcome::Redirected(target)) => {
-                        if !queue.is_visited(&target) {
-                            queue.push(QueueEntry {
-                                url: target,
-                                referer: Some(url_str.clone()),
-                                depth: entry.depth,
-                                expect_html: entry.expect_html,
-                                expect_css: entry.expect_css,
-                            });
+                        // Arch 6.3-4: enforce --max-redirect on the re-queued
+                        // redirect target (parallel path does the same).
+                        let next_hops = entry.redirect_count + 1;
+                        if next_hops <= max_redirect {
+                            if !queue.is_visited(&target) {
+                                queue.push(QueueEntry {
+                                    url: target,
+                                    referer: Some(url_str.clone()),
+                                    depth: entry.depth,
+                                    expect_html: entry.expect_html,
+                                    expect_css: entry.expect_css,
+                                    redirect_count: next_hops,
+                                });
+                            }
+                        } else {
+                            warn!(
+                                "max redirects ({}) exceeded following {} -- not re-queuing {}",
+                                max_redirect, url_str, target
+                            );
+                            exit_status = ExitStatus::Error;
                         }
                     }
                     Ok(RetrieveOutcome::SpiderOnly) => {}
@@ -330,14 +345,26 @@ impl RecursiveRetriever {
                         }
                     }
                     Ok(RetrieveOutcome::Redirected(target)) => {
-                        if !queue.is_visited(&target) {
-                            queue.push(QueueEntry {
-                                url: target,
-                                referer: Some(url_str.clone()),
-                                depth: entry.depth,
-                                expect_html: entry.expect_html,
-                                expect_css: entry.expect_css,
-                            });
+                        // Arch 6.3-4: enforce --max-redirect on the re-queued
+                        // redirect target (parallel path does the same).
+                        let next_hops = entry.redirect_count + 1;
+                        if next_hops <= max_redirect {
+                            if !queue.is_visited(&target) {
+                                queue.push(QueueEntry {
+                                    url: target,
+                                    referer: Some(url_str.clone()),
+                                    depth: entry.depth,
+                                    expect_html: entry.expect_html,
+                                    expect_css: entry.expect_css,
+                                    redirect_count: next_hops,
+                                });
+                            }
+                        } else {
+                            warn!(
+                                "max redirects ({}) exceeded following {} -- not re-queuing {}",
+                                max_redirect, url_str, target
+                            );
+                            exit_status = ExitStatus::Error;
                         }
                     }
                     Ok(RetrieveOutcome::SpiderOnly) => {}
@@ -396,6 +423,7 @@ impl RecursiveRetriever {
         let any_downloaded = Arc::new(AtomicBool::new(false));
         let start_host = parsed.host.clone();
 
+        let max_redirect = self.retriever.config().max_redirect;
         // Seed the queue with the start URL
         {
             let mut q = queue.lock().unwrap();
@@ -405,6 +433,7 @@ impl RecursiveRetriever {
                 depth: 0,
                 expect_html: true,
                 expect_css: false,
+                redirect_count: 0,
             });
         }
 
@@ -554,14 +583,31 @@ impl RecursiveRetriever {
                                 }
                                 Ok(RetrieveOutcome::Redirected(target)) => {
                                     let mut q = queue.lock().unwrap();
-                                    if !q.is_visited(&target) {
-                                        q.push(QueueEntry {
-                                            url: target,
-                                            referer: Some(url_str.clone()),
-                                            depth: entry.depth,
-                                            expect_html: entry.expect_html,
-                                            expect_css: entry.expect_css,
-                                        });
+                                    // Arch 6.3-4: count redirect hops and
+                                    // enforce --max-redirect. Previously the
+                                    // re-queued entry kept redirect_count
+                                    // implicit/0 and no limit was checked —
+                                    // a server returning an unbounded chain of
+                                    // distinct redirect URLs made the parallel
+                                    // crawl never terminate.
+                                    let next_hops = entry.redirect_count + 1;
+                                    if next_hops <= max_redirect {
+                                        if !q.is_visited(&target) {
+                                            q.push(QueueEntry {
+                                                url: target,
+                                                referer: Some(url_str.clone()),
+                                                depth: entry.depth,
+                                                expect_html: entry.expect_html,
+                                                expect_css: entry.expect_css,
+                                                redirect_count: next_hops,
+                                            });
+                                        }
+                                    } else {
+                                        warn!(
+                                            "max redirects ({}) exceeded following {} -- not re-queuing {}",
+                                            max_redirect, url_str, target
+                                        );
+                                        error_flag.store(true, Ordering::Relaxed);
                                     }
                                 }
                                 Ok(RetrieveOutcome::SpiderOnly) => {}
@@ -746,6 +792,7 @@ impl RecursiveRetriever {
             depth: parent_depth + 1,
             expect_html: link.expect_html,
             expect_css: link.expect_css,
+                                redirect_count: 0
         });
     }
 
@@ -1125,5 +1172,6 @@ fn enqueue_child_static(
         depth: parent_depth + 1,
         expect_html: link.expect_html,
         expect_css: link.expect_css,
+                                redirect_count: 0
     });
 }
