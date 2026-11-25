@@ -170,6 +170,29 @@ impl H2Client {
         })
     }
 
+    /// Check whether the connection is still usable, without sending data.
+    ///
+    /// Drives `SendRequest::ready()`: it resolves immediately when the
+    /// connection can accept a new request and errors when the connection
+    /// has been closed or reset (e.g. the peer closed an idle connection).
+    /// A 500ms cap guards against a stalled link. Used by the connection
+    /// pool to avoid handing out dead connections (M4).
+    pub fn is_healthy(&mut self) -> bool {
+        use std::future::poll_fn;
+        use std::time::Duration;
+        self.runtime.block_on(async {
+            match tokio::time::timeout(
+                Duration::from_millis(500),
+                poll_fn(|cx| self.sender.poll_ready(cx)),
+            )
+            .await
+            {
+                Ok(Ok(())) => true,
+                _ => false,
+            }
+        })
+    }
+
     /// Send body data on a stream.
     ///
     /// # Arguments
