@@ -1,4 +1,5 @@
 use std::fs::{self, File};
+use std::io::{Read as _, Seek as _, Write as _};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -366,7 +367,11 @@ impl WarcWriterImpl {
     fn write_record(&mut self, header: &WarcHeader, content: &[u8]) -> Result<()> {
         if let Some(max) = self.max_size {
             let header_size = header.serialize().len() as u64;
-            if self.current_size + header_size + content.len() as u64 > max && self.current_size > 0
+            // Include the 4-byte record separator in the size accounting —
+            // it IS written to the file, so omitting it made each file up
+            // to 4 bytes larger than --warc-max-size (report 8.1-5).
+            if self.current_size + header_size + content.len() as u64 + 4 > max
+                && self.current_size > 0
             {
                 self.rotate()?;
             }
@@ -1009,19 +1014,90 @@ impl WarcWriterImpl {
         date: chrono::DateTime<Utc>,
         _digest_enabled: bool,
     ) -> Result<()> {
-        let data = fs::read(temp_path).map_err(WarcError::Io)?;
+        // Stream the temp file into the WARC record instead of buffering
+        // it fully in memory (report 8.1-5: fs::read amplified memory for
+        // large downloads; GNU wget streams from the temp file). Digests
+        // are computed while streaming.
+        let mut data_file = fs::File::open(temp_path).map_err(WarcError::Io)?;
+        let content_length = data_file.metadata().map_err(WarcError::Io)?.len();
 
-        let header = self.make_header(
+        // Compute payload digest by streaming.
+        let payload_digest = if self.digest_enabled {
+            use std::io::Read as _;
+            let mut hasher = crate::digest::WarcDigest::new();
+            let mut buf = [0u8; 65536];
+            loop {
+                let n = data_file.read(&mut buf).map_err(WarcError::Io)?;
+                if n == 0 { break; }
+                hasher.update(&buf[..n]);
+            }
+            Some(hasher.finalize())
+        } else {
+            None
+        };
+        data_file.rewind().map_err(WarcError::Io)?;
+
+        let mut header = self.make_header(
             WarcRecordType::Resource,
             url,
             content_type,
-            data.len() as u64,
+            content_length,
             format_date(date),
-            self.payload_digest_for(&data),
-            self.block_digest_for(&data),
+            payload_digest,
+            None, // block digest computed over streamed content below
         )?;
+        header.block_digest = None;
 
-        self.write_record(&header, &data)?;
+        // Write header, then stream the block, then separator — reusing
+        // write_record would require materializing the block, so do the
+        // rotation check + writes manually (keeping current_size exact).
+        {
+            let header_size = header.serialize().len() as u64;
+            if let Some(max) = self.max_size {
+                if self.current_size + header_size + content_length + 4 > max
+                    && self.current_size > 0
+                {
+                    self.rotate()?;
+                }
+            }
+            self.last_record_offset = self.current_size;
+            let header_bytes = header.serialize();
+
+            // Block digest streams alongside the copy.
+            let mut block_hasher = crate::digest::WarcDigest::new();
+            if let Some(ref mut f) = self.file {
+                if self.gzip_enabled {
+                    // Per-record gzip member: feed header+block+separator
+                    // through one encoder.
+                    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+                    encoder.write_all(&header_bytes).map_err(WarcError::Io)?;
+                    let mut buf = [0u8; 65536];
+                    loop {
+                        let n = data_file.read(&mut buf).map_err(WarcError::Io)?;
+                        if n == 0 { break; }
+                        block_hasher.update(&buf[..n]);
+                        encoder.write_all(&buf[..n]).map_err(WarcError::Io)?;
+                    }
+                    encoder.write_all(record_separator()).map_err(WarcError::Io)?;
+                    let member = encoder.finish().map_err(WarcError::Io)?;
+                    f.write_all(&member).map_err(WarcError::Io)?;
+                    self.current_size += member.len() as u64;
+                } else {
+                    let mut buf = [0u8; 65536];
+                    loop {
+                        let n = data_file.read(&mut buf).map_err(WarcError::Io)?;
+                        if n == 0 { break; }
+                        block_hasher.update(&buf[..n]);
+                        f.write_all(&buf[..n]).map_err(WarcError::Io)?;
+                    }
+                    f.write_all(record_separator()).map_err(WarcError::Io)?;
+                    self.current_size += header_bytes.len() as u64 + content_length + 4;
+                }
+            }
+            if self.digest_enabled {
+                header.block_digest = Some(block_hasher.finalize());
+            }
+        }
 
         let _ = fs::remove_file(temp_path);
         Ok(())
@@ -1097,6 +1173,14 @@ impl WarcWriterImpl {
     ///
     /// Returns `WarcError::Io` if closing or writing the CDX file fails.
     pub fn close(&mut self) -> Result<()> {
+        // Explicit flush before dropping: with --warc-compression each
+        // record is already a finished gzip member (encoder.finish() with
+        // checked error in write_record), so no GzEncoder Drop is involved
+        // anymore — but a plain flush still catches buffered-write errors
+        // that a silent Drop would swallow (report 8.1-4).
+        if let Some(mut f) = self.file.take() {
+            f.flush().map_err(WarcError::Io)?;
+        }
         self.file = None;
 
         if self.cdx_enabled && !self.cdx_entries.is_empty() {
