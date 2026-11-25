@@ -22,6 +22,12 @@ pub type DnsCacheKey = (String, u16);
 /// DNS cache entry TTL (seconds).
 pub const DNS_CACHE_TTL: Duration = Duration::from_secs(60);
 
+/// Maximum number of cached DNS entries. Each entry holds a handful of
+/// SocketAddrs; unbounded growth would let a workload touching many hosts
+/// (or a malicious recursive page full of unique hostnames) balloon the
+/// cache (M23). Oldest entries (by insertion, roughly) are evicted first.
+pub const DNS_CACHE_MAX_ENTRIES: usize = 1024;
+
 /// Process-wide DNS cache.
 /// Caches resolved socket addresses with a TTL to avoid repeated DNS lookups
 /// for the same host. The cache is keyed by (host, port) because the resolved
@@ -49,8 +55,28 @@ pub fn cache_lookup(host: &str, port: u16) -> Option<Vec<SocketAddr>> {
 }
 
 /// Store resolved addresses in the DNS cache.
+///
+/// Evicts expired entries first, then — if still above the capacity limit —
+/// drops the entries closest to expiry to bound memory (M23).
 pub fn cache_insert(host: &str, port: u16, addrs: Vec<SocketAddr>) {
     if let Ok(mut cache) = dns_cache().lock() {
+        // Cheap opportunistic cleanup: drop expired entries on every insert.
+        cache.retain(|_, (_, cached_at)| cached_at.elapsed() < DNS_CACHE_TTL);
+
+        if cache.len() >= DNS_CACHE_MAX_ENTRIES {
+            // Evict the soonest-to-expire entries (approximate LRU: entries
+            // inserted earliest expire first since the TTL is uniform).
+            let mut by_expiry: Vec<_> = cache
+                .iter()
+                .map(|(k, (_, t))| (*t, k.clone()))
+                .collect();
+            by_expiry.sort_by_key(|(t, _)| *t);
+            let excess = cache.len() + 1 - DNS_CACHE_MAX_ENTRIES;
+            for (_, key) in by_expiry.into_iter().take(excess) {
+                cache.remove(&key);
+            }
+        }
+
         cache.insert((host.to_string(), port), (addrs, Instant::now()));
     }
 }
