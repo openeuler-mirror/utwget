@@ -102,3 +102,72 @@ fn dns_errors_map_to_network_fail_without_string_matching() {
         ExitStatus::SslAuthFail
     );
 }
+
+// ============================================================================
+// Option introspection single-source-of-truth (arch 6.3-11)
+// ============================================================================
+
+#[test]
+fn short_options_with_value_includes_j_and_common_wget_shorts() {
+    // Regression: the hardcoded list omitted 'j', so `utwget -j 2` failed
+    // with "a value is required for '--concurrency'"; the value '2' was
+    // treated as a URL.
+    let shorts = utwget_cli::args::short_options_with_value();
+    for expected in ['o', 'O', 'P', 'l', 'j', 'T', 'U', 'e'] {
+        assert!(
+            shorts.contains(&expected),
+            "short -{} must be recognized as value-taking, got {:?}",
+            expected,
+            shorts
+        );
+    }
+}
+
+#[test]
+fn long_options_with_value_includes_core_wget_options() {
+    let longs = utwget_cli::args::long_options_with_value();
+    for expected in ["level", "output-document", "directory-prefix", "timeout", "user-agent"] {
+        assert!(
+            longs.iter().any(|l| l == expected),
+            "--{} must be recognized as value-taking, got {:?}",
+            expected,
+            longs
+        );
+    }
+    // Boolean options must NOT be in the value-taking list.
+    assert!(!longs.iter().any(|l| l == "spider"));
+}
+
+#[test]
+fn boolean_option_names_cover_the_former_hardcoded_list() {
+    let bools = utwget_cli::args::boolean_option_names();
+    // Spot-check the former hardcoded list (the one that drifted).
+    for expected in ["recursive", "spider", "timestamping", "check-certificate"] {
+        assert!(
+            bools.iter().any(|b| b == expected),
+            "--{} is boolean, got {:?}",
+            expected,
+            bools
+        );
+    }
+    // NOTE: --compression takes a value in utwget (--compression=gzip), so
+    // it must NOT appear here — the old hardcoded list wrongly listed it,
+    // which would have rewritten --no-compression into --_no-compression
+    // (correct) but also misclassified bare `--compression gzip` handling.
+    assert!(
+        utwget_cli::args::long_options_with_value()
+            .iter()
+            .any(|l| l == "compression"),
+        "--compression takes a value"
+    );
+    // No --no-* forms leak in.
+    assert!(!bools.iter().any(|b| b.starts_with("no-")));
+}
+
+#[test]
+fn declared_long_options_include_no_forms() {
+    let declared = utwget_cli::args::declared_long_options();
+    // --no-check-certificate is a declared clap arg (not a hidden rewrite).
+    assert!(declared.iter().any(|d| d == "no-check-certificate"));
+    assert!(declared.iter().any(|d| d == "spider"));
+}

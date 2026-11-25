@@ -103,33 +103,14 @@ fn rearrange_args() -> Vec<String> {
         args.push(arg.clone());
     }
 
-    // Known short options that take a value
-    let short_opts_with_value = [
-        'e', 'o', 'a', 'i', 'B', 'l', 'O', 'P', 'Q', 'w', 't', 'T',
-        'A', 'R', 'D', 'I', 'X', 'U', 'j', 'n', 'm', // -j/--concurrency,
-        // -n<opt> compound forms, -m mirror (values consumed by clap later)
-    ];
+    // Short options that take a value — derived from clap's own Args
+    // definition (arch 6.3-11: the previously hardcoded list drifted,
+    // e.g. missing 'j' so '-j 2' broke parsing).
+    let short_opts_with_value = crate::args::short_options_with_value();
 
-    // Known long options that take a value
-    let long_opts_with_value = [
-        "execute", "output-file", "append-output", "input-file", "base",
-        "level", "output-document", "directory-prefix", "cut-dirs", "quota",
-        "limit-rate", "wait", "waitretry", "tries", "timeout", "connect-timeout",
-        "read-timeout", "dns-timeout", "start-pos", "progress", "report-speed",
-        "config", "rejected-log", "retry-on-http-error", "accept", "reject",
-        "domains", "exclude-domains", "include-directories", "exclude-directories",
-        "follow-tags", "ignore-tags", "accept-regex", "reject-regex", "user-agent",
-        "header", "post-data", "post-file", "method", "body-data", "body-file",
-        "http-user", "http-password", "user", "password", "proxy-user", "proxy-password",
-        "http-proxy", "https-proxy", "ftp-proxy", "no-proxy", "bind-address",
-        "certificate", "private-key", "ca-certificate", "ca-directory", "crl-file",
-        "pinnedpubkey", "secure-protocol", "ciphers", "ftp-user", "ftp-password",
-        "load-cookies", "save-cookies", "hsts-file", "warc-file", "warc-max-size",
-        "warc-cdx", "warc-dedup", "warc-tempdir", "warc-header", "referer",
-        "local-encoding", "remote-encoding", "metalink", "default-page",
-        "certificate-type", "private-key-type", "regex-type", "restrict-file-names",
-        "use-askpass",
-    ];
+    // Long options that take a value — derived from clap's Args definition
+    // (single source of truth, arch 6.3-11).
+    let long_opts_with_value: Vec<String> = crate::args::long_options_with_value();
 
     let mut options: Vec<String> = Vec::new();
     let mut urls: Vec<String> = Vec::new();
@@ -144,7 +125,7 @@ fn rearrange_args() -> Vec<String> {
             options.push(arg.clone());
 
             // Check if this option takes a value and wasn't provided with =
-            if !arg.contains('=') && long_opts_with_value.contains(&opt_name) && i + 1 < args.len() {
+            if !arg.contains('=') && long_opts_with_value.iter().any(|o| o == opt_name) && i + 1 < args.len() {
                 i += 1;
                 options.push(args[i].clone());
             }
@@ -155,7 +136,7 @@ fn rearrange_args() -> Vec<String> {
             options.push(arg.clone());
 
             // Check if this option takes a value
-            if short_opts_with_value.contains(&opt_char) && i + 1 < args.len() && !args[i + 1].starts_with('-') {
+            if short_opts_with_value.contains(&opt_char) && i + 1 < args.len() && !args[i + 1].starts_with('-') { // Vec<char> contains(&char) ok
                 i += 1;
                 options.push(args[i].clone());
             }
@@ -177,40 +158,20 @@ fn rearrange_args() -> Vec<String> {
     // For all other boolean options, preprocess --no-FOO → a hidden
     // --_no-foo flag that apply_args recognizes and converts to config.foo=false.
     // This avoids having to declare 35+ separate clap fields.
-    let boolean_opts_needing_no: &[&str] = &[
-        "recursive", "quiet", "debug", "background", "mirror", "timestamping",
-        "continue", "page-requisites", "convert-links", "backup-converted",
-        "convert-file-only", "delete-after", "content-disposition",
-        "auth-no-challenge", "content-on-error", "save-headers",
-        "https-only", "span-hosts", "relative", "protocol-directories",
-        "force-directories", "retr-symlinks", "retry-connrefused",
-        "retry-on-host-error", "spider", "strict-comments",
-        "trust-server-names", "unlink", "xattr", "preserve-permissions",
-        "backups", "follow-ftp", "show-progress", "keep-session-cookies",
-        "parent", "clobber", "directories", "host-directories",
-        "remove-listing", "glob", "passive-ftp", "check-certificate",
-        "iri", "netrc", "cache", "use-server-timestamps",
-        "if-modified-since", "cookies", "hsts", "dns-cache",
-        "http-keep-alive", "compression",
-    ];
+    //
+    // Arch 6.3-11: both lists below are DERIVED from clap's own Args
+    // definition (single source of truth). The hardcoded copies drifted
+    // from args.rs twice — once omitting '-j' (breaking `-j 2`) and once
+    // storing prefixed names in existing_no_opts (inverting the meaning of
+    // every declared --no-FOO that also appeared in the boolean list).
+    let boolean_opts: std::collections::HashSet<String> =
+        crate::args::boolean_option_names().into_iter().collect();
 
-    // --no-FOO already declared in args.rs (don't interfere with them).
-    // NOTE: the comparison strips the "--no-" prefix first (see the map
-    // below), so this list holds option names WITHOUT the prefix. Storing
-    // prefixed names here ("no-check-certificate") made every declared
-    // --no-FOO whose FOO appears in boolean_opts_needing_no fall through to
-    // the hidden --_no-FOO conversion, silently inverting its meaning
-    // (e.g. --no-check-certificate re-enabled verification, --no-parent
-    // re-enabled parent traversal).
-    let existing_no_opts: std::collections::HashSet<&str> = [
-        "cache", "check-certificate", "clobber", "compression",
-        "config", "cookies", "directories", "dns-cache",
-        "glob", "host-directories", "hsts", "http-keep-alive",
-        "if-modified-since", "iri", "netrc", "parent",
-        "passive-ftp", "proxy", "remove-listing",
-        "use-server-timestamps", "verbose", "warc-compression",
-        "warc-digests", "warc-keep-log",
-    ].iter().copied().collect();
+    // --no-FOO forms already declared in args.rs are accepted by clap
+    // directly; every other boolean option gets the hidden-flag rewrite.
+    let declared_longs: std::collections::HashSet<String> = crate::args::declared_long_options()
+        .into_iter()
+        .collect();
 
     let result: Vec<String> = result
         .iter()
@@ -218,11 +179,12 @@ fn rearrange_args() -> Vec<String> {
             if let Some(rest) = arg.strip_prefix("--no-") {
                 let opt_name = rest.split('=').next().unwrap_or("");
                 // If this --no-FOO is already declared in args.rs, leave it.
-                if existing_no_opts.contains(opt_name) {
+                let declared_no_form = declared_longs.contains(&format!("no-{}", opt_name));
+                if declared_no_form {
                     return arg.clone();
                 }
                 // If --FOO is a known boolean option, convert to hidden flag
-                if boolean_opts_needing_no.contains(&opt_name) {
+                if boolean_opts.contains(opt_name) {
                     return format!("--_no-{}", opt_name);
                 }
             }
