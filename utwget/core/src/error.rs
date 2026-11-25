@@ -96,6 +96,14 @@ pub enum WgetError {
     #[error("quota exceeded: downloaded {downloaded}, limit {quota}")]
     QuotaExceeded { downloaded: u64, quota: u64 },
 
+    /// A pooled keep-alive connection died before the response head
+    /// arrived (server closed an idle connection). GNU wget silently
+    /// retries once on a fresh connection (retr.c); marking this
+    /// retryable reproduces that behavior instead of failing the
+    /// whole download.
+    #[error("connection closed before response received (stale keep-alive connection)")]
+    StaleConnection,
+
     /// Response body was truncated: the server closed the connection before
     /// all bytes promised by Content-Length were delivered.
     #[error("response body truncated: got {received} of {expected} bytes")]
@@ -284,6 +292,7 @@ impl WgetError {
                 | WgetError::SocketError(_)
                 | WgetError::Http { status: 500..=599, .. }
                 | WgetError::BodyTruncated { .. }
+                | WgetError::StaleConnection
                 | WgetError::TooManyRedirects { .. }
         )
     }

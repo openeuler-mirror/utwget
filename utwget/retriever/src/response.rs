@@ -215,9 +215,11 @@ fn read_one_response_head_with_prefix<R: Read>(
             .read(&mut tmp)
             .map_err(|e| RetrieveError::Protocol(WgetError::ProtocolIo(format!("read response head: {}", e))))?;
         if n == 0 {
-            return Err(RetrieveError::Protocol(WgetError::Other(
-                "connection closed before response headers received".into(),
-            )));
+            // Pooled keep-alive connection was closed by the peer before any
+            // response bytes arrived. Mapped to StaleConnection (retryable):
+            // the retry loop opens a fresh connection, matching GNU wget's
+            // silent retry on stale persistent connections.
+            return Err(RetrieveError::Protocol(WgetError::StaleConnection));
         }
         prefix.extend_from_slice(&tmp[..n]);
     }
@@ -243,9 +245,9 @@ fn read_one_response_head<R: Read>(
             .read(&mut tmp)
             .map_err(|e| RetrieveError::Protocol(WgetError::ProtocolIo(format!("read response head: {}", e))))?;
         if n == 0 {
-            return Err(RetrieveError::Protocol(WgetError::Other(
-                "connection closed before response headers received".into(),
-            )));
+            // See the comment in read_one_response_head_with_prefix: this is
+            // a stale pooled connection — retryable on a fresh connection.
+            return Err(RetrieveError::Protocol(WgetError::StaleConnection));
         }
         buf.extend_from_slice(&tmp[..n]);
     };
