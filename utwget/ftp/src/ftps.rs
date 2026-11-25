@@ -559,7 +559,9 @@ impl FtpsClient {
     /// Wrap a TCP stream with TLS
     fn wrap_tls(&mut self, stream: TcpStream, host: &str) -> Result<TlsConnection, FtpError> {
         let config = self.build_tls_config()?;
-        let server_name = ServerName::try_from(host)
+        // IDN → punycode for SNI (M19; rustls ServerName rejects non-ASCII).
+        let ascii_host = ut_core::url::to_punycode(host);
+        let server_name = ServerName::try_from(ascii_host.as_str())
             .map_err(|e| FtpError::Connect(format!("invalid server name: {}", e)))?
             .to_owned();
 

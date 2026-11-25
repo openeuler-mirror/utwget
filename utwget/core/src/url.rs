@@ -469,6 +469,18 @@ pub fn encode_iri(url: &str) -> String {
 ///
 /// Falls back to the original host if the `idna` feature is disabled or
 /// the conversion fails (to avoid breaking existing ASCII URLs).
+/// Convert an IDN hostname to ASCII punycode (RFC 3492).
+///
+/// Public helper so TLS layers (SNI / rustls `ServerName`) can accept
+/// Unicode hostnames: rustls' `ServerName::try_from` rejects non-ASCII,
+/// while wget+GnuTLS converts via idna before the handshake (M19).
+/// IP addresses and already-ASCII names pass through unchanged;
+/// conversion failure falls back to the input.
+#[cfg(feature = "idn")]
+pub fn to_punycode(host: &str) -> String {
+    encode_idn_host(host)
+}
+
 #[cfg(feature = "idn")]
 fn encode_idn_host(host: &str) -> String {
     // Skip IP addresses (they're not domain names).

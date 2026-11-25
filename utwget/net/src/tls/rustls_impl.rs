@@ -445,7 +445,11 @@ impl TlsConnector for RustlsConnector {
 
         let client_config = Self::cached_config(config)?;
 
-        let server_name = ServerName::try_from(host)
+        // IDN: rustls' ServerName rejects non-ASCII hostnames; convert to
+        // punycode first (M19), matching wget+GnuTLS idna behavior. ASCII
+        // hosts and IPs pass through unchanged.
+        let ascii_host = ut_core::url::to_punycode(host);
+        let server_name = ServerName::try_from(ascii_host.as_str())
             .map_err(|e| TlsError::HandshakeFailed(format!("invalid server name '{}': {}", host, e)))?
             .to_owned();
 
