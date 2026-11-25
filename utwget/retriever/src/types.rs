@@ -304,39 +304,8 @@ pub fn parse_http_date(s: &str) -> Option<DateTime<Utc>> {
 /// # Returns
 ///
 /// `Some(String)` containing the filename if found, `None` otherwise.
-pub fn parse_content_disposition(s: &str) -> Option<String> {
-    let s = s.trim();
-    let filename_key = "filename=";
-    let filename_star_key = "filename*=";
 
-    if let Some(idx) = s.find(filename_star_key) {
-        let rest = &s[idx + filename_star_key.len()..].trim_start();
-        if rest.starts_with("UTF-8''") || rest.starts_with("utf-8''") {
-            let encoded = &rest[8..];
-            let end = encoded.find(';').unwrap_or(encoded.len());
-            let encoded = &encoded[..end];
-            if let Ok(decoded) = urlencoding_fallback(encoded) {
-                return Some(decoded);
-            }
-        }
-        let end = rest.find(';').unwrap_or(rest.len());
-        let val = rest[..end].trim_matches('"').to_string();
-        if !val.is_empty() {
-            return Some(val);
-        }
-    }
 
-    if let Some(idx) = s.find(filename_key) {
-        let rest = &s[idx + filename_key.len()..].trim_start();
-        let end = rest.find(';').unwrap_or(rest.len());
-        let val = rest[..end].trim_matches('"').to_string();
-        if !val.is_empty() {
-            return Some(val);
-        }
-    }
-
-    None
-}
 
 /// Decode percent-encoded string.
 ///
@@ -350,24 +319,8 @@ pub fn parse_content_disposition(s: &str) -> Option<String> {
 /// # Returns
 ///
 /// `Ok(String)` with decoded content, or `Err` if UTF-8 decoding fails.
-fn urlencoding_fallback(s: &str) -> Result<String, std::string::FromUtf8Error> {
-    let mut result = Vec::with_capacity(s.len());
-    let mut chars = s.chars();
-    while let Some(c) = chars.next() {
-        if c == '%' {
-            let hex: String = chars.by_ref().take(2).collect();
-            if let Ok(byte) = u8::from_str_radix(&hex, 16) {
-                result.push(byte);
-            } else {
-                result.extend(c.to_string().as_bytes());
-                result.extend(hex.as_bytes());
-            }
-        } else {
-            result.extend(c.to_string().as_bytes());
-        }
-    }
-    String::from_utf8(result)
-}
+
+
 
 /// Check if content type indicates HTML content.
 ///

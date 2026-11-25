@@ -642,18 +642,18 @@ impl App {
             }
 
             match recursive_retriever.retrieve_tree(&parsed.display_with_credentials()) {
-                Ok(ut_retriever::ExitStatus::Success) => {
+                Ok(ut_retriever::RecursiveExitStatus::Success) => {
                     if self.config.verbose >= 1 {
                         eprintln!("Recursive download completed successfully");
                     }
                 }
-                Ok(ut_retriever::ExitStatus::NoUrlsFound) => {
+                Ok(ut_retriever::RecursiveExitStatus::NoUrlsFound) => {
                     if self.config.verbose >= 1 {
                         eprintln!("No URLs found to download");
                     }
                     overall_status = ExitStatus::Error;
                 }
-                Ok(ut_retriever::ExitStatus::Error) => {
+                Ok(ut_retriever::RecursiveExitStatus::Error) => {
                     overall_status = ExitStatus::Error;
                 }
                 Err(e) => {
@@ -715,18 +715,18 @@ impl App {
             match recursive_retriever.retrieve_tree_parallel(
                 &parsed.display_with_credentials(), num_workers,
             ) {
-                Ok(ut_retriever::ExitStatus::Success) => {
+                Ok(ut_retriever::RecursiveExitStatus::Success) => {
                     if self.config.verbose >= 1 {
                         eprintln!("Parallel recursive download completed successfully");
                     }
                 }
-                Ok(ut_retriever::ExitStatus::NoUrlsFound) => {
+                Ok(ut_retriever::RecursiveExitStatus::NoUrlsFound) => {
                     if self.config.verbose >= 1 {
                         eprintln!("No URLs found to download");
                     }
                     overall_status = ExitStatus::Error;
                 }
-                Ok(ut_retriever::ExitStatus::Error) => {
+                Ok(ut_retriever::RecursiveExitStatus::Error) => {
                     overall_status = ExitStatus::Error;
                 }
                 Err(e) => {
