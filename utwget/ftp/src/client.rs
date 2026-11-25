@@ -88,6 +88,35 @@ impl From<ut_core::WgetError> for FtpError {
     }
 }
 
+impl From<FtpError> for ut_core::WgetError {
+    /// Lossless-ish boundary mapping (arch 6.3-10): dedicated FtpError
+    /// variants map to their WgetError counterparts instead of being
+    /// stringified into FtpIo/Other at every call site.
+    fn from(e: FtpError) -> Self {
+        match e {
+            FtpError::Connect(msg) => ut_core::WgetError::SocketError(std::io::Error::new(
+                std::io::ErrorKind::ConnectionAborted,
+                format!("FTP connect error: {}", msg),
+            )),
+            FtpError::LoginRefused(_) => ut_core::WgetError::FtpLoginRefused,
+            FtpError::FileNotFound(msg) => ut_core::WgetError::FtpFileNotFound(msg),
+            FtpError::CommandFailed { code, message } => {
+                if (500..=599).contains(&code) {
+                    ut_core::WgetError::FtpServerError(format!("{} {}", code, message))
+                } else {
+                    ut_core::WgetError::FtpProtocol(format!("{} {}", code, message))
+                }
+            }
+            FtpError::DataConnectFailed(msg) => ut_core::WgetError::FtpIo(format!("data connection: {}", msg)),
+            FtpError::TransferFailed(msg) => ut_core::WgetError::FtpIo(format!("transfer: {}", msg)),
+            FtpError::ParseError(msg) => ut_core::WgetError::FtpProtocol(format!("parse: {}", msg)),
+            FtpError::InvalidInput => ut_core::WgetError::FtpProtocol("invalid input".into()),
+            FtpError::Io(e) => ut_core::WgetError::SocketError(e),
+            FtpError::Protocol(e) => ut_core::WgetError::FtpProtocol(format!("command: {}", e)),
+        }
+    }
+}
+
 /// Result of fetching metadata from an FTP URL.
 ///
 /// Contains information about the remote resource including whether it's

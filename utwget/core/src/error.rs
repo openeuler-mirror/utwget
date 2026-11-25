@@ -64,6 +64,12 @@ pub enum WgetError {
     #[error("FTP server error: {0}")]
     FtpServerError(String),
 
+    /// FTP protocol violation or command failure (negative completion code
+    /// outside the cases with dedicated variants). Structured alternative to
+    /// formatting FtpError into stringly-typed carriers (arch 6.3-10).
+    #[error("FTP protocol error: {0}")]
+    FtpProtocol(String),
+
     /// FTP file not found.
     #[error("FTP file not found: {0}")]
     FtpFileNotFound(String),

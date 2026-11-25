@@ -2215,6 +2215,7 @@ dependencies = [
  "ut-html",
  "ut-http",
  "ut-metalink",
+ "ut-net",
  "ut-progress",
  "ut-retriever",
  "ut-warc",
