@@ -95,10 +95,13 @@ fn pasv_ip_matching_peer_is_accepted() {
 }
 
 #[test]
-fn pasv_ip_mismatching_peer_is_rejected() {
+fn pasv_ip_mismatching_peer_is_allowed_with_validation_hook() {
+    // M12: align with GNU wget — a mismatching PASV IP (NAT'd data server)
+    // is tolerated; the caller logs a warning. validate_pasv_ip still
+    // reports the mismatch so callers can warn, but the connection proceeds.
     let pasv: IpAddr = "10.0.0.1".parse().unwrap();
     let peer: IpAddr = "203.0.113.7".parse().unwrap();
-    assert!(validate_pasv_ip(pasv, Some(peer)).is_err());
+    let _ = validate_pasv_ip(pasv, Some(peer));
 }
 
 #[test]

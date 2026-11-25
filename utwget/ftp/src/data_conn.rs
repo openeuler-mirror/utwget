@@ -193,11 +193,11 @@ pub fn enter_pasv(
         // FTP bounce attack mitigation: a malicious server can instruct the
         // client to connect to an arbitrary third-party IP:port via PASV,
         // enabling port scanning or abuse of trust relationships. We compare
-        // the PASV-advertised IP against the control connection's peer IP and
-        // refuse the connection if they differ. This is stricter than GNU
-        // wget (which only warns) but prevents the attack entirely. Legitimate
-        // setups where the data server legitimately differs from the control
-        // server should use EPSV or configure the firewall accordingly.
+        // PASV bounce-attack AWARENESS: GNU wget does NOT validate the
+        // PASV IP at all (ftp.c just calls connect_to_ip on the advertised
+        // address). The previous hard reject broke legitimate NAT setups
+        // where the data server's advertised IP differs from the control
+        // peer (M12). Stay compatible: WARN on mismatch and connect anyway.
         match ctrl.peer_addr() {
             Ok(peer) => {
                 let pasv_ip = match addr {
@@ -205,17 +205,15 @@ pub fn enter_pasv(
                     SocketAddr::V6(v6) => std::net::IpAddr::V6(*v6.ip()),
                 };
                 if peer.ip() != pasv_ip {
-                    return Err(FtpCommandError::Io(io::Error::new(
-                        io::ErrorKind::PermissionDenied,
-                        format!(
-                            "PASV advertises {} but control connection peer is {}; refusing to connect (possible FTP bounce attack)",
-                            pasv_ip, peer.ip()
-                        ),
-                    )));
+                    log::warn!(
+                        "PASV advertises {} but control connection peer is {} (possible FTP bounce attack); connecting anyway (GNU wget behavior)",
+                        pasv_ip,
+                        peer.ip()
+                    );
                 }
             }
             Err(e) => {
-                // If we can't determine the peer, proceed but log a warning.
+                // If we can't determine the peer, proceed.
                 log::warn!("cannot determine control connection peer for PASV validation: {}", e);
             }
         }
