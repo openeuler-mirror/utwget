@@ -65,3 +65,40 @@ fn apply_args_no_check_certificate_survives_wgetrc_overrides() {
     apply_args(&mut config, &args);
     assert_eq!(config.tls.check_certificate, ut_core::CheckCertMode::Off);
 }
+
+// ============================================================================
+// Exit-code mapping: structured DNS errors (arch 6.3-1)
+// ============================================================================
+
+#[test]
+fn dns_errors_map_to_network_fail_without_string_matching() {
+    use ut_core::WgetError;
+    use utwget_cli::app::ExitStatus;
+
+    // Previously: WgetError::Other("DNS resolution error: ...") was classified
+    // by msg.contains("DNS") — a wording change silently flipped the exit
+    // code between 1 (generic error) and 4 (network failure). The structured
+    // variants map deterministically.
+    assert_eq!(
+        ExitStatus::from_error(&WgetError::DnsResolution("x".into())),
+        ExitStatus::NetworkFail
+    );
+    assert_eq!(
+        ExitStatus::from_error(&WgetError::DnsTimeout),
+        ExitStatus::NetworkFail
+    );
+    assert_eq!(
+        ExitStatus::from_error(&WgetError::HostNotFound("h".into())),
+        ExitStatus::NetworkFail
+    );
+    // A generic Other must stay a generic error (never network) regardless
+    // of its message content.
+    assert_eq!(
+        ExitStatus::from_error(&WgetError::Other("DNS-something-unrelated".into())),
+        ExitStatus::Error
+    );
+    assert_eq!(
+        ExitStatus::from_error(&WgetError::TlsInitFailed),
+        ExitStatus::SslAuthFail
+    );
+}

@@ -71,7 +71,12 @@ impl ExitStatus {
             WgetError::HostNotFound(_)
             | WgetError::ConnectionRefused
             | WgetError::ConnectionTimeout(_)
-            | WgetError::SocketError(_) => ExitStatus::NetworkFail,
+            | WgetError::SocketError(_)
+            // DNS failures are network failures (arch 6.3-1: previously
+            // matched via msg.contains("DNS") on WgetError::Other, which
+            // broke silently when the message wording changed).
+            | WgetError::DnsResolution(_)
+            | WgetError::DnsTimeout => ExitStatus::NetworkFail,
 
             WgetError::Tls(TlsError::HandshakeFailed(_))
             | WgetError::Tls(TlsError::CertError(_))
@@ -104,13 +109,7 @@ impl ExitStatus {
             | WgetError::Warc(_)
             | WgetError::Config(_) => ExitStatus::Error,
 
-            WgetError::Other(msg) => {
-                if msg.contains("DNS") || msg.contains("resolve") || msg.contains("lookup") {
-                    ExitStatus::NetworkFail
-                } else {
-                    ExitStatus::Error
-                }
-            }
+            WgetError::Other(_) => ExitStatus::Error,
 
             _ => ExitStatus::Error,
         }
