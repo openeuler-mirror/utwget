@@ -95,24 +95,54 @@ fn http_status_text(code: u16) -> &'static str {
     match code {
         100 => "Continue",
         101 => "Switching Protocols",
+        102 => "Processing",
+        103 => "Early Hints",
         200 => "OK",
         201 => "Created",
+        202 => "Accepted",
+        203 => "Non-Authoritative Information",
         204 => "No Content",
+        205 => "Reset Content",
         206 => "Partial Content",
+        300 => "Multiple Choices",
         301 => "Moved Permanently",
         302 => "Found",
+        303 => "See Other",
         304 => "Not Modified",
+        307 => "Temporary Redirect",
+        308 => "Permanent Redirect",
         400 => "Bad Request",
         401 => "Unauthorized",
+        402 => "Payment Required",
         403 => "Forbidden",
         404 => "Not Found",
         405 => "Method Not Allowed",
+        406 => "Not Acceptable",
         407 => "Proxy Authentication Required",
         408 => "Request Timeout",
+        409 => "Conflict",
+        410 => "Gone",
+        411 => "Length Required",
+        412 => "Precondition Failed",
+        413 => "Content Too Large",
+        414 => "URI Too Long",
+        415 => "Unsupported Media Type",
         416 => "Range Not Satisfiable",
+        417 => "Expectation Failed",
+        418 => "I'm a teapot",
+        421 => "Misdirected Request",
+        422 => "Unprocessable Content",
+        426 => "Upgrade Required",
+        428 => "Precondition Required",
+        429 => "Too Many Requests",
+        431 => "Request Header Fields Too Large",
+        451 => "Unavailable For Legal Reasons",
         500 => "Internal Server Error",
+        501 => "Not Implemented",
         502 => "Bad Gateway",
         503 => "Service Unavailable",
+        504 => "Gateway Timeout",
+        505 => "HTTP Version Not Supported",
         _ => "",
     }
 }
@@ -390,14 +420,20 @@ impl WarcWriterImpl {
     /// GNU wget stores only the actual HTTP response (status line + response
     /// headers + body) in the response record. The request is a separate
     /// *request* record.
-    fn build_response_payload(_url: &str, status_code: u16, headers: &[u8], body: &[u8]) -> Vec<u8> {
+    fn build_response_payload(http_version: &str, status_code: u16, headers: &[u8], body: &[u8]) -> Vec<u8> {
         let crlf: &[u8] = b"\r\n";
         let mut payload = Vec::new();
-        // Status line: HTTP/1.1 <code> <reason>
-        payload.extend_from_slice(b"HTTP/1.1 ");
+        // Status line: <actual protocol version> <code> [<reason>] — the
+        // version is what the server really sent (report 8.1-3: hardcoding
+        // HTTP/1.1 falsified HTTP/1.0 captures). Unknown reason → omit it
+        // entirely instead of emitting a trailing space.
+        payload.extend_from_slice(http_version.as_bytes());
         payload.extend_from_slice(status_code.to_string().as_bytes());
-        payload.push(b' ');
-        payload.extend_from_slice(http_status_text(status_code).as_bytes());
+        let reason = http_status_text(status_code);
+        if !reason.is_empty() {
+            payload.push(b' ');
+            payload.extend_from_slice(reason.as_bytes());
+        }
         payload.extend_from_slice(crlf);
         // Response headers (already include CRLF per header)
         if !headers.is_empty() {
@@ -670,6 +706,7 @@ impl WarcWriterImpl {
     pub fn write_response(
         &mut self,
         url: &str,
+        http_version: &str,
         status_code: u16,
         headers: &[u8],
         body: &[u8],
@@ -704,7 +741,7 @@ impl WarcWriterImpl {
             }
         }
 
-        let payload = Self::build_response_payload(url, status_code, headers, body);
+        let payload = Self::build_response_payload(http_version, status_code, headers, body);
         // Content-Type is always application/http;msgtype=response for
         // response records (warc.c:1556); the entity MIME goes to the CDX
         // index instead (warc.c:1563-1566).

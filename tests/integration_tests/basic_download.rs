@@ -1187,7 +1187,7 @@ fn test_warc_cdx_entries() {
         let mut writer = WarcWriterImpl::new(path.clone(), false, false, None, true).unwrap();
         let now = chrono::Utc::now();
         // GNU wget only indexes response records in the CDX (warc.c:1563).
-        writer.write_response("http://example.com/index.html", 200, b"", b"<html></html>", "text/html", now).unwrap();
+        writer.write_response("http://example.com/index.html", "HTTP/1.1", 200, b"", b"<html></html>", "text/html", now, None).unwrap();
     }
     let cdx_path = dir.join("test_cdx.warc.cdx");
     assert!(cdx_path.exists());
