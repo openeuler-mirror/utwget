@@ -948,17 +948,23 @@ fn load_certs_from_dir(dir: &std::path::Path, root_store: &mut RootCertStore) ->
 ///
 /// The private key on success, or a `TlsError` on failure.
 fn load_private_key_from_file(path: &std::path::Path, key_type: KeyFileType) -> Result<PrivateKeyDer<'static>, TlsError> {
-    // SSH-style permission check: refuse private keys readable by group/other.
-    // This prevents accidentally using a key copied from a shared mount with
-    // mode 0644. mode & 0o077 must be 0 (only owner has access).
+    // Loose-permission check: GNU wget accepts private keys regardless of
+    // file mode (it never checks); the previous SSH-style hard reject made
+    // utwget refuse keys wget accepts (M21). Keep a warning — mTLS with a
+    // 0644 key is a real risk worth surfacing — but do not fail the
+    // connection.
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let metadata = std::fs::metadata(path)
-            .map_err(|_| TlsError::InvalidCertFile(path.to_path_buf()))?;
-        let mode = metadata.permissions().mode();
-        if mode & 0o077 != 0 {
-            return Err(TlsError::InsecureKeyFile(path.to_path_buf()));
+        if let Ok(metadata) = std::fs::metadata(path) {
+            let mode = metadata.permissions().mode();
+            if mode & 0o077 != 0 {
+                log::warn!(
+                    "private key {} is readable by group/other (mode {:o});                      consider chmod 600 (GNU wget does not enforce this)",
+                    path.display(),
+                    mode & 0o777
+                );
+            }
         }
     }
 
