@@ -681,7 +681,10 @@ impl Retriever {
         // follow the chain (wget --spider follows redirects too).
         if self.config.recursive.spider && !response.is_redirect() {
             if response.status_code >= 200 && response.status_code < 300 {
-                eprintln!("存在远程文件。");
+                // wget-compatible spider output via i18n (GNU wget http.c:
+                // "Remote file exists."); the previous hardcoded Chinese
+                // bypassed the i18n system entirely.
+                eprintln!("{}", ut_core::i18n::translate("utwget.spider_exists"));
                 return Ok(RetrieveOutcome::SpiderOnly);
             } else {
                 return Err(RetrieveError::Response(WgetError::Http {
