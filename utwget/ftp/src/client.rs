@@ -1358,7 +1358,7 @@ fn extract_quoted_path(text: &str) -> Option<String> {
 }
 
 /// Parse an MDTM timestamp (YYYYMMDDHHMMSS) into a DateTime.
-fn parse_ftp_timestamp(s: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+pub fn parse_ftp_timestamp(s: &str) -> Option<chrono::DateTime<chrono::Utc>> {
     let s = s.trim();
     if s.len() != 14 {
         return None;

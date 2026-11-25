@@ -128,3 +128,28 @@ fn pasv_ip_ipv6_peer_roundtrip() {
     let peer: IpAddr = "::ffff:203.0.113.7".parse().unwrap();
     assert!(validate_pasv_ip(pasv, Some(peer)).is_ok());
 }
+
+// ============================================================================
+// MDTM timestamp parsing unification (M16)
+// ============================================================================
+
+#[test]
+fn mdtm_timestamp_strict_parse_valid() {
+    use ut_ftp::client::parse_ftp_timestamp;
+    let ts = parse_ftp_timestamp("20260911041531");
+    assert!(ts.is_some());
+    let dt = ts.unwrap();
+    assert_eq!(dt.format("%Y%m%d%H%M%S").to_string(), "20260911041531");
+}
+
+#[test]
+fn mdtm_timestamp_strict_parse_rejects_garbage() {
+    use ut_ftp::client::parse_ftp_timestamp;
+    // The old lenient FTPS parser defaulted bad fields to epoch values;
+    // the unified parser must reject malformed timestamps outright so
+    // --timestamping never compares against a fabricated 1970-01-01.
+    assert!(parse_ftp_timestamp("abcd0911041531").is_none());
+    assert!(parse_ftp_timestamp("20260911").is_none());
+    assert!(parse_ftp_timestamp("20261311041531").is_none()); // month 13
+    assert!(parse_ftp_timestamp("").is_none());
+}
