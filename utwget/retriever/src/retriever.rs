@@ -275,7 +275,17 @@ impl Retriever {
                     retriever.config.warc.tempdir.clone(),
                     retriever.config.warc.user_headers.clone(),
                 ) {
-                    Ok(w) => retriever.warc = Some(w),
+                    Ok(mut w) => {
+                        // --warc-dedup=FILE: load the CDX dedup table
+                        // (GNU wget warc_load_cdx_dedup_file).
+                        if let Some(ref dedup_file) = retriever.config.warc.cdx_dedup_filename {
+                            match w.load_cdx_dedup_file(Path::new(dedup_file)) {
+                                Ok(n) => debug!("WARC dedup: {} CDX entries loaded", n),
+                                Err(e) => warn!("failed to load WARC dedup file {}: {}", dedup_file, e),
+                            }
+                        }
+                        retriever.warc = Some(w);
+                    }
                     Err(e) => warn!("failed to initialize WARC writer: {}", e),
                 }
             }

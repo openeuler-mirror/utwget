@@ -683,9 +683,14 @@ pub struct Args {
     #[arg(long = "warc-cdx")]
     pub warc_cdx: bool,
 
-    /// Enable CDX deduplication for WARC.
-    #[arg(long = "warc-dedup")]
-    pub warc_dedup: bool,
+    /// Load a CDX file for deduplication (--warc-dedup=FILE).
+    ///
+    /// When a response payload digest matches an entry in the given CDX
+    /// index, a revisit record is written instead of a full duplicate
+    /// (GNU wget warc.c:1061). The file is the .cdx produced by a previous
+    /// run with --warc-cdx.
+    #[arg(long = "warc-dedup", value_name = "FILE")]
+    pub warc_dedup: Option<String>,
 
     /// Enable GZIP compression for WARC files.
     #[arg(long = "warc-compression")]
