@@ -262,31 +262,13 @@ impl H2Retriever {
                 )))?;
         }
 
-        // Send CONNECT request with proxy authentication if configured.
-        // Sanitize the host (strip CR/LF/control chars) and bracket IPv6
-        // literals so the request line cannot be split (header injection)
-        // and IPv6 targets are well-formed. Mirrors the H1 path in
-        // retriever.rs::connect_via_proxy.
-        let clean_host: String = host
-            .chars()
-            .filter(|&c| c != '\r' && c != '\n' && !c.is_ascii_control())
-            .collect();
-        let target = if clean_host.contains(':') {
-            format!("[{}]:{}", clean_host, port)
-        } else {
-            format!("{}:{}", clean_host, port)
-        };
-        let mut connect_req = format!(
-            "CONNECT {} HTTP/1.1\r\nHost: {}\r\n",
-            target, target
+        // Shared CONNECT request builder (arch 6.3-9), same as the H1 path.
+        let connect_req = ut_net::proxy::build_connect_request(
+            host,
+            port,
+            config.proxy.proxy_user.as_deref(),
+            config.proxy.proxy_password.as_deref(),
         );
-        if let (Some(user), Some(pass)) = (&config.proxy.proxy_user, &config.proxy.proxy_password) {
-            use base64::Engine;
-            let credentials = format!("{}:{}", user, pass);
-            let encoded = base64::engine::general_purpose::STANDARD.encode(credentials);
-            connect_req.push_str(&format!("Proxy-Authorization: Basic {}\r\n", encoded));
-        }
-        connect_req.push_str("\r\n");
         debug!("CONNECT request: {}", crate::utils::redact_sensitive_headers(connect_req.trim()));
         stream.write_all(connect_req.as_bytes())
             .map_err(|e| RetrieveError::Protocol(WgetError::Http2(
@@ -316,16 +298,10 @@ impl H2Retriever {
             }
         }
 
-        // Check CONNECT response. Parse the status code precisely instead of
-        // substring-matching "200" (which would falsely match "1200" etc.).
+        // Shared status-line parser (arch 6.3-9).
         let status_line = response.lines().next().unwrap_or("");
         debug!("CONNECT response: {}", status_line);
-
-        // Status line format: "HTTP/1.1 <code> <reason>"
-        let status_code = status_line
-            .split_whitespace()
-            .nth(1)
-            .and_then(|s| s.parse::<u16>().ok());
+        let status_code = ut_net::proxy::parse_connect_status(status_line);
         if status_code != Some(200) {
             return Err(RetrieveError::Protocol(WgetError::Http2(format!(
                 "proxy CONNECT failed: {}",

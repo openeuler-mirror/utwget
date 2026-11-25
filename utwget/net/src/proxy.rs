@@ -104,21 +104,9 @@ pub fn connect_via_proxy(
         reject_crlf("proxy_password", p)?;
     }
 
-    let target = format!("{}:{}", target_host, target_port);
-    let mut request = format!("CONNECT {} HTTP/1.0\r\nHost: {}\r\n", target, target);
-
-    // Add authentication if provided
-    if let (Some(user), Some(pass)) = (proxy_user, proxy_password) {
-        let credentials = format!("{}:{}", user, pass);
-        use base64::Engine;
-        let encoded = base64::engine::general_purpose::STANDARD.encode(credentials.as_bytes());
-        request.push_str(&format!(
-            "Proxy-Authorization: Basic {}\r\n",
-            encoded
-        ));
-    }
-
-    request.push_str("\r\n");
+    // Shared builder (HTTP/1.1, sanitized target, optional Basic auth) —
+    // also used by retriever.rs and h2_integration.rs (arch 6.3-9).
+    let request = build_connect_request(target_host, target_port, proxy_user, proxy_password);
 
     // Send CONNECT request
     stream
@@ -169,6 +157,53 @@ pub fn connect_via_proxy(
         .map_err(ProxyError::Io)?;
 
     Ok(stream)
+}
+
+/// Build the CONNECT request line+headers for a proxy tunnel.
+///
+/// Single source of truth shared by the HTTP/1.1 path (retriever.rs), the
+/// HTTP/2 path (h2_integration.rs) and `connect_via_proxy` (arch 6.3-9:
+/// three diverging copies previously existed, with different request
+/// versions and only one honoring bind/timeout).
+///
+/// Sanitizes the target host (strips CR/LF/control chars) and brackets
+/// IPv6 literals; adds `Proxy-Authorization: Basic ...` when credentials
+/// are provided.
+pub fn build_connect_request(
+    target_host: &str,
+    target_port: u16,
+    proxy_user: Option<&str>,
+    proxy_password: Option<&str>,
+) -> String {
+    let clean_host: String = target_host
+        .chars()
+        .filter(|&c| c != '\r' && c != '\n' && !c.is_ascii_control())
+        .collect();
+    let target = if clean_host.contains(':') {
+        format!("[{}]:{}", clean_host, target_port)
+    } else {
+        format!("{}:{}", clean_host, target_port)
+    };
+    let mut req = format!("CONNECT {} HTTP/1.1\r\nHost: {}\r\n", target, target);
+    if let (Some(user), Some(pass)) = (proxy_user, proxy_password) {
+        let credentials = format!("{}:{}", user, pass);
+        use base64::Engine;
+        let encoded = base64::engine::general_purpose::STANDARD.encode(credentials.as_bytes());
+        req.push_str(&format!("Proxy-Authorization: Basic {}\r\n", encoded));
+    }
+    req.push_str("\r\n");
+    req
+}
+
+/// Parse the CONNECT response status line into a status code.
+///
+/// Precisely extracts the second whitespace-separated token (previously
+/// one caller substring-matched "200", which would falsely match "1200").
+pub fn parse_connect_status(status_line: &str) -> Option<u16> {
+    status_line
+        .split_whitespace()
+        .nth(1)
+        .and_then(|s| s.parse::<u16>().ok())
 }
 
 /// Connects to a proxy server with a timeout.
