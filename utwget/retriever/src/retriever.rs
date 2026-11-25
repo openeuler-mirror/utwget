@@ -1279,7 +1279,7 @@ impl Retriever {
             .unwrap_or_else(|| "anonymous".to_string());
         let password = url.password.clone()
             .or(self.config.ftp.password.clone())
-            .unwrap_or_else(|| "wget-rs@".to_string());
+            .unwrap_or_else(|| "-wget@".to_string());
 
         // Determine if we should use FTPS
         let use_ftps = url.scheme == Scheme::Ftps || self.config.ftp.ftps_implicit;
@@ -1556,7 +1556,7 @@ impl Retriever {
             .unwrap_or_else(|| "anonymous".to_string());
         let password = url.password.clone()
             .or(self.config.ftp.password.clone())
-            .unwrap_or_else(|| "wget-rs@".to_string());
+            .unwrap_or_else(|| "-wget@".to_string());
 
         let use_ftps = url.scheme == Scheme::Ftps || self.config.ftp.ftps_implicit;
         let port = if url.scheme == Scheme::Ftps && url.port == 21 {
