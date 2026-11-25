@@ -582,14 +582,45 @@ impl Retriever {
             let host = &url.host;
             let port = url.port;
             eprint!("正在解析主机 {} ({})... ", host, host);
-            let first_ip = if let Ok(addrs) = (host.as_str(), port).to_socket_addrs() {
-                let ip_list: Vec<String> = addrs.map(|a| a.ip().to_string()).collect();
-                let first = ip_list.first().cloned().unwrap_or_default();
-                eprintln!("{}", ip_list.join(", "));
-                first
+            // Resolve through the shared DNS cache (M24): the display path
+            // previously called to_socket_addrs() directly, doubling every
+            // download's DNS traffic (the connect path caches; this one
+            // didn't).
+            let resolved = if self.config.no_dns_cache {
+                crate::dns::resolve_with_timeout(
+                    host,
+                    port,
+                    self.config.dns_timeout.or(self.config.timeout),
+                )
             } else {
-                eprintln!("（解析失败）");
-                String::new()
+                match crate::dns::cache_lookup(host, port) {
+                    Some(addrs) => Ok(addrs),
+                    None => {
+                        let result = crate::dns::resolve_with_timeout(
+                            host,
+                            port,
+                            self.config.dns_timeout.or(self.config.timeout),
+                        );
+                        if let Ok(ref addrs) = result {
+                            if !addrs.is_empty() {
+                                crate::dns::cache_insert(host, port, addrs.clone());
+                            }
+                        }
+                        result
+                    }
+                }
+            };
+            let first_ip = match resolved {
+                Ok(addrs) => {
+                    let ip_list: Vec<String> = addrs.iter().map(|a| a.ip().to_string()).collect();
+                    let first = ip_list.first().cloned().unwrap_or_default();
+                    eprintln!("{}", ip_list.join(", "));
+                    first
+                }
+                Err(_) => {
+                    eprintln!("（解析失败）");
+                    String::new()
+                }
             };
 
             eprint!("正在连接 {} ({})|{}|:{}... ", host, host, first_ip, port);
