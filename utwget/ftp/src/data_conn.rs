@@ -477,20 +477,32 @@ impl TcpListenerBind {
 ///
 /// The response format is: `227 Entering Passive Mode (h1,h2,h3,h4,p1,p2)`
 /// where the IP is h1.h2.h3.h4 and the port is p1*256 + p2.
-fn parse_pasv_response(text: &str) -> Result<SocketAddr, FtpCommandError> {
+pub fn parse_pasv_response(text: &str) -> Result<SocketAddr, FtpCommandError> {
     let text = text.trim();
-    let start = text.find('(').ok_or_else(|| {
-        FtpCommandError::MalformedResponse("PASV: no opening parenthesis".into())
-    })?;
-    let end = text.find(')').ok_or_else(|| {
-        FtpCommandError::MalformedResponse("PASV: no closing parenthesis".into())
-    })?;
-    if start + 1 >= end {
-        return Err(FtpCommandError::MalformedResponse(
-            "PASV: empty or inverted parenthesis range".into(),
-        ));
-    }
-    let inner = &text[start + 1..end];
+    // RFC 959 recommends the (h1,h2,h3,h4,p1,p2) form in parentheses, but
+    // plenty of old/embedded servers omit them: "227 Entering Passive
+    // Mode 10,0,0,1,20,30". GNU wget's parse_pasv_host_and_port jumps to
+    // the first digit (ftp-basic.c:652-654), accepting both forms — do the
+    // same: prefer the parenthesized section, fall back to the first
+    // 6-comma-number run anywhere in the line.
+    let inner = if let (Some(start), Some(end)) = (text.find('('), text.find(')')) {
+        if start + 1 < end {
+            text[start + 1..end].to_string()
+        } else {
+            return Err(FtpCommandError::MalformedResponse(
+                "PASV: empty or inverted parenthesis range".into(),
+            ));
+        }
+    } else {
+        match find_pasv_number_run(text) {
+            Some(run) => run,
+            None => {
+                return Err(FtpCommandError::MalformedResponse(
+                    "PASV: no (h1,h2,h3,h4,p1,p2) numbers found".into(),
+                ))
+            }
+        }
+    };
     let parts: Vec<&str> = inner.split(',').collect();
     if parts.len() != 6 {
         return Err(FtpCommandError::MalformedResponse(
@@ -508,6 +520,49 @@ fn parse_pasv_response(text: &str) -> Result<SocketAddr, FtpCommandError> {
     let ip = Ipv4Addr::new(nums[0], nums[1], nums[2], nums[3]);
     let port = (nums[4] as u16) * 256 + (nums[5] as u16);
     Ok(SocketAddr::V4(SocketAddrV4::new(ip, port)))
+}
+
+/// Find the first run of 6 comma-separated 0-255 numbers in `text`
+/// (paren-less PASV fallback, matching GNU wget's digit-scan behavior).
+fn find_pasv_number_run(text: &str) -> Option<String> {
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i].is_ascii_digit() {
+            // Try to parse 6 comma-separated numbers starting here.
+            let mut end = i;
+            let mut ok = true;
+            for field in 0..6 {
+                let start = end;
+                while end < bytes.len() && bytes[end].is_ascii_digit() {
+                    end += 1;
+                }
+                if end == start || text[start..end].parse::<u8>().is_err() {
+                    ok = false;
+                    break;
+                }
+                if field < 5 {
+                    if end < bytes.len() && bytes[end] == b',' {
+                        end += 1;
+                    } else {
+                        ok = false;
+                        break;
+                    }
+                }
+            }
+            if ok {
+                return Some(text[i..end].to_string());
+            }
+            // Not a valid run here: skip past the leading digits.
+            while end < bytes.len() && (bytes[end].is_ascii_digit() || bytes[end] == b',') {
+                end += 1;
+            }
+            i = end;
+        } else {
+            i += 1;
+        }
+    }
+    None
 }
 
 /// Parsed result from an EPSV response.
