@@ -460,12 +460,28 @@ impl H2Retriever {
                 RetrieveError::Protocol(WgetError::Http2(format!("failed to build request: {}", e)))
             })?;
 
-        // Send request via HTTP/2
-        let (response, _send_stream) = client.send_request(http_request)
+        // Send request via HTTP/2. A request with a body (POST/PUT from
+        // --post-data/--body-data) must NOT set END_STREAM on the headers:
+        // the body is written on the send stream afterwards (M3). The
+        // headers already carry Content-Length (set by build_request).
+        let has_body = request.body.as_ref().map_or(false, |b| !b.is_empty());
+        let (response, mut send_stream) = client.send_request_with_end(http_request, !has_body)
             .map_err(|e| {
                 self.reusable = false;
                 RetrieveError::Protocol(WgetError::Http2(format!("request failed: {}", e)))
             })?;
+
+        if let Some(body) = &request.body {
+            if !body.is_empty() {
+                use bytes::Bytes;
+                client
+                    .send_body(&mut send_stream, Bytes::from(body.clone()))
+                    .map_err(|e| {
+                        self.reusable = false;
+                        RetrieveError::Protocol(WgetError::Http2(format!("failed to send request body: {}", e)))
+                    })?;
+            }
+        }
 
         // Map the real response status and headers.
         let status = response.status().as_u16();
