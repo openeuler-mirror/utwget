@@ -186,6 +186,11 @@ pub struct FtpsClient {
     current_dir: String,
     config: FtpsConfig,
     is_tls: bool,
+    /// Unconsumed plaintext bytes from a previously read TLS record. When
+    /// one TLS record delivers TWO FTP responses (e.g. "150 ...\r\n226
+    /// ...\r\n" in a single burst), the second response must be preserved
+    /// for the next read_response() call instead of being discarded (M10).
+    pending_response_bytes: Vec<u8>,
 }
 
 /// Wrapper for TLS connection
@@ -278,6 +283,7 @@ impl FtpsClient {
             current_dir: String::new(),
             config: FtpsConfig::default(),
             is_tls: false,
+            pending_response_bytes: Vec::new(),
         }
     }
 
@@ -293,6 +299,7 @@ impl FtpsClient {
             current_dir: String::new(),
             config,
             is_tls: false,
+            pending_response_bytes: Vec::new(),
         }
     }
 
@@ -685,7 +692,8 @@ impl FtpsClient {
     /// This avoids the previous bug where `data.find("\r\n")` always matched
     /// the first line, causing multi-line responses to hang indefinitely.
     fn read_response(&mut self) -> Result<FtpResponse, FtpError> {
-        let mut data: Vec<u8> = Vec::new();
+        // Seed with unconsumed plaintext from a previous response burst (M10).
+        let mut data: Vec<u8> = std::mem::take(&mut self.pending_response_bytes);
 
         let tls = self.ctrl_tls.as_mut()
             .ok_or_else(|| FtpError::Connect("not connected (TLS required)".into()))?;
@@ -726,12 +734,15 @@ impl FtpsClient {
             drop(reader);
 
             // Try to parse a complete FTP response from the accumulated bytes.
-            if let Some((response, _consumed)) = parse_complete_response(&data) {
+            if let Some((response, consumed)) = parse_complete_response(&data) {
                 log::debug!(
                     "FTPS < {} {}",
                     response.code,
                     response.lines.last().map(|s| s.as_str()).unwrap_or("")
                 );
+                // Preserve any bytes after this response (a second response
+                // delivered in the same TLS record) for the next call (M10).
+                self.pending_response_bytes = data[consumed..].to_vec();
                 return Ok(response);
             }
 
