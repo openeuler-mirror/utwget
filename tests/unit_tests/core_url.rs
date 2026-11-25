@@ -376,3 +376,25 @@ fn test_parse_invalid_port() {
     let result = ParsedUrl::parse("http://example.com:abc/path");
     assert!(result.is_err());
 }
+
+// ============================================================================
+// Glob-expanded FTP URL percent-encoding (M15)
+// ============================================================================
+
+#[test]
+fn encode_request_target_escapes_space_for_ftp_glob() {
+    use ut_core::url::{encode_request_target, ParsedUrl};
+
+    // A file "a b.txt" from NLST: encoding must make the URL parseable.
+    let name = "a b.txt";
+    let encoded = encode_request_target(name);
+    assert_eq!(encoded, "a%20b.txt");
+    let url = ParsedUrl::parse(&format!("ftp://host:21/dir/{}", encoded)).unwrap();
+    assert_eq!(url.file, "a%20b.txt");
+}
+
+#[test]
+fn encode_request_target_keeps_path_separators() {
+    use ut_core::url::encode_request_target;
+    assert_eq!(encode_request_target("dir/file.txt"), "dir/file.txt");
+}

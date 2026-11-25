@@ -1638,8 +1638,14 @@ impl Retriever {
         let mut worst: Option<RetrieveError> = None;
         let mut last_outcome = RetrieveOutcome::SpiderOnly;
         for name in matches {
+            // Percent-encode the expanded filename: NLST entries may contain
+            // spaces or other characters that would break URL parsing
+            // (M15: previously a file "a b.txt" failed ParsedUrl::parse and
+            // was silently skipped). encode_request_target escapes
+            // control/space/high bytes while keeping '/' and '?' intact.
+            let encoded_name = ut_core::url::encode_request_target(&name);
             let concrete = format!("{}://{}:{}{}{}",
-                url.scheme.as_str(), url.host, url.port, dir_part, name);
+                url.scheme.as_str(), url.host, url.port, dir_part, encoded_name);
             let parsed = match ParsedUrl::parse(&concrete) {
                 Ok(p) => p,
                 Err(e) => {
