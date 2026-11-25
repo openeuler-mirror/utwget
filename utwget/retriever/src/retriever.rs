@@ -1312,7 +1312,8 @@ impl Retriever {
                 resume_ssl: self.config.ftp.ftps_resume_ssl,
                 active_mode: !self.config.ftp.passive,
             };
-            let mut ftps_client = ut_ftp::FtpsClient::with_config(ftps_cfg);
+            let mut ftps_client = ut_ftp::FtpsClient::with_config(ftps_cfg)
+                .with_timeout(self.config.read_timeout.or(self.config.timeout).unwrap_or(std::time::Duration::from_secs(60)));
 
             if self.config.ftp.ftps_implicit {
                 // Implicit FTPS: connect with TLS from the start
@@ -1583,7 +1584,8 @@ impl Retriever {
                 resume_ssl: self.config.ftp.ftps_resume_ssl,
                 active_mode: !self.config.ftp.passive,
             };
-            let mut ftps = ut_ftp::FtpsClient::with_config(ftps_cfg);
+            let mut ftps = ut_ftp::FtpsClient::with_config(ftps_cfg)
+                .with_timeout(self.config.read_timeout.or(self.config.timeout).unwrap_or(std::time::Duration::from_secs(60)));
             if self.config.ftp.ftps_implicit {
                 ftps.connect_implicit(&url.host, port)
                     .map_err(|e| RetrieveError::Protocol(WgetError::FtpIo(format!("FTPS connect error: {}", e))))?;

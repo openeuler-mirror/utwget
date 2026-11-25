@@ -198,6 +198,10 @@ pub struct FtpsClient {
     /// requires the SAME ClientConfig Arc so its session cache remembers
     /// the server's tickets from the control handshake.
     tls_config_cache: Option<Arc<ClientConfig>>,
+    /// Data-connection timeout. Defaults to 60s; overridden via
+    /// `with_timeout` from --timeout/--read-timeout (M14: was hardcoded
+    /// 60s regardless of configuration).
+    data_timeout: Duration,
 }
 
 /// Wrapper for TLS connection
@@ -292,6 +296,7 @@ impl FtpsClient {
             is_tls: false,
             pending_response_bytes: Vec::new(),
             tls_config_cache: None,
+            data_timeout: Duration::from_secs(60),
         }
     }
 
@@ -309,12 +314,21 @@ impl FtpsClient {
             is_tls: false,
             pending_response_bytes: Vec::new(),
             tls_config_cache: None,
+            data_timeout: Duration::from_secs(60),
         }
     }
 
     /// Set passive mode
     pub fn with_passive(mut self, passive: bool) -> Self {
         self.passive = passive;
+        self
+    }
+
+    /// Set the data-connection timeout (M14: honors --timeout/--read-timeout
+    /// instead of a hardcoded 60s). The control connection keeps its own
+    /// 30s timeout set at connect time.
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.data_timeout = timeout;
         self
     }
 
@@ -1146,14 +1160,15 @@ impl FtpsClient {
                 .map_err(|e| FtpError::DataConnectFailed(e.to_string()))?;
             stream
         };
-        // Apply 60s read/write timeouts to the data connection, matching the
-        // plain-FTP data_conn.rs behaviour. Without this, a server that stops
-        // sending but keeps the socket open would block indefinitely.
+        // Apply the configured data timeout (M14: honors
+        // --timeout/--read-timeout via with_timeout; default 60s). Without
+        // this, a server that stops sending but keeps the socket open would
+        // block indefinitely.
         data_tcp
-            .set_read_timeout(Some(Duration::from_secs(60)))
+            .set_read_timeout(Some(self.data_timeout))
             .map_err(FtpError::Io)?;
         data_tcp
-            .set_write_timeout(Some(Duration::from_secs(60)))
+            .set_write_timeout(Some(self.data_timeout))
             .map_err(FtpError::Io)?;
 
         // Wrap with TLS if PROT P was negotiated
@@ -1251,12 +1266,12 @@ impl FtpsClient {
             TcpStream::connect(format!("{}:{}", data_host, data_port))
                 .map_err(|e| FtpError::DataConnectFailed(e.to_string()))?
         };
-        // Apply 60s read/write timeouts, matching plain-FTP data_conn.rs.
+        // Apply the configured data timeout (M14).
         data_tcp
-            .set_read_timeout(Some(Duration::from_secs(60)))
+            .set_read_timeout(Some(self.data_timeout))
             .map_err(FtpError::Io)?;
         data_tcp
-            .set_write_timeout(Some(Duration::from_secs(60)))
+            .set_write_timeout(Some(self.data_timeout))
             .map_err(FtpError::Io)?;
 
         let mut data = Vec::new();
