@@ -21,7 +21,7 @@ rust-version = "1.82.0"
 
 [workspace.dependencies]
 ut-core = { path = "utwget/core" }
-ut-http = { path = "utwget/http", features = ["compression", "auth-digest"] }
+ut-http = { path = "utwget/http", features = ["compression", "auth-digest", "auth-ntlm", "http2"] }
 ut-ftp = { path = "utwget/ftp" }
 ut-html = { path = "utwget/html" }
 ut-retriever = { path = "utwget/retriever" }
@@ -75,6 +75,7 @@ rustc_version_runtime = "0.3"
 
 [dev-dependencies]
 ut-core.workspace = true
+ut-progress = { path = "utwget/progress" }
 ut-http.workspace = true
 ut-ftp.workspace = true
 ut-html.workspace = true
