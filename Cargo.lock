@@ -2043,7 +2043,6 @@ dependencies = [
  "anyhow",
  "base64",
  "chrono",
- "env_logger",
  "idna",
  "log",
  "psl",
