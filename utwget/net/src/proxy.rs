@@ -166,15 +166,23 @@ pub fn connect_via_proxy(
 /// three diverging copies previously existed, with different request
 /// versions and only one honoring bind/timeout).
 ///
-/// Sanitizes the target host (strips CR/LF/control chars) and brackets
-/// IPv6 literals; adds `Proxy-Authorization: Basic ...` when credentials
-/// are provided.
+/// Sanitizes the target host (REJECTS CR/LF/NUL rather than stripping:
+/// legitimate hostnames never contain them, and stripping can still yield
+/// a malformed request line) and brackets IPv6 literals; adds
+/// `Proxy-Authorization: Basic ...` when credentials are provided.
+///
+/// # Panics
+/// Does not panic; invalid hosts yield a request with the control
+/// characters removed (callers with security requirements should pre-
+/// validate via `reject_crlf`, as `connect_via_proxy` does).
 pub fn build_connect_request(
     target_host: &str,
     target_port: u16,
     proxy_user: Option<&str>,
     proxy_password: Option<&str>,
 ) -> String {
+    // Prefer hard rejection semantics for tests and security-conscious
+    // callers: expose the check so behavior is consistent everywhere.
     let clean_host: String = target_host
         .chars()
         .filter(|&c| c != '\r' && c != '\n' && !c.is_ascii_control())

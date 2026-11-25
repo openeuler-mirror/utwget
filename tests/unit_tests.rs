@@ -39,4 +39,4 @@
 #[path = "unit_tests/signal.rs"] mod signal;
 #[path = "unit_tests/warc_digest.rs"] mod warc_digest;
 #[path = "unit_tests/warc_format.rs"] mod warc_format;
-#[path = "unit_tests/async_retriever.rs"] mod async_retriever;
+#[path = "unit_tests/cli_concurrency.rs"] mod cli_concurrency;

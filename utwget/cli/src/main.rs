@@ -281,8 +281,6 @@ fn main() -> ExitCode {
         optional_features.push("+http2");
         #[cfg(feature = "auth-ntlm")]
         optional_features.push("+auth-ntlm");
-        #[cfg(feature = "async")]
-        optional_features.push("+async");
 
         if !optional_features.is_empty() {
             safe_println!("    {}", optional_features.join(" "));

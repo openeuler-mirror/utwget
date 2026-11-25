@@ -1,4 +1,4 @@
-//! Tests for async retriever support.
+//! Tests for CLI concurrency configuration (arch 6.4).
 
 #[cfg(test)]
 mod tests {
