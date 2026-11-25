@@ -113,6 +113,10 @@ pub struct Retriever {
     pending_return_info: Option<ReturnInfo>,
     /// Whether the current pending response allows keep-alive connection reuse.
     pending_keep_alive: bool,
+    /// IP of the server the most recent connection reached (for
+    /// WARC-IP-Address, report 8.1-2). Captured in create_tcp_stream
+    /// (&self method → Cell).
+    last_server_ip: std::cell::Cell<Option<String>>,
     /// Redirect hops followed within the CURRENT redirect chain (session
     /// state). Arch 6.6-8: the `state.redirect_count` check in
     /// retrieve_inner never fired because every hop created a fresh
@@ -258,6 +262,7 @@ impl Retriever {
             pending_method: ut_core::types::HttpMethod::Get,
             redirect_get_method_urls: std::collections::HashSet::new(),
             chain_redirect_count: 0,
+            last_server_ip: std::cell::Cell::new(None),
         };
 
         #[cfg(feature = "warc")]
@@ -1688,6 +1693,7 @@ impl Retriever {
 
         for addr in sorted_addresses {
             debug!("trying to connect to {}", addr);
+            // (on success the address is recorded below for WARC-IP-Address)
 
             // Apply bind address if set: create a socket, bind to the
             // specified local address, then connect to the remote.
@@ -1705,6 +1711,9 @@ impl Retriever {
 
             match stream_result {
                 Ok(stream) => {
+                    // Record the reached server IP for WARC-IP-Address (8.1-2).
+                    self.last_server_ip.set(Some(addr.ip().to_string()));
+
                     // Apply read timeout if set
                     if let Some(timeout) = self.config.read_timeout.or(self.config.timeout) {
                         stream.set_read_timeout(Some(timeout))
@@ -2497,7 +2506,8 @@ impl Retriever {
                 Vec::new()
             };
             let ct = meta.content_type.as_deref().unwrap_or("application/octet-stream");
-            if let Err(e) = warc.write_response(url, response.status_code, &header_bytes, &body_bytes, ct, date) {
+            let server_ip = self.last_server_ip.replace(None);
+            if let Err(e) = warc.write_response(url, response.status_code, &header_bytes, &body_bytes, ct, date, server_ip.as_deref()) {
                 warn!("WARC write failed: {}", e);
             }
         }
