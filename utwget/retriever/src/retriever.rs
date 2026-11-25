@@ -113,6 +113,13 @@ pub struct Retriever {
     pending_return_info: Option<ReturnInfo>,
     /// Whether the current pending response allows keep-alive connection reuse.
     pending_keep_alive: bool,
+    /// Redirect hops followed within the CURRENT redirect chain (session
+    /// state). Arch 6.6-8: the `state.redirect_count` check in
+    /// retrieve_inner never fired because every hop created a fresh
+    /// ProtocolState; the session-level counter makes the
+    /// --max-redirect guard real at the retriever layer too (the CLI layer
+    /// counts separately and remains authoritative for exit codes).
+    chain_redirect_count: u32,
     /// The HTTP method of the current request, used to skip body reading
     /// for HEAD responses (RFC 7230 §3.3: a HEAD response has no body).
     pending_method: ut_core::types::HttpMethod,
@@ -250,6 +257,7 @@ impl Retriever {
             pending_keep_alive: false,
             pending_method: ut_core::types::HttpMethod::Get,
             redirect_get_method_urls: std::collections::HashSet::new(),
+            chain_redirect_count: 0,
         };
 
         #[cfg(feature = "warc")]
@@ -293,6 +301,8 @@ impl Retriever {
     ///
     /// Returns `RetrieveError` if the URL cannot be parsed or the download fails.
     pub fn retrieve(&mut self, url: &str) -> Result<RetrieveOutcome, RetrieveError> {
+        // New independent download → redirect chain starts fresh.
+        self.chain_redirect_count = 0;
         // Do NOT clear redirect_get_method_urls here — it must persist
         // across the redirect chain (retrieve → RetrieveOutcome::Redirected
         // → retrieve again) so that build_request_options sees the URL
@@ -321,8 +331,11 @@ impl Retriever {
     ///
     /// Returns the last `RetrieveError` encountered after all retries are exhausted.
     pub fn retrieve_with_retry(&mut self, url: &str) -> Result<RetrieveOutcome, RetrieveError> {
-        // Do NOT clear redirect_get_method_urls here — same reason as
-        // retrieve(): the set must persist across redirect chains.
+        // New independent download → redirect chain starts fresh. Redirect
+        // FOLLOW-UPS arrive through this same entry point (the CLI calls it
+        // again with the Location URL), so the chain counter is incremented
+        // in retrieve_inner on each Redirected outcome and must NOT be
+        // reset here — only `retrieve()` (chain start) resets it.
         let parsed = ParsedUrl::parse(url).map_err(RetrieveError::Protocol)?;
         let max_tries = self.config.tries;
 
@@ -829,7 +842,14 @@ impl Retriever {
 
         if response.is_redirect() {
             state.redirect_count += 1;
-            if state.redirect_count > self.config.max_redirect {
+            // Arch 6.6-8: also track the hop at SESSION level. The per-hop
+            // ProtocolState dies between CLI-level follow-ups, so the check
+            // below previously never accumulated; chain_redirect_count
+            // survives across retrieve_with_retry calls within one chain
+            // (reset only at chain start in retrieve()).
+            self.chain_redirect_count += 1;
+            if self.chain_redirect_count > self.config.max_redirect {
+                self.chain_redirect_count = 0; // next independent download starts clean
                 return Err(RetrieveError::Response(WgetError::TooManyRedirects {
                     max: self.config.max_redirect,
                 }));
