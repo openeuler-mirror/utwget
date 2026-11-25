@@ -45,4 +45,4 @@ pub use tls_pool::TlsConnectionPool;
 pub use async_retriever::{AsyncRetriever, download, download_many};
 
 #[cfg(feature = "http2")]
-pub use h2_integration::{H2Retriever, should_use_http2, download_with_http2};
+pub use h2_integration::{H2Retriever, should_use_http2};

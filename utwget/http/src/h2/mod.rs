@@ -54,6 +54,15 @@ fn h2_runtime_or_err() -> Result<&'static Runtime, Box<dyn std::error::Error>> {
     Ok(H2_RUNTIME.get().expect("runtime was just set"))
 }
 
+/// Returns the process-wide tokio runtime shared by all HTTP/2 code.
+///
+/// Single source of truth: both `ut-http` (client) and `ut-retriever`
+/// (integration layer) drive their H2 work on THIS runtime (arch 6.3-3:
+/// previously each crate lazily built its own 2-worker runtime).
+pub fn shared_h2_runtime() -> Result<&'static Runtime, Box<dyn std::error::Error>> {
+    h2_runtime_or_err()
+}
+
 /// HTTP/2 client for making requests.
 pub struct H2Client {
     /// The h2 send-request handle.
