@@ -290,6 +290,7 @@ impl RecursiveRetriever {
                 match self.retriever.retrieve(&url_str) {
                     Ok(RetrieveOutcome::Success(body_result)) => {
                         any_downloaded = true;
+                        eprintln!("[dbg2] Success {} local={:?}", url_str, body_result.local_file);
                         let local = body_result.local_file.as_ref().map(|p| p.as_path());
 
                         // Determine whether to descend into children.
@@ -307,7 +308,12 @@ impl RecursiveRetriever {
 
                         if descend {
                             if let Some(lpath) = local {
-                                if let Some(links) = self.extract_links(lpath, &url_str, &entry) {
+                                let links_opt = self.extract_links(lpath, &url_str, &entry);
+                                eprintln!("[dbg] extract_links({}) -> {} links", url_str, links_opt.as_ref().map(|v| v.len()).unwrap_or(0));
+                                if let Some(links) = links_opt {
+                                    for l in &links {
+                                        eprintln!("[dbg]   link: {} inline={} expect_css={}", l.url, l.inline, l.expect_css);
+                                    }
                                     for link in links {
                                         if link.meta_disallow_follow {
                                             continue;
@@ -720,6 +726,7 @@ impl RecursiveRetriever {
         parent_depth: u32,
         queue: &mut UrlQueue,
     ) {
+        eprintln!("[dbg-enq0] enter url={} type={:?}", link.url, link.link_type);
         let parent_parsed = match ParsedUrl::parse(parent_url) {
             Ok(p) => p,
             Err(_) => return,
@@ -736,22 +743,28 @@ impl RecursiveRetriever {
         };
 
         if queue.is_visited(&absolute_url) {
+            eprintln!("[dbg-enq] visited dropped {}", absolute_url);
             return;
         }
 
         let child_parsed = match ParsedUrl::parse(&absolute_url) {
             Ok(p) => p,
-            Err(_) => return,
+            Err(_) => {
+                eprintln!("[dbg-enq] parse failed {}", absolute_url);
+                return;
+            }
         };
 
         if !self.retriever.config().recursive.span_hosts {
             if child_parsed.host.to_ascii_lowercase() != parent_parsed.host.to_ascii_lowercase() {
+                eprintln!("[dbg-enq] span_hosts dropped {}", absolute_url);
                 return;
             }
         }
 
         if self.retriever.config().recursive.relative_only {
             if link.link_type != LinkType::Relative && link.link_type != LinkType::CssImport {
+                eprintln!("[dbg-enq] relative_only dropped {}", absolute_url);
                 return;
             }
         }
@@ -787,16 +800,18 @@ impl RecursiveRetriever {
         }
 
         if child_parsed.scheme == Scheme::Ftp && !self.retriever.config().ftp.follow_ftp {
+            eprintln!("[dbg-enq] ftp dropped {}", absolute_url);
             return;
         }
 
+        eprintln!("[dbg-enq] push {} depth={} expect_css={}", absolute_url, parent_depth + 1, link.expect_css);
         queue.push(QueueEntry {
             url: absolute_url,
             referer: Some(parent_url.to_string()),
             depth: parent_depth + 1,
             expect_html: link.expect_html,
             expect_css: link.expect_css,
-                                redirect_count: 0
+            redirect_count: 0
         });
     }
 

@@ -174,3 +174,13 @@ fn test_combined_src_and_srcset() {
     assert!(urls.contains(&"default.jpg".to_string()));
     assert!(urls.contains(&"retina.jpg".to_string()));
 }
+
+#[test]
+fn link_stylesheet_is_extracted_with_expect_css() {
+    let html = br#"<html><head><link rel="stylesheet" href="/style.css"></head><body></body></html>"#;
+    let ex = ut_html::HtmlExtractor;
+    let opts = ut_html::url_position::ExtractOptions::default();
+    let links = ex.extract_urls(&mut std::io::Cursor::new(html.to_vec()), "http://x/", &opts).unwrap();
+    assert_eq!(links.len(), 1, "link stylesheet must be extracted");
+    assert!(links[0].expect_css, "expect_css must be true for stylesheet");
+}
