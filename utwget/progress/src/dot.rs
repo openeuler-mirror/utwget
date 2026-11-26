@@ -98,7 +98,11 @@ impl DotProgress {
         }
 
         self.current_dots += 1;
-        self.current_bytes = 0;
+        // NOTE: do NOT zero `current_bytes` here — the caller subtracts
+        // bytes_per_dot before calling. Zeroing it discarded the partial
+        // remainder (bytes towards the next dot), making the dot count
+        // systematically UNDERCOUNT real progress (report 8.3-1; GNU wget
+        // dot.c keeps the remainder across updates).
 
         let mut stderr = io::stderr();
 
@@ -116,6 +120,20 @@ impl DotProgress {
         }
 
         let _ = stderr.flush();
+    }
+}
+
+impl DotProgress {
+    /// Number of dots emitted so far (test introspection).
+    pub fn dots_emitted(&self) -> usize {
+        // total dots = completed lines * dots_per_line + dots on current line
+        self.line_count * self.dots_per_line + self.current_dots
+    }
+
+    /// Create a dot progress with default wget parameters (1KB per dot,
+    /// 50 dots per line, 10 dots between spaces).
+    pub fn with_defaults() -> Self {
+        Self::new(1024, 50, 10)
     }
 }
 
