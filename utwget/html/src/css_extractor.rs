@@ -142,6 +142,26 @@ fn extract_urls_recursive(
             Token::AtKeyword(ref keyword) if keyword.eq_ignore_ascii_case("import") => {
                 *at_import_found = true;
             }
+            // `@import "file.css"` — the string form (CSS Syntax Level 3
+            // §8.1). The previous code fell into `_ => {}` and only
+            // extracted `@import url(...)` (report 8.4-2). A QuotedString
+            // right after @import is the imported stylesheet; elsewhere
+            // quoted strings are content and skipped.
+            Token::QuotedString(ref s) if *at_import_found => {
+                let url = s.to_string();
+                if !is_skippable_url(&url) {
+                    results.push(UrlPosition {
+                        url,
+                        link_type: LinkType::CssImport,
+                        inline: false,
+                        attr_name: None,
+                        expect_html: false,
+                        expect_css: true,
+                        meta_disallow_follow: false,
+                    });
+                }
+                *at_import_found = false;
+            }
             Token::CurlyBracketBlock | Token::ParenthesisBlock | Token::SquareBracketBlock => {
                 let _: Result<(), ParseError<()>> = parser.parse_nested_block(|inner| {
                     extract_urls_recursive(inner, results, at_import_found);
