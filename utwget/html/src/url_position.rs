@@ -84,6 +84,14 @@ pub struct ExtractOptions {
     /// Only URLs in these elements will be extracted.
     /// If empty, all tags with URL attributes are processed.
     pub follow_tags: Vec<String>,
+    /// Strict HTML comment parsing (`--strict-comments`, GNU wget
+    /// MHT_STRICT_COMMENTS / html-parse.c:885-905). When false (wget's
+    /// default), a `<!--` comment is terminated at the first `-->`.
+    /// When true, SGML comment rules apply: a comment may embed
+    /// `-- pair` delimiters and only `--!>` closes it. lol_html always
+    /// uses the browser-lenient rules, so the strict mode is a documented
+    /// divergence rather than implementable via this parser.
+    pub strict_comments: bool,
 }
 
 impl Default for ExtractOptions {
@@ -92,6 +100,7 @@ impl Default for ExtractOptions {
             follow_base: true,
             ignore_tags: Vec::new(),
             follow_tags: default_follow_tags(),
+            strict_comments: false,
         }
     }
 }
