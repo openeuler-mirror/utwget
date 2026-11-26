@@ -498,6 +498,12 @@ pub struct RecursiveConfig {
     pub reject_patterns: Vec<String>,
     /// Regex pattern to accept URLs (--accept-regex)
     pub accept_regex: Option<String>,
+    /// Regex flavor for --accept-regex/--reject-regex (--regex-type).
+    /// Only "posix" (the `regex` crate, Rust default) is supported;
+    /// "pcre" is rejected at startup with a clear error because adding a
+    /// PCRE2 dependency for a niche flag is not justified (report 9.1-2:
+    /// the flag was previously accepted and ignored entirely).
+    pub regex_type: Option<String>,
     /// Regex pattern to reject URLs (--reject-regex)
     pub reject_regex: Option<String>,
     /// Domains to follow (--domains)
@@ -532,6 +538,7 @@ impl Default for RecursiveConfig {
             strict_comments: false,
             accept_patterns: Vec::new(),
             reject_patterns: Vec::new(),
+            regex_type: None,
             accept_regex: None,
             reject_regex: None,
             domains: Vec::new(),
