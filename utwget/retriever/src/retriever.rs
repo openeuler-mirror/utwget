@@ -210,12 +210,12 @@ impl Retriever {
         }
         // Accept/reject pattern filters (-A / -R / --accept-regex / --reject-regex)
         if !config.recursive.accept_patterns.is_empty() {
-            url_filter.add(ut_core::regex_filter::PatternAcceptFilter::new(
+            url_filter.add_leaf_rule(ut_core::regex_filter::PatternAcceptFilter::new(
                 config.recursive.accept_patterns.clone(),
             ));
         }
         if !config.recursive.reject_patterns.is_empty() {
-            url_filter.add(ut_core::regex_filter::PatternRejectFilter::new(
+            url_filter.add_leaf_rule(ut_core::regex_filter::PatternRejectFilter::new(
                 config.recursive.reject_patterns.clone(),
             ));
         }
