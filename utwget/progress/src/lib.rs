@@ -131,8 +131,22 @@ pub fn format_duration(duration: Duration) -> String {
 }
 
 pub fn create_progress_display(style: ProgressStyle, force_noscroll: bool) -> Box<dyn ProgressDisplay> {
+    create_progress_display_with_bps(style, force_noscroll, false)
+}
+
+/// Like [`create_progress_display`] with `--report-speed=bits` support:
+/// `report_bps` displays the speed as raw bits/bytes per second instead
+/// of the human-readable unit form (report 9.1-3: config.report_bps was
+/// set but never consumed by the progress crate).
+pub fn create_progress_display_with_bps(
+    style: ProgressStyle,
+    force_noscroll: bool,
+    report_bps: bool,
+) -> Box<dyn ProgressDisplay> {
     match style {
-        ProgressStyle::Bar => Box::new(bar::BarProgress::new(force_noscroll)),
+        ProgressStyle::Bar => Box::new(
+            bar::BarProgress::new(force_noscroll).with_report_speed_bytes(report_bps),
+        ),
         ProgressStyle::Dot { bytes_per_dot, dots_per_line, spacing } => {
             Box::new(dot::DotProgress::new(bytes_per_dot, dots_per_line, spacing))
         }

@@ -209,7 +209,7 @@ impl App {
         let progress = if !config.quiet && !config.recursive.spider {
             let style = config.progress.style;
             let force_noscroll = !is_interactive;
-            ut_progress::create_progress_display(style, force_noscroll)
+            ut_progress::create_progress_display_with_bps(style, force_noscroll, config.report_bps)
         } else {
             ut_progress::create_progress_display(ut_core::ProgressStyle::Silent, true)
         };
@@ -675,7 +675,7 @@ impl App {
         let progress = if !self.config.quiet {
             let style = self.config.progress.style;
             let force_noscroll = !is_interactive;
-            ut_progress::create_progress_display(style, force_noscroll)
+            ut_progress::create_progress_display_with_bps(style, force_noscroll, self.config.report_bps)
         } else {
             ut_progress::create_progress_display(ut_core::ProgressStyle::Silent, true)
         };
@@ -746,7 +746,7 @@ impl App {
         let progress = if !self.config.quiet {
             let style = self.config.progress.style;
             let force_noscroll = !is_interactive;
-            ut_progress::create_progress_display(style, force_noscroll)
+            ut_progress::create_progress_display_with_bps(style, force_noscroll, self.config.report_bps)
         } else {
             ut_progress::create_progress_display(ut_core::ProgressStyle::Silent, true)
         };
