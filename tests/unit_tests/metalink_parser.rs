@@ -3,6 +3,7 @@
 //! Tests for Metalink XML parsing and file info extraction.
 
 use std::io::Cursor;
+use std::io::Cursor;
 use ut_metalink::MetalinkParser;
 use ut_metalink::checksum::ChecksumType;
 
@@ -206,4 +207,34 @@ fn test_checksum_type_from_str_all() {
     assert_eq!(ChecksumType::from_str("sha-512"), Some(ChecksumType::Sha512));
     assert_eq!(ChecksumType::from_str("SHA-512"), Some(ChecksumType::Sha512));
     assert_eq!(ChecksumType::from_str("unknown"), None);
+}
+
+// ============================================================================
+// URL attributes: location / maxconnections (report 8.2-3)
+// ============================================================================
+
+#[test]
+fn parses_url_location_and_maxconnections_attributes() {
+    // Report 8.2-3: location/maxconnections were dropped (always None),
+    // disabling --preferred-location mirror sorting.
+    let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<metalink version="3.0" xmlns="http://www.metalinker.org">
+  <files>
+    <file name="test.iso">
+      <resources>
+        <url type="http" location="CN" preference="90" maxconnections="2">http://cn.example.com/test.iso</url>
+        <url type="http" location="US" preference="80" maxconnections="5">http://us.example.com/test.iso</url>
+      </resources>
+    </file>
+  </files>
+</metalink>"#;
+
+    let files = MetalinkParser::parse(std::io::Cursor::new(xml)).expect("parse");
+    assert_eq!(files.len(), 1);
+    let r = &files[0].resources;
+    assert_eq!(r.len(), 2);
+    assert_eq!(r[0].location.as_deref(), Some("CN"));
+    assert_eq!(r[0].max_connections, Some(2));
+    assert_eq!(r[1].location.as_deref(), Some("US"));
+    assert_eq!(r[1].max_connections, Some(5));
 }

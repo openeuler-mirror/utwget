@@ -255,18 +255,33 @@ impl MetalinkParser {
                         }
                         "resources" => {}
                         "url" => {
-                            // Parse URL attributes
-                            let type_ = e
-                                .attributes()
-                                .find(|a| a.as_ref().map(|a| a.key.as_ref() == b"type").unwrap_or(false))
-                                .and_then(|a| a.ok())
-                                .and_then(|a| String::from_utf8(a.value.to_vec()).ok());
-                            let preference = e
-                                .attributes()
-                                .find(|a| a.as_ref().map(|a| a.key.as_ref() == b"preference").unwrap_or(false))
-                                .and_then(|a| a.ok())
-                                .and_then(|a| String::from_utf8(a.value.to_vec()).ok())
-                                .and_then(|v| v.parse::<i32>().ok());
+                            // Parse URL attributes. location/maxconnections
+                            // drive mirror selection (preferred_location
+                            // sorting) and were previously dropped
+                            // (report 8.2-3), silently disabling
+                            // --preferred-location.
+                            let mut type_ = None;
+                            let mut preference = None;
+                            let mut max_connections = None;
+                            let mut location = None;
+                            for attr in e.attributes() {
+                                let attr = match attr {
+                                    Ok(a) => a,
+                                    Err(_) => continue,
+                                };
+                                let key = String::from_utf8_lossy(attr.key.as_ref()).to_lowercase();
+                                let value = String::from_utf8(attr.value.to_vec()).ok();
+                                match key.as_str() {
+                                    "type" => type_ = value,
+                                    "preference" => preference = value.and_then(|v| v.parse::<i32>().ok()),
+                                    "maxconnections" => {
+                                        max_connections =
+                                            value.and_then(|v| v.parse::<u32>().ok())
+                                    }
+                                    "location" => location = value,
+                                    _ => {}
+                                }
+                            }
 
                             let text = read_text(&mut xml_reader, &mut buf)?;
                             if !text.is_empty() {
@@ -274,8 +289,8 @@ impl MetalinkParser {
                                     url: text,
                                     type_,
                                     preference,
-                                    max_connections: None,
-                                    location: None,
+                                    max_connections,
+                                    location,
                                 };
                                 if let Some(ref mut f) = current_file {
                                     f.resources.push(resource);
