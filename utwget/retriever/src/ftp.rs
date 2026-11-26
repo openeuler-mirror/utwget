@@ -192,6 +192,7 @@ impl Retriever {
                 bytes_read: total_bytes,
                 elapsed,
                 local_file: Some(output_path.to_path_buf()),
+                content_type: None,
             };
 
             return Ok(RetrieveOutcome::Success(result));
@@ -322,6 +323,7 @@ impl Retriever {
             bytes_read: total_bytes,
             elapsed,
             local_file: if self.config.delete_after { None } else { Some(output_path.to_path_buf()) },
+            content_type: None,
         };
 
         Ok(RetrieveOutcome::Success(result))
