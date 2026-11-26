@@ -550,6 +550,17 @@ impl Retriever {
                 self.retrieve_http(&effective_url, &mut opts, state, &output_path)
             }
             Scheme::Ftp | Scheme::Ftps => {
+                // FTP through an HTTP proxy (GNU wget ftp_retr_http_loop,
+                // ftp.c): the proxy receives `GET ftp://[user[:pass]@]host/
+                // port/path` and performs the FTP transfer itself. Only
+                // plain FTP is proxied — FTPS cannot be tunneled through an
+                // HTTP proxy (wget has no support either), so it goes direct.
+                if effective_url.scheme == Scheme::Ftp
+                    && self.config.proxy.use_proxy
+                    && is_url_proxied(&effective_url, &self.config)
+                {
+                    return self.retrieve_ftp_via_http_proxy(&effective_url, &output_path);
+                }
                 // FTP glob expansion: when globbing is enabled and the URL's
                 // filename contains wildcard characters, list the directory and
                 // download each matching file individually.
@@ -560,6 +571,130 @@ impl Retriever {
                 }
             }
         }
+    }
+
+    /// Retrieve an FTP URL through an HTTP proxy.
+    ///
+    /// Mirrors GNU wget's `ftp_retr_http_loop` (ftp.c): the proxy is sent
+    /// `GET ftp://[user[:pass]@]host[:port]/path HTTP/1.1` with an absolute
+    /// request URI, and the proxy performs the FTP transfer itself. Proxy
+    /// credentials are sent as Basic auth (http.c:1962-1970). Resume is
+    /// impossible through the proxy (no REST support), so the file is
+    /// always fetched whole. `Connection: close` keeps the exchange
+    /// one-shot — FTP proxying is rare enough that pooling adds no value.
+    ///
+    /// # Errors
+    ///
+    /// Returns `RetrieveError` on connection, protocol, or file errors.
+    fn retrieve_ftp_via_http_proxy(
+        &mut self,
+        url: &ParsedUrl,
+        output_path: &Path,
+    ) -> Result<RetrieveOutcome, RetrieveError> {
+        let start = Instant::now();
+        let proxy = resolve_proxy(url, &self.config);
+        info!("using FTP-over-HTTP proxy {}:{}", proxy.host, proxy.port);
+
+        // Absolute ftp:// URI for the proxy. wget includes the URL's
+        // userinfo in the request target (ftp.c:452-470).
+        let mut target = format!("ftp://");
+        if let Some(ref user) = url.user {
+            target.push_str(user);
+            if let Some(ref pass) = url.password {
+                target.push(':');
+                target.push_str(pass);
+            }
+            target.push('@');
+        }
+        target.push_str(&url.host);
+        target.push(':');
+        target.push_str(&url.port.to_string());
+        target.push_str(&url.full_path());
+
+        let mut req = HttpRequest::new(
+            ut_core::types::HttpMethod::Get,
+            target,
+            url.host_header(),
+        );
+        let user_agent = self.config.http.user_agent.as_deref().unwrap_or("Wget/1.21.4");
+        req.header("User-Agent", user_agent);
+        req.header("Accept", "*/*");
+        req.header("Connection", "close");
+        // Proxy authentication (Basic), distinct from the FTP target's creds.
+        if let (Some(ref user), Some(ref pass)) = (&proxy.user, &proxy.password) {
+            let creds = crate::utils::base64_encode(&format!("{}:{}", user, pass));
+            req.header("Proxy-Authorization", &format!("Basic {}", creds));
+        }
+
+        let mut stream = self.create_tcp_stream(&proxy.host, proxy.port)?;
+        stream
+            .write_all(&req.serialize().map_err(RetrieveError::Io)?)
+            .map_err(RetrieveError::Io)?;
+        stream.flush().map_err(RetrieveError::Io)?;
+
+        let (response, leftover) = read_response_head(&mut stream)?;
+        if response.status_code != 200 {
+            // A proxy that cannot reach the FTP server typically answers
+            // 404/502/504; surface the status like an HTTP error.
+            return Err(RetrieveError::Protocol(WgetError::Http {
+                status: response.status_code,
+                message: format!("FTP proxy error for {}", url.display()),
+            }));
+        }
+
+        // Open the output file (full download; no resume through a proxy).
+        let file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(output_path)
+            .map_err(RetrieveError::Io)?;
+        let mut rate_writer = apply_rate_limit(file, self.config.limit_rate);
+
+        let total_size = if self.config.ignore_length {
+            None
+        } else {
+            response.content_length()
+        };
+        self.progress.reset();
+        self.progress.begin_with_output_path(
+            &url.display(),
+            &output_path.to_string_lossy(),
+            total_size,
+            Some(0),
+        );
+
+        // The response head reader may have consumed body bytes that
+        // arrived in the same TCP segment as the head — feed them back
+        // before reading from the socket, or the body appears truncated.
+        let body_reader: Box<dyn Read + Send> = if leftover.is_empty() {
+            Box::new(stream)
+        } else {
+            Box::new(std::io::Cursor::new(leftover).chain(stream))
+        };
+        let mut source = BodySource::Plain(body_reader);
+        let body_result = stream_response_body(
+            &mut source,
+            &mut rate_writer,
+            &response,
+            self.progress.as_mut(),
+            0,
+            self.config.ignore_length,
+        )?;
+
+        let elapsed = start.elapsed();
+        self.progress.finish(ut_progress::FinishStatus::Success {
+            downloaded: body_result.bytes,
+            elapsed,
+        });
+
+        let result = BodyResult {
+            bytes_read: body_result.bytes,
+            elapsed: start.elapsed(),
+            local_file: if self.config.delete_after { None } else { Some(output_path.to_path_buf()) },
+            content_type: response.headers.content_type().map(|s| s.to_string()),
+        };
+        Ok(RetrieveOutcome::Success(result))
     }
 
     /// Perform an HTTP or HTTPS download.
