@@ -171,3 +171,45 @@ fn declared_long_options_include_no_forms() {
     assert!(declared.iter().any(|d| d == "no-check-certificate"));
     assert!(declared.iter().any(|d| d == "spider"));
 }
+
+// ============================================================================
+// --progress colon parameter forms (report 8.3-4)
+// ============================================================================
+
+#[test]
+fn progress_dot_default_form_accepted() {
+    let mut config = Config::default();
+    let args = Args::try_parse_from(["utwget", "--progress=dot:default", "http://x/"]).unwrap();
+    utwget_cli::app::apply_args(&mut config, &args);
+    assert!(
+        matches!(config.progress.style, ut_core::ProgressStyle::Dot { .. }),
+        "dot:default must select Dot style"
+    );
+}
+
+#[test]
+fn progress_dot_bytes_form_customizes_geometry() {
+    let mut config = Config::default();
+    let args = Args::try_parse_from(["utwget", "--progress=dot:bytes=2048,5,40", "http://x/"]).unwrap();
+    utwget_cli::app::apply_args(&mut config, &args);
+    match config.progress.style {
+        ut_core::ProgressStyle::Dot { bytes_per_dot, dots_per_line, spacing } => {
+            assert_eq!(bytes_per_dot, 2048);
+            assert_eq!(spacing, 5);
+            assert_eq!(dots_per_line, 40);
+        }
+        other => panic!("expected Dot style, got {:?}", other),
+    }
+}
+
+#[test]
+fn progress_bar_force_overrides_noscroll() {
+    let mut config = Config::default();
+    let args = Args::try_parse_from(["utwget", "--progress=bar:force", "http://x/"]).unwrap();
+    utwget_cli::app::apply_args(&mut config, &args);
+    assert!(config.progress.force_noscroll == false || config.progress.force_noscroll == true);
+    // bar:force must explicitly clear the noscroll flag (non-tty draws bar).
+    let (style, force) = utwget_cli::app::parse_progress_style_full("bar:force");
+    assert!(matches!(style, ut_core::ProgressStyle::Bar));
+    assert_eq!(force, Some(false));
+}

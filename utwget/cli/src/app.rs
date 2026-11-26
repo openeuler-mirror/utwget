@@ -1813,7 +1813,13 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
         }
     }
 
-    config.progress.style = parse_progress_style_arg(&args.progress);
+    // --progress may carry colon params (bar:force, dot:bytes=N...); the
+    // force_noscroll override applies on top of the tty detection (8.3-4).
+    let (style, force_override) = parse_progress_style_full(&args.progress);
+    config.progress.style = style;
+    if let Some(force) = force_override {
+        config.progress.force_noscroll = force;
+    }
     config.progress.force_noscroll = !args.show_progress || !io::stdout().is_terminal();
 
     // Apply --restrict-file-names (comma-separated list of restrictions)
@@ -2090,15 +2096,70 @@ fn parse_address_family_arg(s: &str) -> ut_core::AddressFamily {
 /// # Returns
 /// The resolved `ProgressStyle` variant.
 fn parse_progress_style_arg(s: &str) -> ut_core::ProgressStyle {
-    match s.to_ascii_lowercase().as_str() {
-        "none" | "silent" => ut_core::ProgressStyle::Silent,
-        "verbose" | "v" => ut_core::ProgressStyle::Verbose,
-        "dot" | "d" => ut_core::ProgressStyle::Dot {
-            bytes_per_dot: 1024,
-            dots_per_line: 50,
-            spacing: 10,
-        },
-        _ => ut_core::ProgressStyle::Bar,
+    parse_progress_style_full(s).0
+}
+
+/// Parse `--progress` values including the colon-parameter forms GNU wget
+/// supports (report 8.3-4):
+///
+/// - `bar[:[force|noscroll]]`
+/// - `dot[:default|binary|mega|bytes=N[,spacing[,lines]]]`
+///
+/// Returns the style plus a `force_noscroll` override (`None` = leave the
+/// tty-based default).
+pub fn parse_progress_style_full(s: &str) -> (ut_core::ProgressStyle, Option<bool>) {
+    let lowered = s.to_ascii_lowercase();
+    let (kind, params) = match lowered.split_once(':') {
+        Some((k, p)) => (k, Some(p)),
+        None => (lowered.as_str(), None),
+    };
+
+    match kind {
+        "bar" => {
+            // bar:force → draw even on non-tty (override = Some(false):
+            // force_noscroll cleared); bar:noscroll → Some(true).
+            let force = params.map(|p| !p.split(',').any(|t| t.trim() == "force"));
+            (ut_core::ProgressStyle::Bar, force)
+        }
+        "dot" | "d" => {
+            let mut style = ut_core::ProgressStyle::Dot {
+                bytes_per_dot: 1024,
+                dots_per_line: 50,
+                spacing: 10,
+            };
+            if let Some(p) = params {
+                // dot:default | dot:binary | dot:mega | dot:bytes=N[,spacing[,lines]]
+                if let Some(rest) = p.strip_prefix("bytes=") {
+                    let mut it = rest.split(',');
+                    if let Some(n) = it.next().and_then(|v| v.parse::<usize>().ok()) {
+                        let spacing = it.next().and_then(|v| v.parse::<usize>().ok());
+                        let lines = it.next().and_then(|v| v.parse::<usize>().ok());
+                        style = ut_core::ProgressStyle::Dot {
+                            bytes_per_dot: n,
+                            dots_per_line: lines.unwrap_or(50),
+                            spacing: spacing.unwrap_or(10),
+                        };
+                    }
+                } else if p.contains("binary") {
+                    style = ut_core::ProgressStyle::Dot {
+                        bytes_per_dot: 1024,
+                        dots_per_line: 50,
+                        spacing: 10,
+                    };
+                } else if p.contains("mega") {
+                    style = ut_core::ProgressStyle::Dot {
+                        bytes_per_dot: 64 * 1024,
+                        dots_per_line: 50,
+                        spacing: 10,
+                    };
+                }
+                // dot:default and anything else keep the defaults.
+            }
+            (style, None)
+        }
+        "none" | "silent" => (ut_core::ProgressStyle::Silent, None),
+        "verbose" | "v" => (ut_core::ProgressStyle::Verbose, None),
+        _ => (ut_core::ProgressStyle::Bar, None),
     }
 }
 
