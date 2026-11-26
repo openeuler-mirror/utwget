@@ -1481,6 +1481,12 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
     }
 
     // --no-cache: send Cache-Control: no-cache + Pragma: no-cache
+    // Positive forms of default-on flags (--cache etc.) are no-ops vs the
+    // default but are wired for explicitness and future-proofing
+    // (report 9.1-6: declared-but-unread fields).
+    if args.cache {
+        config.http.no_cache = false;
+    }
     if args.no_cache {
         config.http.no_cache = true;
     }
@@ -1970,11 +1976,15 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
     if args._no_check_certificate { config.tls.check_certificate = ut_core::types::CheckCertMode::On; }
     if args._no_iri { config.iri.enabled = false; }
     if args._no_netrc { config.use_netrc = false; }
+    if args.netrc { config.use_netrc = true; }
+    let _ = args.glob; // glob=true is the default; --no-glob handled above
+
     if args._no_cache { config.http.no_cache = true; }
     if args._no_use_server_timestamps { config.use_server_timestamps = true; }
     if args._no_if_modified_since { config.if_modified_since = true; }
     if args._no_cookies { config.cookie.enabled = true; }
     if args._no_hsts { config.hsts.enabled = true; }
+    if args.hsts { config.hsts.enabled = true; }
     if args._no_dns_cache { config.no_dns_cache = false; }
     if args._no_http_keep_alive { config.http.keep_alive = true; }
     if args._no_compression { config.compression = ut_core::types::CompressionMode::None; }
