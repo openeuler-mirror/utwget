@@ -143,30 +143,74 @@ impl MetalinkDownloader {
     /// * `MetalinkError::Download` - The download operation failed.
     /// * `MetalinkError::Io` - An I/O error occurred during verification.
     pub fn download(&self, file: &MetalinkFile, output_dir: &Path) -> Result<DownloadResult, MetalinkError> {
-        let resource = self.select_best_resource(&file.resources)?;
         let safe_name = sanitize_metalink_filename(&file.name);
         let output_path = output_dir.join(&safe_name);
 
-        info!("downloading {} from {}", file.name, resource.url);
-
+        // Mirror fallback (report 8.2-1, mirrors GNU wget metalink.c):
+        // try resources in preference order; on download error OR checksum
+        // mismatch, remove the file and move to the next mirror. Only an
+        // exhausted list fails the download.
+        let resources = self.select_best_resources(&file.resources)?;
         let start = Instant::now();
-        (self.download_fn)(&resource.url, &output_path)
-            .map_err(|e| MetalinkError::Download(format!("failed to download from {}: {}", resource.url, e)))?;
-        let elapsed = start.elapsed();
+        let mut last_error: Option<MetalinkError> = None;
 
-        let bytes_downloaded = std::fs::metadata(&output_path)
-            .map(|m| m.len())
-            .unwrap_or(0);
+        for resource in resources {
+            info!("downloading {} from {}", file.name, resource.url);
+            let download_result =
+                (self.download_fn)(&resource.url, &output_path)
+                    .and_then(|_| {
+                        // Verify checksums before accepting the download.
+                        self.verify_file(file, &output_path).and_then(|verified| {
+                            if verified {
+                                Ok(())
+                            } else {
+                                Err(MetalinkError::Download(format!(
+                                    "checksum verification failed for {}",
+                                    resource.url
+                                )))
+                            }
+                        })
+                    });
 
-        let checksum_verified = self.verify_file(file, &output_path)?;
+            match download_result {
+                Ok(()) => {
+                    let elapsed = start.elapsed();
+                    let bytes_downloaded = std::fs::metadata(&output_path)
+                        .map(|m| m.len())
+                        .unwrap_or(0);
+                    return Ok(DownloadResult {
+                        file_path: output_path,
+                        bytes_downloaded,
+                        elapsed,
+                        checksum_verified: true,
+                    });
+                }
+                Err(e) => {
+                    warn!("mirror {} failed: {}; trying next", resource.url, e);
+                    last_error = Some(e);
+                    // Remove the bad file before trying the next mirror
+                    // (wget metalink.c deletes on checksum failure).
+                    let _ = std::fs::remove_file(&output_path);
+                }
+            }
+        }
 
-        Ok(DownloadResult {
-            file_path: output_path,
-            bytes_downloaded,
-            elapsed,
-            checksum_verified,
-        })
+        Err(last_error
+            .unwrap_or_else(|| MetalinkError::Download("no mirrors succeeded".into())))
     }
+
+    /// Selects all usable resources in priority order (best first).
+    ///
+    /// Selection is performed in the following order:
+    /// 1. Filter by allowed protocols (if configured).
+    /// 2. Filter by preferred location (if configured).
+    /// 3. Sort by preference value (higher is better).
+    ///
+    /// Used by `download` for mirror fallback.
+    pub fn select_best_resources<'a>(
+        &self,
+        resources: &'a [MetalinkResource],
+    ) -> Result<Vec<&'a MetalinkResource>, MetalinkError> {
 
     /// Selects the best resource from a list of available mirrors.
     ///
@@ -187,10 +231,7 @@ impl MetalinkDownloader {
     /// # Errors
     ///
     /// Returns `MetalinkError::NoResources` if no suitable resource is found.
-    pub fn select_best_resource<'a>(&self, resources: &'a [MetalinkResource]) -> Result<&'a MetalinkResource, MetalinkError> {
-        if resources.is_empty() {
-            return Err(MetalinkError::NoResources);
-        }
+
 
         let mut indices: Vec<usize> = (0..resources.len()).collect();
 
@@ -238,11 +279,11 @@ impl MetalinkDownloader {
             pb.cmp(&pa)
         });
 
-        indices
+        Ok(indices
             .into_iter()
-            .map(|i| &resources[i])
-            .find(|r| !r.url.is_empty())
-            .ok_or(MetalinkError::NoResources)
+            .filter_map(|i| resources.get(i))
+            .filter(|r| !r.url.is_empty())
+            .collect())
     }
 
     /// Verifies a downloaded file against the Metalink checksums.
