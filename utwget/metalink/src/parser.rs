@@ -160,7 +160,6 @@ impl MetalinkParser {
         let mut buf = Vec::new();
         let mut files: Vec<MetalinkFile> = Vec::new();
         let mut current_file: Option<MetalinkFile> = None;
-        let mut current_resource: Option<MetalinkResource> = None;
 
         let mut path_stack: Vec<String> = Vec::new();
         // Context for parsing <pieces><hash>...</hash>...</pieces>:
@@ -171,9 +170,19 @@ impl MetalinkParser {
             let event = xml_reader.read_event_into(&mut buf)?;
             match event {
                 Event::Start(ref e) | Event::Empty(ref e) => {
+                    // Distinguish Start (<tag>) from Empty (<tag/>): a
+                    // self-closing element has no text content, so the
+                    // text-reading arms must not call read_text — doing so
+                    // consumed the FOLLOWING element (quick-xml delivers
+                    // it as the next event) and broke parsing whenever a
+                    // metalink used self-closing <hash/> or <size/>
+                    // (report 8.2-4).
+                    let is_empty_elem = matches!(event, Event::Empty(_));
                     let local_name = e.local_name();
                     let tag = String::from_utf8_lossy(local_name.as_ref()).to_string();
-                    path_stack.push(tag.clone());
+                    if !is_empty_elem {
+                        path_stack.push(tag.clone());
+                    }
 
                     match tag.as_str() {
                         "file" => {
@@ -195,13 +204,15 @@ impl MetalinkParser {
                             });
                         }
                         "size" => {
-                            if current_file.is_some() {
+                            if current_file.is_some() && !is_empty_elem {
                                 let text = read_text(&mut xml_reader, &mut buf)?;
                                 if let Ok(size) = text.parse::<u64>() {
                                     if let Some(ref mut f) = current_file {
                                         f.size = Some(size);
                                     }
                                 }
+                                path_stack.pop();
+                            } else if is_empty_elem {
                                 path_stack.pop();
                             }
                         }
@@ -212,7 +223,11 @@ impl MetalinkParser {
                                 .and_then(|a| a.ok())
                                 .and_then(|a| String::from_utf8(a.value.to_vec()).ok())
                                 .and_then(|t| ChecksumType::from_str(&t));
-                            let value = read_text(&mut xml_reader, &mut buf)?;
+                            let value = if is_empty_elem {
+                                String::new()
+                            } else {
+                                read_text(&mut xml_reader, &mut buf)?
+                            };
                             if let Some((length, ref ht)) = pieces_ctx {
                                 // Inside <pieces>: this hash is for a piece
                                 if let Some(ref mut f) = current_file {
@@ -283,7 +298,11 @@ impl MetalinkParser {
                                 }
                             }
 
-                            let text = read_text(&mut xml_reader, &mut buf)?;
+                            let text = if is_empty_elem {
+                                String::new()
+                            } else {
+                                read_text(&mut xml_reader, &mut buf)?
+                            };
                             if !text.is_empty() {
                                 let resource = MetalinkResource {
                                     url: text,
@@ -327,13 +346,6 @@ impl MetalinkParser {
                     let tag = String::from_utf8_lossy(local_name.as_ref()).to_string();
 
                     match tag.as_str() {
-                        "url" => {
-                            if let Some(res) = current_resource.take() {
-                                if let Some(ref mut f) = current_file {
-                                    f.resources.push(res);
-                                }
-                            }
-                        }
                         "pieces" => {
                             pieces_ctx = None;
                         }
@@ -355,16 +367,7 @@ impl MetalinkParser {
                 }
                 Event::Text(ref e) => {
                     let text = e.unescape().unwrap_or_default();
-                    let trimmed = text.trim();
-                    if !trimmed.is_empty() {
-                        if let Some("url") = path_stack.last().map(|s| s.as_str()) {
-                            if let Some(ref mut res) = current_resource {
-                                if res.url.is_empty() {
-                                    res.url = trimmed.to_string();
-                                }
-                            }
-                        }
-                    }
+                    let _ = text.trim(); // whitespace-only text is ignored
                 }
                 Event::Eof => break,
                 _ => {}

@@ -3,7 +3,6 @@
 //! Tests for Metalink XML parsing and file info extraction.
 
 use std::io::Cursor;
-use std::io::Cursor;
 use ut_metalink::MetalinkParser;
 use ut_metalink::checksum::ChecksumType;
 
@@ -237,4 +236,31 @@ fn parses_url_location_and_maxconnections_attributes() {
     assert_eq!(r[0].max_connections, Some(2));
     assert_eq!(r[1].location.as_deref(), Some("US"));
     assert_eq!(r[1].max_connections, Some(5));
+}
+
+// ============================================================================
+// Self-closing element parsing (report 8.2-4)
+// ============================================================================
+
+#[test]
+fn self_closing_hash_element_does_not_swallow_next_element() {
+    // Regression: <hash .../> arrived as Event::Empty but was treated like
+    // Start — read_text consumed events until the next End, swallowing the
+    // following <url> element entirely.
+    let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<metalink version="3.0" xmlns="http://www.metalinker.org">
+  <files>
+    <file name="f.iso">
+      <size>100</size>
+      <hash type="sha256"/>
+      <url type="http" preference="1">http://example.com/f.iso</url>
+    </file>
+  </files>
+</metalink>"#;
+
+    let files = MetalinkParser::parse(Cursor::new(xml)).expect("parse");
+    assert_eq!(files.len(), 1);
+    // The <url> after the self-closing <hash/> must still be parsed.
+    assert_eq!(files[0].resources.len(), 1, "url element must survive a self-closing <hash/>");
+    assert_eq!(files[0].resources[0].url, "http://example.com/f.iso");
 }
