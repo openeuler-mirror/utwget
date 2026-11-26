@@ -31,9 +31,43 @@ pub struct BarProgress {
     force_noscroll: bool,
     report_speed_bytes: bool,
     finished: bool,
+    /// Sliding-window samples (instant, cumulative_downloaded) for the
+    /// speed estimate (report 8.3-2): a whole-run average misrepresents
+    /// throughput for slow-start/changing links.
+    samples: std::collections::VecDeque<(Instant, u64)>,
+    /// Bytes already present when the download began (`-c` resume).
+    initial_bytes: u64,
 }
 
 impl BarProgress {
+    /// Speed over the last ~3 seconds of samples, in bytes/sec.
+    ///
+    /// Uses the sliding sample window instead of the whole-run average so
+    /// the displayed speed tracks current throughput (8.3-2). Falls back
+    /// to the run average when fewer than 2 samples exist.
+    fn sliding_speed(&self) -> f64 {
+        let now = Instant::now();
+        let cutoff = now - std::time::Duration::from_secs(3);
+        // Find the oldest sample within the window.
+        let mut base: Option<(Instant, u64)> = None;
+        for (t, b) in &self.samples {
+            if *t >= cutoff {
+                base = Some((*t, *b));
+                break;
+            }
+        }
+        match base {
+            Some((t0, b0)) if now.duration_since(t0).as_secs_f64() > 0.05 => {
+                let db = (self.initial_bytes + self.downloaded).saturating_sub(b0);
+                db as f64 / now.duration_since(t0).as_secs_f64()
+            }
+            _ => {
+                let secs = self.start_time.elapsed().as_secs_f64().max(1e-6);
+                self.downloaded as f64 / secs
+            }
+        }
+    }
+
     /// Creates a new `BarProgress` instance.
     ///
     /// # Arguments
@@ -56,6 +90,8 @@ impl BarProgress {
             tick_count: 0,
             force_noscroll,
             report_speed_bytes: false,
+            samples: std::collections::VecDeque::new(),
+            initial_bytes: 0,
             finished: false,
         }
     }
@@ -91,9 +127,12 @@ impl BarProgress {
     ///
     /// When `done` is true, shows elapsed time instead of ETA.
     fn render_known_size_with_done(&self, done: bool) -> String {
-        let total = self.total_size.unwrap_or(self.downloaded);
+        // Effective position includes bytes restored by `-c` resume, so the
+        // percentage starts at resume%/100 rather than 0% (8.3-2).
+        let effective = self.initial_bytes + self.downloaded;
+        let total = self.total_size.unwrap_or(effective).max(effective);
         let pct = if total > 0 {
-            if self.downloaded >= total { 100 } else { (self.downloaded * 100) / total }
+            if effective >= total { 100 } else { (effective * 100) / total }
         } else {
             100
         };
@@ -101,7 +140,9 @@ impl BarProgress {
         let elapsed = self.start_time.elapsed();
         let elapsed_secs = elapsed.as_secs_f64();
         let secs = elapsed_secs.max(1e-6);
-        let speed = self.downloaded as f64 / secs;
+        // Sliding-window speed over the last ~3 seconds (falls back to the
+        // whole-run average before enough samples exist) (8.3-2).
+        let speed = self.sliding_speed();
 
         // Detect terminal width for the progress bar.
         let term_width = terminal_size::terminal_size()
@@ -246,7 +287,7 @@ impl BarProgress {
     fn render_unknown_size(&self) -> String {
         let elapsed = self.start_time.elapsed();
         let elapsed_secs = elapsed.as_secs_f64();
-        let speed = self.downloaded as f64 / elapsed_secs.max(1e-6);
+        let speed = self.sliding_speed();
 
         let speed_str = if self.downloaded == 0 || elapsed_secs <= 0.0 {
             "  --.-KB/s".to_string()
@@ -291,6 +332,11 @@ impl ProgressDisplay for BarProgress {
         self.total_size = total_size;
         self.resume_from = resume_from.unwrap_or(0);
         self.downloaded = 0;
+        // `-c` resume: the bar starts at resume_from, not zero (report
+        // 8.3-2: resume_from was stored but never used — percentage began
+        // at 0% and speed was underestimated).
+        self.initial_bytes = self.resume_from;
+        self.samples.clear();
         self.start_time = Instant::now();
         self.last_update = Instant::now();
         self.tick_count = 0;
@@ -305,6 +351,11 @@ impl ProgressDisplay for BarProgress {
         self.total_size = total_size;
         self.resume_from = resume_from.unwrap_or(0);
         self.downloaded = 0;
+        // `-c` resume: the bar starts at resume_from, not zero (report
+        // 8.3-2: resume_from was stored but never used — percentage began
+        // at 0% and speed was underestimated).
+        self.initial_bytes = self.resume_from;
+        self.samples.clear();
         self.start_time = Instant::now();
         self.last_update = Instant::now();
         self.tick_count = 0;
@@ -333,6 +384,12 @@ impl ProgressDisplay for BarProgress {
         self.tick_count += 1;
         let now = Instant::now();
         let since_last = now.duration_since(self.last_update);
+
+        // Sliding-window sample for the speed estimate (8.3-2).
+        self.samples.push_back((now, self.initial_bytes + self.downloaded));
+        while self.samples.len() > 32 {
+            self.samples.pop_front();
+        }
 
         if since_last < Duration::from_millis(50) && self.tick_count % 10 != 0 {
             return;
