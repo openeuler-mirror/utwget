@@ -944,7 +944,7 @@ impl FtpsClient {
         // GNU wget does NOT validate the PASV IP (ftp.c connects directly);
         // a mismatch (NAT'd data server) is a warning, not an error (M12).
         if let Some(peer_ip) = self.control_peer_ip() {
-            if let Err(reason) = validate_pasv_ip(pasv_ip, Some(peer_ip)) {
+            if validate_pasv_ip(pasv_ip, Some(peer_ip)).is_err() {
                 log::warn!(
                     "FTPS PASV address {}:{} does not match control connection peer {}; \
                      connecting anyway (possible FTP bounce attack, GNU wget behavior)",

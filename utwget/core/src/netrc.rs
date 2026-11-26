@@ -5,11 +5,8 @@
 
 use crate::types::Credentials;
 use std::collections::HashMap;
-use std::fs;
 use std::io;
 use std::path::Path;
-#[cfg(unix)]
-use std::os::unix::fs::MetadataExt;
 
 /// A single .netrc entry for a machine.
 ///

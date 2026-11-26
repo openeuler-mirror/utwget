@@ -3,13 +3,12 @@
 //! This module defines all configuration structures used throughout the
 //! application, including HTTP, FTP, TLS, proxy, and recursive download settings.
 
-use crate::error::ConfigError;
 use crate::types::{
-    AddressFamily, CaseRestriction, CheckCertMode, CompressionMode, Credentials,
-    HttpMethod, KeyFileType, ProgressStyle, RestrictOs, Scheme, SecureProtocol,
+    AddressFamily, CaseRestriction, CheckCertMode, CompressionMode,
+    HttpMethod, KeyFileType, ProgressStyle, RestrictOs, SecureProtocol,
 };
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Duration;
 
 /// Main configuration structure for utwget.
