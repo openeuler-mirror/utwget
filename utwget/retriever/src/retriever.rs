@@ -20,7 +20,7 @@ use ut_core::{
 };
 #[cfg(feature = "hsts")]
 use ut_core::HstsStore;
-use ut_http::auth::{AuthChallenge, AuthDispatcher};
+use ut_http::auth::{AuthChallenge, AuthDispatcher, AuthScheme};
 use ut_http::request::{build_request, HttpRequest};
 use ut_http::response::{HeaderMap, HttpResponse};
 use ut_net::TlsConnector;
@@ -968,7 +968,19 @@ impl Retriever {
             if www_auth.is_empty() {
                 break;
             }
-            let challenges = AuthChallenge::from_www_authenticate(&www_auth.join(", "));
+            let mut challenges = AuthChallenge::from_www_authenticate(&www_auth.join(", "));
+            // Try the strongest challenge first: NTLM > Digest > Basic
+            // (GNU wget http.c:2407-2445 stops scanning at NTLM as "the
+            // most secure" challenge). The previous header-order iteration
+            // sent Basic credentials to a server advertising
+            // `Basic, Digest` — a security downgrade. Stable sort keeps
+            // the relative order of equal-strength challenges.
+            challenges.sort_by_key(|c| match c.scheme {
+                AuthScheme::Ntlm => 0,
+                AuthScheme::Digest => 1,
+                AuthScheme::Bearer => 2,
+                AuthScheme::Basic => 3,
+            });
             let mut auth_succeeded = false;
             for challenge in &challenges {
                 // Log stale nonce — server says credentials are fine but nonce expired
