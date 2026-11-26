@@ -309,7 +309,12 @@ impl RecursiveRetriever {
                             if let Some(lpath) = local {
                                 let links_opt = self.extract_links(lpath, &url_str, &entry);
                                 if let Some(links) = links_opt {
-                                    for link in links {
+                                    // <base href> overrides the merge base for
+                                    // relative links on this page (first one
+                                    // wins, like browsers and wget).
+                                    let doc_base =
+                                        effective_base_url(&links, &url_str);
+                                    for link in &links {
                                         if link.meta_disallow_follow {
                                             continue;
                                         }
@@ -318,7 +323,10 @@ impl RecursiveRetriever {
                                         if dash_p_leaf && !link.inline {
                                             continue;
                                         }
-                                        self.enqueue_child(&link, &url_str, entry.depth, &mut queue);
+                                        self.enqueue_child(
+                                            link, &url_str, entry.depth, &mut queue,
+                                            doc_base.as_deref(),
+                                        );
                                     }
                                 }
                             }
@@ -336,14 +344,19 @@ impl RecursiveRetriever {
                             let local_path = self.retriever.download_registry().get_local(&url_str).cloned();
                             if let Some(lpath) = local_path {
                                 if let Some(links) = self.extract_links(&lpath, &url_str, &entry) {
-                                    for link in links {
+                                    // <base href> override, same as the Success branch.
+                                    let doc_base = effective_base_url(&links, &url_str);
+                                    for link in &links {
                                         if link.meta_disallow_follow {
                                             continue;
                                         }
                                         if dash_p_leaf && !link.inline {
                                             continue;
                                         }
-                                        self.enqueue_child(&link, &url_str, entry.depth, &mut queue);
+                                        self.enqueue_child(
+                                            link, &url_str, entry.depth, &mut queue,
+                                            doc_base.as_deref(),
+                                        );
                                     }
                                 }
                             }
@@ -590,12 +603,17 @@ impl RecursiveRetriever {
                                                 lpath, &url_str, &entry,
                                                 &html_extractor, &css_extractor, &config,
                                             ) {
+                                                // <base href> override for this
+                                                // page (first one wins).
+                                                let doc_base =
+                                                    effective_base_url(&links, &url_str);
                                                 let mut q = queue.lock().unwrap();
-                                                for link in links {
+                                                for link in &links {
                                                     if link.meta_disallow_follow { continue; }
                                                     enqueue_child_static(
-                                                        &link, &url_str, entry.depth, &mut q,
+                                                        link, &url_str, entry.depth, &mut q,
                                                         &start_url_parsed, &config,
+                                                        doc_base.as_deref(),
                                                     );
                                                 }
                                             }
@@ -740,6 +758,7 @@ impl RecursiveRetriever {
         parent_url: &str,
         parent_depth: u32,
         queue: &mut UrlQueue,
+        base_url: Option<&str>,
     ) {
         let parent_parsed = match ParsedUrl::parse(parent_url) {
             Ok(p) => p,
@@ -747,10 +766,24 @@ impl RecursiveRetriever {
         };
 
         let absolute_url = match link.link_type {
-            LinkType::Relative | LinkType::CssImport => {
-                match parent_parsed.merge(&link.url) {
-                    Ok(u) => u.display(),
-                    Err(_) => return,
+            LinkType::BaseHref => {
+                // <base href> is document metadata, not a resource to
+                // download (GNU wget html-url.c tag_handle_base). The
+                // caller resolves subsequent relative links against it.
+                return;
+            }
+            LinkType::Relative | LinkType::CssImport | LinkType::RefreshRedirect => {
+                // Resolve against <base href> when the document declares
+                // one, else against the document URL itself (wget resolves
+                // every extracted URL against the document base).
+                let merged = if let Some(base) = base_url {
+                    ParsedUrl::parse(base).ok().and_then(|b| b.merge(&link.url).ok())
+                } else {
+                    parent_parsed.merge(&link.url).ok()
+                };
+                match merged {
+                    Some(u) => u.display(),
+                    None => return,
                 }
             }
             _ => link.url.clone(),
@@ -1147,6 +1180,19 @@ fn extract_links_static(
     Some(results)
 }
 
+/// Compute the effective document base URL from extracted links.
+///
+/// When the page declares `<base href="...">`, relative links (including
+/// relative meta-refresh targets) must resolve against it instead of the
+/// document URL (GNU wget html-url.c `tag_handle_base`). The first `<base>`
+/// wins, matching browser behavior. Returns `None` when the page has no
+/// usable base or the base cannot be merged into an absolute URL.
+fn effective_base_url(links: &[UrlPosition], document_url: &str) -> Option<String> {
+    let base_link = links.iter().find(|l| l.link_type == LinkType::BaseHref)?;
+    let doc = ParsedUrl::parse(document_url).ok()?;
+    doc.merge(&base_link.url).ok().map(|u| u.display())
+}
+
 /// Enqueue a child URL into the shared queue (parallel worker version).
 fn enqueue_child_static(
     link: &UrlPosition,
@@ -1155,6 +1201,7 @@ fn enqueue_child_static(
     queue: &mut UrlQueue,
     start_url: &ParsedUrl,
     config: &Config,
+    base_url: Option<&str>,
 ) {
     let parent_parsed = match ParsedUrl::parse(parent_url) {
         Ok(p) => p,
@@ -1162,10 +1209,22 @@ fn enqueue_child_static(
     };
 
     let absolute_url = match link.link_type {
-        LinkType::Relative | LinkType::CssImport => {
-            match parent_parsed.merge(&link.url) {
-                Ok(u) => u.display(),
-                Err(_) => return,
+        LinkType::BaseHref => {
+            // Document metadata, not a downloadable resource (see
+            // enqueue_child — GNU wget html-url.c tag_handle_base).
+            return;
+        }
+        LinkType::Relative | LinkType::CssImport | LinkType::RefreshRedirect => {
+            // Resolve against <base href> when the document declares one,
+            // else against the document URL itself.
+            let merged = if let Some(base) = base_url {
+                ParsedUrl::parse(base).ok().and_then(|b| b.merge(&link.url).ok())
+            } else {
+                parent_parsed.merge(&link.url).ok()
+            };
+            match merged {
+                Some(u) => u.display(),
+                None => return,
             }
         }
         _ => link.url.clone(),
