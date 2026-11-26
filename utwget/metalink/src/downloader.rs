@@ -159,17 +159,24 @@ impl MetalinkDownloader {
             let download_result =
                 (self.download_fn)(&resource.url, &output_path)
                     .and_then(|_| {
-                        // Verify checksums before accepting the download.
-                        self.verify_file(file, &output_path).and_then(|verified| {
-                            if verified {
-                                Ok(())
-                            } else {
-                                Err(MetalinkError::Download(format!(
-                                    "checksum verification failed for {}",
-                                    resource.url
-                                )))
-                            }
-                        })
+                        // Verify checksums AND declared size before
+                        // accepting the download.
+                        let checksums_ok = self.verify_file(file, &output_path)?;
+                        if !checksums_ok {
+                            return Err(MetalinkError::Download(format!(
+                                "checksum verification failed for {}",
+                                resource.url
+                            )));
+                        }
+                        let size_ok = self.verify_size(file, &output_path)?;
+                        if !size_ok {
+                            return Err(MetalinkError::Download(format!(
+                                "size verification failed for {} (expected {})",
+                                resource.url,
+                                file.size.unwrap_or(0)
+                            )));
+                        }
+                        Ok(())
                     });
 
             match download_result {
@@ -376,8 +383,34 @@ impl MetalinkDownloader {
             return self.verify_pieces(&file.pieces, path);
         }
 
-        debug!("no checksums available for verification");
-        Ok(false)
+        // No hashes and no pieces: GNU wget treats this as success with a
+        // warning (metalink.c: "no checksum" → accept the file); the old
+        // Ok(false) here rejected valid downloads of metalinks without any
+        // hashes (report 8.2-5).
+        warn!(
+            "no checksums in metalink for '{}'; accepting download without verification",
+            file.name
+        );
+        Ok(true)
+    }
+
+    /// Verifies the declared `<size>` of a file against the actual size.
+    ///
+    /// Returns `Ok(false)` on mismatch (report 8.2-5: `<size>` was parsed
+    /// but never checked). A missing size is not an error.
+    pub fn verify_size(&self, file: &MetalinkFile, path: &Path) -> Result<bool, MetalinkError> {
+        let Some(expected) = file.size else {
+            return Ok(true);
+        };
+        let actual = std::fs::metadata(path).map_err(MetalinkError::Io)?.len();
+        if actual != expected {
+            warn!(
+                "size mismatch for '{}': expected {} bytes, got {}",
+                file.name, expected, actual
+            );
+            return Ok(false);
+        }
+        Ok(true)
     }
 
     /// Verifies a file against piece hashes (chunk checksums).
