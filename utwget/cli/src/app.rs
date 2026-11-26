@@ -269,16 +269,25 @@ impl App {
         if let Some(ref input_file) = self.config.input_filename {
             match fs::File::open(input_file) {
                 Ok(file) => {
-                    let reader = BufReader::new(file);
-                    for line in reader.lines() {
-                        match line {
-                            Ok(line) => {
-                                let trimmed = line.trim();
-                                if !trimmed.is_empty() && !trimmed.starts_with('#') {
-                                    all_urls.push(trimmed.to_string());
+                    if self.config.force_html {
+                        // -i -F: the whole input file is ONE HTML document;
+                        // expand it to the URLs it references (GNU wget
+                        // retr.c). Treating it line-by-line pushed raw
+                        // HTML into the URL list (report 9.1-1).
+                        let file_urls = self.read_html_file_urls(input_file.as_path())?;
+                        all_urls.extend(file_urls);
+                    } else {
+                        let reader = BufReader::new(file);
+                        for line in reader.lines() {
+                            match line {
+                                Ok(line) => {
+                                    let trimmed = line.trim();
+                                    if !trimmed.is_empty() && !trimmed.starts_with('#') {
+                                        all_urls.push(trimmed.to_string());
+                                    }
                                 }
+                                Err(e) => return Err(WgetError::ProtocolIo(format!("error reading input file: {}", e))),
                             }
-                            Err(e) => return Err(WgetError::ProtocolIo(format!("error reading input file: {}", e))),
                         }
                     }
                 }
@@ -1191,9 +1200,27 @@ impl App {
         let extractor = ut_html::HtmlExtractor;
         let opts = ut_html::url_position::ExtractOptions::default();
         let mut cursor = Cursor::new(content.as_bytes());
-        let links = ut_html::ContentExtractor::extract_urls(&extractor, &mut cursor, "", &opts)
+        let base = self.config.base_url.as_deref().unwrap_or("");
+        let links = ut_html::ContentExtractor::extract_urls(&extractor, &mut cursor, base, &opts)
             .map_err(|e| WgetError::ProtocolIo(format!("HTML parse error: {}", e)))?;
-        Ok(links.into_iter().map(|l| l.url).collect())
+        // Resolve relative links against --base (or leave as-is when unset):
+        // GNU wget applies -B to URLs found in -i -F input files (init.c).
+        Ok(links
+            .into_iter()
+            .map(|l| {
+                if l.link_type == ut_html::url_position::LinkType::Relative {
+                    match ParsedUrl::parse(base) {
+                        Ok(b) => match b.merge(&l.url) {
+                            Ok(u) => u.display(),
+                            Err(_) => l.url,
+                        },
+                        Err(_) => l.url,
+                    }
+                } else {
+                    l.url
+                }
+            })
+            .collect())
     }
 
     /// Print the final download summary to stderr.
@@ -1767,6 +1794,13 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
 
     if let Some(ref family) = args.prefer_family {
         config.prefer_family = parse_address_family_arg(family);
+    }
+
+    // --base: base URL for relative links in -i/-F input files (GNU wget
+    // init.c: base is applied to input-file URL resolution). Report 9.1-1:
+    // previously defined but never consumed.
+    if let Some(ref base) = args.base {
+        config.base_url = Some(base.clone());
     }
 
     // WARC configuration
