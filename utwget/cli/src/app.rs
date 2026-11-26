@@ -1632,10 +1632,11 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
     }
 
     if args.recursive { config.recursive.enabled = true; }
-    // -l 0 means unlimited depth (like original wget), so set to None
-    if args.level != 1 {  // clap default is 1; only override if user set -l
-        config.recursive.max_level = if args.level == 0 { None } else { Some(args.level) };
-    }
+    // -l 0 means unlimited depth (like original wget), so set to None.
+    // clap's default_value is "5" (wget's own default), so args.level is
+    // always populated and needs no default-detection guard — the previous
+    // `if args.level != 1` guard silently discarded an explicit `-l 1`.
+    config.recursive.max_level = if args.level == 0 { None } else { Some(args.level) };
     if args.page_requisites { config.page_requisites = true; }
 
     // GNU wget (main.c:1620-1626): when -p is given without -r, set
