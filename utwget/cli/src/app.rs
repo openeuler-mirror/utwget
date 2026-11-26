@@ -1150,7 +1150,7 @@ impl App {
                         eprintln!("{}", crate::i18n::translate_with_args("utwget.downloaded_info", &[
                             ("url", result.file_path.display().to_string()),
                             ("size", result.bytes_downloaded.to_string()),
-                            ("checksum", if result.checksum_verified { "已验证".to_string() } else { "未验证".to_string() }),
+                            ("checksum", if result.checksum_verified { crate::i18n::translate("utwget.checksum_verified") } else { crate::i18n::translate("utwget.checksum_unverified") }),
                         ]));
                     }
                 }
