@@ -447,7 +447,9 @@ impl UrlFilter for SchemeFilter {
         if self.https_only && scheme != Scheme::Https {
             return false;
         }
-        if scheme == Scheme::Ftp && !self.follow_ftp {
+        // wget rule 1 (recur.c:627-636): both FTP and FTPS are non-HTTP
+        // schemes that require --follow-ftp to be recursed into.
+        if (scheme == Scheme::Ftp || scheme == Scheme::Ftps) && !self.follow_ftp {
             return false;
         }
         true
