@@ -457,7 +457,7 @@ impl RecursiveRetriever {
         let max_redirect = self.retriever.config().max_redirect;
         // Seed the queue with the start URL
         {
-            let mut q = queue.lock().unwrap();
+            let mut q = queue.lock().unwrap_or_else(|e| e.into_inner());
             q.push(QueueEntry {
                 url: start_url.to_string(),
                 referer: None,
@@ -544,7 +544,7 @@ impl RecursiveRetriever {
                         loop {
                             // Pop next URL from shared queue
                             let entry = {
-                                let mut q = queue.lock().unwrap();
+                                let mut q = queue.lock().unwrap_or_else(|e| e.into_inner());
                                 q.pop()
                             };
 
@@ -654,7 +654,7 @@ impl RecursiveRetriever {
                                                 // page (first one wins).
                                                 let doc_base =
                                                     effective_base_url(&links, &url_str);
-                                                let mut q = queue.lock().unwrap();
+                                                let mut q = queue.lock().unwrap_or_else(|e| e.into_inner());
                                                 for link in &links {
                                                     if link.meta_disallow_follow { continue; }
                                                     // At dash_p_leaf level, only
@@ -675,7 +675,7 @@ impl RecursiveRetriever {
                                     any_downloaded.store(true, Ordering::Relaxed);
                                 }
                                 Ok(RetrieveOutcome::Redirected(target)) => {
-                                    let mut q = queue.lock().unwrap();
+                                    let mut q = queue.lock().unwrap_or_else(|e| e.into_inner());
                                     // Arch 6.3-4: count redirect hops and
                                     // enforce --max-redirect. Previously the
                                     // re-queued entry kept redirect_count
