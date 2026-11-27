@@ -9,7 +9,7 @@ default = ["compression", "auth-digest", "auth-ntlm", "http2"]
 compression = ["dep:flate2"]
 auth-digest = []
 auth-ntlm = ["dep:des"]
-http2 = ["dep:h2", "dep:tokio", "dep:hyper-util", "dep:tokio-rustls", "dep:rustls", "dep:webpki-roots"]
+http2 = ["dep:h2", "dep:tokio", "dep:tokio-rustls", "dep:rustls", "dep:webpki-roots"]
 
 [dependencies]
 ut-core = { path = "../core" }
@@ -26,7 +26,6 @@ http = "1"
 des = { version = "0.8", optional = true }
 h2 = { version = "0.4", optional = true }
 tokio = { version = "1", features = ["net", "io-util", "time", "rt-multi-thread"], optional = true }
-hyper-util = { version = "0.1", features = ["tokio", "http1", "http2"], optional = true }
 tokio-rustls = { version = "0.26", optional = true, default-features = false, features = ["ring"] }
 rustls = { version = "0.23", optional = true, default-features = false, features = ["ring", "std", "tls12", "logging"] }
 webpki-roots = { version = "0.26", optional = true }

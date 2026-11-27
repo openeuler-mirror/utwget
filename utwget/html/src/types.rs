@@ -21,8 +21,6 @@ pub enum ContentKind {
     Xml,
     /// Plain text content.
     Plaintext,
-    /// FTP directory listing.
-    FtpListing,
 }
 
 /// Trait for extracting URLs from different content types.
