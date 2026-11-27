@@ -21,27 +21,49 @@ use crate::url_position::{ExtractOptions, LinkType, UrlPosition};
 /// linking to separate documents.
 const INLINE_TAGS: &[&str] = &[
     "img", "script", "link", "embed", "object", "source", "video",
+    // wget ATTR_INLINE tags (html-url.c:141-169): applet code, bgsound src,
+    // body background, fig/layer/overlay src, input src, table/td/th
+    // background, audio/video src+poster, frames.
+    "applet", "bgsound", "body", "fig", "frame", "iframe", "input",
+    "layer", "overlay", "table", "td", "th", "audio",
 ];
 
 /// Mapping of HTML element names to their URL-containing attributes.
 ///
 /// Each tuple represents (tag_name, attribute_name) where the attribute
-/// contains a URL that should be extracted.
+/// contains a URL that should be extracted. A tag may appear multiple
+/// times (wget tag_url_attributes, html-url.c:141-169).
 const URL_ATTR_MAP: &[(&str, &str)] = &[
     ("a", "href"),
-    ("area", "href"),
-    ("link", "href"),
-    ("img", "src"),
-    ("script", "src"),
-    ("iframe", "src"),
-    ("frame", "src"),
-    ("embed", "src"),
-    ("object", "data"),
-    ("source", "src"),
-    ("track", "src"),
-    ("video", "poster"),
-    ("body", "background"),
+    ("applet", "code"),
     ("applet", "codebase"),
+    ("area", "href"),
+    ("audio", "src"),
+    ("audio", "poster"),
+    ("bgsound", "src"),
+    ("body", "background"),
+    ("embed", "href"),
+    ("embed", "src"),
+    ("fig", "src"),
+    ("form", "action"),
+    ("frame", "src"),
+    ("iframe", "src"),
+    ("img", "src"),
+    ("img", "href"),
+    ("img", "lowsrc"),
+    ("input", "src"),
+    ("layer", "src"),
+    ("link", "href"),
+    ("object", "data"),
+    ("overlay", "src"),
+    ("script", "src"),
+    ("source", "src"),
+    ("table", "background"),
+    ("td", "background"),
+    ("th", "background"),
+    ("track", "src"),
+    ("video", "src"),
+    ("video", "poster"),
     ("meta", "content"),
     ("base", "href"),
 ];
@@ -54,9 +76,13 @@ const URL_ATTR_MAP: &[(&str, &str)] = &[
 /// `<style>` blocks for CSS URL extraction.
 const SELECTOR: &str = concat![
     "a[href], area[href], link[href], img[src], script[src], ",
-    "iframe[src], frame[src], embed[src], object[data], ",
-    "source[src], track[src], video[poster], body[background], ",
-    "applet[codebase], meta[content], base[href], ",
+    "iframe[src], frame[src], embed[src], embed[href], object[data], ",
+    "source[src], track[src], video[src], video[poster], ",
+    "audio[src], audio[poster], bgsound[src], fig[src], ",
+    "form[action], input[src], layer[src], overlay[src], ",
+    "table[background], td[background], th[background], ",
+    "applet[code], applet[codebase], img[lowsrc], img[href], ",
+    "body[background], meta[content], base[href], ",
     "img[srcset], source[srcset], [style]",
 ];
 
@@ -113,24 +139,17 @@ fn is_inline_tag(tag: &str) -> bool {
     INLINE_TAGS.contains(&tag)
 }
 
-/// Returns the URL attribute name for a given HTML tag.
+/// Returns every URL-containing attribute for the given tag.
 ///
-/// Looks up the attribute that contains a URL for the specified tag.
-///
-/// # Arguments
-///
-/// * `tag` - The HTML tag name (lowercase).
-///
-/// # Returns
-///
-/// `Some(attr_name)` if the tag has a URL attribute, `None` otherwise.
-fn url_attr_for_tag(tag: &str) -> Option<&'static str> {
-    for (t, a) in URL_ATTR_MAP {
-        if *t == tag {
-            return Some(a);
-        }
-    }
-    None
+/// wget's tag_url_attributes table (html-url.c:141-169) lists multiple
+/// attributes per tag (img: src/lowsrc/href; video/audio: src/poster;
+/// embed: href/src). All of them are harvested.
+fn url_attrs_for_tag(tag: &str) -> Vec<&'static str> {
+    URL_ATTR_MAP
+        .iter()
+        .filter(|(t, _)| *t == tag)
+        .map(|(_, a)| *a)
+        .collect()
 }
 
 /// Classifies a URL as absolute or relative.
@@ -348,7 +367,13 @@ impl ContentExtractor for HtmlExtractor {
                             return Ok(());
                         }
 
-                        if let Some(attr_name) = url_attr_for_tag(tag_str) {
+                        // Harvest EVERY URL attribute of the tag (wget
+                        // tag_url_attributes, html-url.c:141-169): img has
+                        // src/lowsrc/href, video/audio have src/poster,
+                        // embed has href/src, form has action, table/td/th
+                        // have background, etc. The previous single-attr map
+                        // silently dropped the rest.
+                        for attr_name in url_attrs_for_tag(tag_str) {
                             if let Some(url) = el.get_attribute(attr_name) {
                                 let url = url.trim().to_string();
                                 if url.is_empty() || url.starts_with('#')
@@ -359,7 +384,8 @@ impl ContentExtractor for HtmlExtractor {
                                 } else {
                                     let link_type = classify_link(&url);
                                     let inline = is_inline_tag(tag_str);
-                                    let expect_html = matches!(tag_str, "a" | "iframe" | "frame");
+                                    let expect_html = matches!(tag_str,
+                                        "a" | "area" | "iframe" | "frame" | "embed" | "layer" | "overlay");
                                     let expect_css = tag_str == "link"
                                         && el.get_attribute("rel")
                                             .map(|r| r.eq_ignore_ascii_case("stylesheet"))
