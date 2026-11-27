@@ -941,6 +941,24 @@ impl Retriever {
             }
         }
 
+        // Cookie + HSTS processing runs for EVERY response, including
+        // spider/HEAD ones — wget handles Set-Cookie (http.c:3535-3561)
+        // and Strict-Transport-Security (http.c:3676-3690) in gethttp
+        // regardless of --spider. The previous spider early-return below
+        // skipped both.
+        self.process_cookies(&url, &response.headers);
+
+        // Process HSTS policy from the Strict-Transport-Security header.
+        // Only HTTPS responses can establish HSTS policy (RFC 6797 §8.1).
+        #[cfg(feature = "hsts")]
+        {
+            if self.config.hsts.enabled && url.scheme == Scheme::Https {
+                if let Some(sts) = response.headers.get("strict-transport-security") {
+                    self.hsts.add_from_header(&url.host, sts);
+                }
+            }
+        }
+
         // Spider mode: if response is successful, report file exists and return
         // without downloading the body (matches wget --spider behavior).
         // Redirects are handled in the redirect block below so the spider does
@@ -970,19 +988,6 @@ impl Retriever {
 
             // Always show saving to
             eprintln!("正在保存至: \"{}\"", output_path.file_name().unwrap_or_default().to_string_lossy());
-        }
-
-        self.process_cookies(&url, &response.headers);
-
-        // Process HSTS policy from the Strict-Transport-Security header.
-        // Only HTTPS responses can establish HSTS policy (RFC 6797 §8.1).
-        #[cfg(feature = "hsts")]
-        {
-            if self.config.hsts.enabled && url.scheme == Scheme::Https {
-                if let Some(sts) = response.headers.get("strict-transport-security") {
-                    self.hsts.add_from_header(&url.host, sts);
-                }
-            }
         }
 
         // Authentication retry loop. Supports multi-round-trip auth schemes
