@@ -871,17 +871,21 @@ impl App {
             // Only process HTML and CSS files — skip binary files (images,
             // PDFs, archives, etc.) to avoid corruption. GNU wget only
             // converts files in downloaded_html_set and downloaded_css_set
-            // (convert.c:197-198).
+            // (convert.c:197-198). Prefer the Content-Type recorded at
+            // download time; fall back to extension guesses for sources
+            // that carry no type (e.g. FTP).
             let path = std::path::Path::new(local_path);
-            let is_html = path.extension()
+            let ext_html = path.extension()
                 .map(|e| {
                     let ext = e.to_string_lossy().to_ascii_lowercase();
                     ext == "html" || ext == "htm" || ext == "xhtml" || ext == "shtml"
                 })
                 .unwrap_or(false);
-            let is_css = path.extension()
+            let ext_css = path.extension()
                 .map(|e| e.to_string_lossy().eq_ignore_ascii_case("css"))
                 .unwrap_or(false);
+            let is_html = ext_html || registry.is_html(path);
+            let is_css = ext_css || registry.is_css(path);
 
             if !is_html && !is_css {
                 continue;
@@ -932,12 +936,18 @@ impl App {
         }
     }
 
-    /// Convert CSS `url()` references to local paths.
+    /// Convert CSS `url()` and `@import` references to local paths.
     ///
-    /// Performs simple string replacement of `url("remote_url")` and
-    /// `url(remote_url)` patterns with `url("local_path")` for any
-    /// remote URL found in `url_to_local`. This mirrors GNU wget's
-    /// CSS link conversion (convert.c:616-622).
+    /// Two passes:
+    /// 1. Absolute URLs found in the download registry → rewritten to a
+    ///    path RELATIVE to the CSS file's location (the previous version
+    ///    spliced the registry's output-root path, producing links that
+    ///    only worked when browsed from the output root).
+    /// 2. Relative references (`url(bg.png)`, `@import "theme.css"`) are
+    ///    resolved against the CSS file's local directory; when the
+    ///    candidate file exists on disk it is rewritten to a relative
+    ///    link. This converts relative `@import`s that were downloaded
+    ///    but previously left broken.
     fn convert_css_links(
         file_path: &str,
         url_to_local: &HashMap<String, String>,
@@ -955,27 +965,102 @@ impl App {
             let _ = std::fs::copy(path, &backup_path);
         }
 
+        let css_dir = path.parent().map(|p| p.to_path_buf()).unwrap_or_default();
         let mut count = 0usize;
         let mut output = content.clone();
 
+        // ---- Pass 1: registry-known absolute URLs ----
         for (remote_url, local_path) in url_to_local {
             // Skip URLs that are already local
             if remote_url.starts_with('#') || remote_url.starts_with("data:") {
                 continue;
             }
-            // Replace url("remote") and url(remote) forms
-            let quoted = format!("url(\"{}\")", remote_url);
-            let replacement = format!("url(\"{}\")", local_path);
-            if output.contains(&quoted) {
-                output = output.replace(&quoted, &replacement);
-                count += 1;
+            let repl_path = relative_to(&css_dir, std::path::Path::new(local_path));
+            let replacement = format!("url(\"{}\")", repl_path);
+            for q in ["\"", "'"] {
+                let quoted = format!("url({}{})", q, remote_url);
+                let quoted_repl = format!("url({}{})", q, repl_path);
+                if output.contains(&quoted) {
+                    output = output.replace(&quoted, &quoted_repl);
+                    count += 1;
+                }
             }
             let bare = format!("url({})", remote_url);
             if output.contains(&bare) {
                 output = output.replace(&bare, &replacement);
                 count += 1;
             }
+            // @import "URL"; and @import 'URL'; forms.
+            for q in ["\"", "'"] {
+                let imp = format!("@import {}{}{}", q, remote_url, q);
+                let imp_repl = format!("@import {}{}{}", q, repl_path, q);
+                if output.contains(&imp) {
+                    output = output.replace(&imp, &imp_repl);
+                    count += 1;
+                }
+            }
         }
+
+        // ---- Pass 2: relative references resolved against the CSS dir ----
+        let mut result = String::with_capacity(output.len());
+        let mut rest = output.as_str();
+        while let Some(pos) = rest.find("url(").or_else(|| rest.find("@import")) {
+            let (kind, token_len) = if rest[pos..].starts_with("url(") {
+                ("url", 4)
+            } else {
+                ("import", 7)
+            };
+            result.push_str(&rest[..pos]);
+            let after = &rest[pos + token_len..];
+            if kind == "url" {
+                match after.find(')') {
+                    Some(close) => {
+                        let inner = &after[..close];
+                        match rewrite_relative_ref(inner, &css_dir) {
+                            Some(new_inner) => {
+                                result.push_str(&format!("url({})", new_inner));
+                                count += 1;
+                            }
+                            None => result.push_str(&after[..close]),
+                        }
+                        rest = &after[close + 1..];
+                    }
+                    None => {
+                        result.push_str(&after[..token_len]);
+                        rest = after;
+                    }
+                }
+            } else {
+                // @import: quoted string form — url( forms were already
+                // handled above on their next scan round. Keep the keyword.
+                result.push_str(&rest[pos..pos + token_len]);
+                let trimmed = after.trim_start();
+                let lead_ws = after.len() - trimmed.len();
+                result.push_str(&after[..lead_ws]);
+                let after = trimmed;
+                if (after.starts_with('"') || after.starts_with('\''))
+                    && after.len() > 1
+                {
+                    let q = after.as_bytes()[0] as char;
+                    if let Some(end) = after[1..].find(q) {
+                        let inner = &after[..end + 2];
+                        match rewrite_relative_ref(inner, &css_dir) {
+                            Some(new_inner) => {
+                                result.push_str(&new_inner);
+                                count += 1;
+                            }
+                            None => result.push_str(inner),
+                        }
+                        rest = &after[end + 2..];
+                        continue;
+                    }
+                }
+                result.push_str(after);
+                rest = "";
+            }
+        }
+        result.push_str(rest);
+        output = result;
 
         if count > 0 {
             std::fs::write(path, output)?;
@@ -2376,6 +2461,77 @@ pub fn parse_progress_style_full(s: &str) -> (ut_core::ProgressStyle, Option<boo
         "verbose" | "v" => (ut_core::ProgressStyle::Verbose, None),
         _ => (ut_core::ProgressStyle::Bar, None),
     }
+}
+
+/// Path of `to` relative to the directory `from`, using forward slashes.
+///
+/// Both paths are interpreted relative to the same root (the output
+/// directory tree). Used by CSS link conversion so that converted links
+/// work from any browse location, not just the output root.
+fn relative_to(from: &std::path::Path, to: &std::path::Path) -> String {
+    use std::path::Component;
+    let from_c: Vec<Component> = from.components().collect();
+    let to_c: Vec<Component> = to.components().collect();
+    let mut common = 0;
+    while common < from_c.len()
+        && common < to_c.len()
+        && from_c[common] == to_c[common]
+    {
+        common += 1;
+    }
+    let mut parts: Vec<String> = Vec::new();
+    for _ in common..from_c.len() {
+        parts.push("..".to_string());
+    }
+    for c in &to_c[common..] {
+        parts.push(c.as_os_str().to_string_lossy().to_string());
+    }
+    if parts.is_empty() {
+        ".".to_string()
+    } else {
+        parts.join("/")
+    }
+}
+
+/// Rewrite a relative CSS reference (the inner text of `url(...)` or a
+/// quoted `@import` operand) to a link relative to the CSS file location.
+///
+/// Returns `None` when the reference is not a rewritable relative path
+/// (absolute URLs, data:, anchors, already-correct links) or when the
+/// candidate file does not exist locally.
+fn rewrite_relative_ref(inner: &str, css_dir: &std::path::Path) -> Option<String> {
+    let mut t = inner.trim();
+    // Preserve the original quoting style.
+    let mut quote = "";
+    if (t.starts_with('"') || t.starts_with('\'')) && t.len() > 1 {
+        quote = &t[..1];
+        t = &t[1..t.len() - 1];
+    }
+    let t = t.trim();
+    if t.is_empty()
+        || t.starts_with('#')
+        || t.starts_with("data:")
+        || t.starts_with("//")
+        || t.contains("://")
+    {
+        return None;
+    }
+    // Strip query/fragment for the filesystem lookup.
+    let file_part = t.split('?').next().unwrap_or(t).split('#').next().unwrap_or(t);
+    if file_part.is_empty() {
+        return None;
+    }
+    let candidate = css_dir.join(file_part);
+    if !candidate.is_file() {
+        return None;
+    }
+    let rel = relative_to(css_dir, &candidate);
+    let rewritten = format!("{}{}{}", quote, rel, quote);
+    // Unchanged → not counted as a conversion.
+    if rewritten == inner.trim() {
+        return None;
+    }
+    Some(rewritten)
 }
 
 /// Apply `--execute` commands to a configuration object.
