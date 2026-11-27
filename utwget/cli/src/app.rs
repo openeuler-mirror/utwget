@@ -295,7 +295,12 @@ impl App {
             }
         }
 
-        if all_urls.is_empty() {
+        // --input-metalink processes a local metalink file without any URL
+        // (GNU wget main.c: no URL check when input_metalink is set).
+        let input_metalink_active = self.config.metalink.enabled
+            && self.config.metalink.input_file.is_some();
+
+        if all_urls.is_empty() && !input_metalink_active {
             return Err(WgetError::Other("no URLs specified".to_string()));
         }
 
@@ -1078,7 +1083,110 @@ impl App {
         Ok(ExitStatus::Success)
     }
 
-    /// Parse and process a local Metalink file.
+    /// Build the CLI option list a Metalink mirror-download subprocess
+/// inherits from the parent invocation.
+///
+/// GNU wget downloads Metalink mirrors in-process with the active options
+/// (metalink.c); utwget spawns itself, so the security-relevant /
+/// transport-relevant settings must be forwarded explicitly or they
+/// silently do not apply to mirror fetches.
+#[cfg(feature = "metalink")]
+fn inherit_metalink_options(config: &ut_core::Config) -> Vec<String> {
+    let mut args: Vec<String> = Vec::new();
+    macro_rules! push {
+        ($flag:expr, $value:expr) => {
+            args.push(format!("{}={}", $flag, $value));
+        };
+    }
+
+    // TLS policy (mirror URLs are typically HTTPS).
+    if config.tls.check_certificate == ut_core::types::CheckCertMode::Off {
+        args.push("--no-check-certificate".into());
+    }
+    if let Some(ref p) = config.tls.ca_cert {
+        push!("--ca-certificate", &p.display().to_string());
+    }
+    if let Some(ref p) = config.tls.ca_directory {
+        push!("--ca-directory", &p.display().to_string());
+    }
+    if let Some(ref p) = config.tls.cert_file {
+        push!("--certificate", &p.display().to_string());
+    }
+    if let Some(ref p) = config.tls.private_key {
+        push!("--private-key", &p.display().to_string());
+    }
+    if let Some(ref p) = config.tls.crl_file {
+        push!("--crl-file", &p.display().to_string());
+    }
+    if let Some(ref p) = config.tls.pinned_pubkey {
+        push!("--pinnedpubkey", p);
+    }
+
+    // Credentials & auth.
+    if let Some(ref u) = config.http.user {
+        push!("--http-user", u);
+    }
+    if let Some(ref p) = config.http.password {
+        push!("--http-password", p);
+    }
+    if let Some(ref u) = config.ftp.user {
+        push!("--ftp-user", u);
+    }
+    if let Some(ref p) = config.ftp.password {
+        push!("--ftp-password", p);
+    }
+    if config.auth_without_challenge {
+        args.push("--auth-no-challenge".into());
+    }
+
+    // Timeouts / rate / retries / redirects.
+    if let Some(t) = config.timeout {
+        push!("--timeout", &format!("{}", t.as_secs().max(1)));
+    }
+    if let Some(t) = config.connect_timeout {
+        push!("--connect-timeout", &format!("{}", t.as_secs().max(1)));
+    }
+    if let Some(t) = config.read_timeout {
+        push!("--read-timeout", &format!("{}", t.as_secs().max(1)));
+    }
+    if let Some(t) = config.dns_timeout {
+        push!("--dns-timeout", &format!("{}", t.as_secs().max(1)));
+    }
+    if let Some(rate) = config.limit_rate {
+        push!("--limit-rate", &format!("{}", rate));
+    }
+    args.push("--tries".into());
+    args.push(format!("{}", config.tries.max(1)));
+    push!("--max-redirect", &format!("{}", config.max_redirect));
+
+    // User agent + custom headers.
+    if let Some(ref ua) = config.http.user_agent {
+        push!("--user-agent", ua);
+    }
+    for h in &config.http.headers {
+        push!("--header", h);
+    }
+
+    // Proxy configuration (env is inherited, but wgetrc-loaded values
+    // live only in the config).
+    if !config.proxy.use_proxy {
+        args.push("--no-proxy".into());
+    } else {
+        if let Some(ref p) = config.proxy.http_proxy {
+            push!("--http-proxy", p);
+        }
+        if let Some(ref p) = config.proxy.https_proxy {
+            push!("--https-proxy", p);
+        }
+        if let Some(ref p) = config.proxy.ftp_proxy {
+            push!("--ftp-proxy", p);
+        }
+    }
+
+    args
+}
+
+/// Parse and process a local Metalink file.
     ///
     /// Opens the file at `metalink_path`, parses its Metalink XML content,
     /// and downloads each referenced file using a `MetalinkDownloader`.
@@ -1104,6 +1212,10 @@ impl App {
             eprintln!("Processing Metalink file: {}", metalink_path.display());
         }
 
+        // Snapshot the config for the download closure (which is `move`
+        // and needs an owned copy).
+        let parent_config = self.config.clone();
+
         let file = fs::File::open(metalink_path)
             .map_err(|e| WgetError::MetalinkParse(format!("cannot open metalink file: {}", e)))?;
         let reader = std::io::BufReader::new(file);
@@ -1128,9 +1240,16 @@ impl App {
             let self_exe = std::env::current_exe()
                 .map_err(|e| MetalinkError::Download(format!("cannot find self executable: {}", e)))?;
 
+            // Mirror downloads inherit the security/auth/transport options
+            // of the parent invocation (GNU wget downloads mirrors
+            // in-process with the active options; metalink.c). Without
+            // this, --no-check-certificate, credentials, proxies and
+            // timeouts silently did not apply to mirror fetches.
+            let mut args: Vec<String> = vec!["-O".into(), path.display().to_string(), "--no-verbose".into()];
+            args.extend(Self::inherit_metalink_options(&parent_config));
+
             let output = std::process::Command::new(&self_exe)
-                .arg("-O").arg(path)
-                .arg("--no-verbose")
+                .args(&args)
                 .arg(url)
                 .output()
                 .map_err(|e| MetalinkError::Download(format!("failed to spawn download subprocess: {}", e)))?;
@@ -1144,7 +1263,16 @@ impl App {
             Ok(())
         };
 
-        let downloader = MetalinkDownloader::new(download_fn);
+        let mut downloader = MetalinkDownloader::new(download_fn);
+        // Mirror selection preferences (--preferred-location /
+        // --preferred-protocols): the downloader already implements the
+        // filtering/sorting, it just was never wired up.
+        if let Some(ref loc) = self.config.metalink.preferred_location {
+            downloader = downloader.with_location(loc.clone());
+        }
+        if !self.config.metalink.preferred_protocols.is_empty() {
+            downloader = downloader.with_protocols(self.config.metalink.preferred_protocols.clone());
+        }
         let mut overall_status = ExitStatus::Success;
 
         for metalink_file in &metalink_files {
@@ -1179,6 +1307,21 @@ impl App {
         }
 
         self.print_summary();
+
+        // Remove the metalink file itself after processing when
+        // --delete-after is set (GNU wget retr.c:1297-1302 removes the
+        // retrieved file in retrieve_from_file under the same condition).
+        if self.config.delete_after {
+            match fs::remove_file(metalink_path) {
+                Ok(()) => {
+                    if self.config.verbose >= 1 {
+                        eprintln!("Removing {}.", metalink_path.display());
+                    }
+                }
+                Err(e) => eprintln!("Failed to unlink {}: {}", metalink_path.display(), e),
+            }
+        }
+
         Ok(overall_status)
     }
 
@@ -1890,6 +2033,8 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
         if args.input_metalink.is_some() {
             config.metalink.input_file = args.input_metalink.clone();
         }
+        config.metalink.preferred_location = args.preferred_location.clone();
+        config.metalink.preferred_protocols = args.preferred_protocols.clone();
     }
 
     // --progress may carry colon params (bar:force, dot:bytes=N...); the

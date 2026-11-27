@@ -610,6 +610,10 @@ pub struct MetalinkConfig {
     pub over_http: bool,
     /// Input Metalink file path (--input-metalink)
     pub input_file: Option<PathBuf>,
+    /// Preferred mirror location (--preferred-location, e.g. "CN")
+    pub preferred_location: Option<String>,
+    /// Allowed mirror protocols in priority order (--preferred-protocols)
+    pub preferred_protocols: Vec<String>,
 }
 
 impl Default for MetalinkConfig {
@@ -618,6 +622,8 @@ impl Default for MetalinkConfig {
             enabled: false,
             over_http: false,
             input_file: None,
+            preferred_location: None,
+            preferred_protocols: Vec::new(),
         }
     }
 }
