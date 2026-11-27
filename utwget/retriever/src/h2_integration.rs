@@ -180,17 +180,26 @@ impl H2Retriever {
             });
         }
 
-        // Reuse the same proxy decision as the HTTP/1.1 path so behavior is
-        // consistent (e.g. localhost / no-proxy domains, and only routing via
-        // proxy when a proxy URL is actually configured).
-        let use_proxy = config.proxy.use_proxy && crate::utils::is_url_proxied(url, config);
-
-        if use_proxy {
-            debug!("attempting HTTP/2 connection via proxy to {}:{}", host, port);
-            Self::connect_via_proxy(&host, port, config)
+        // Reuse the same proxy RESOLUTION as the HTTP/1.1 path
+        // (crate::utils::resolve_proxy): scheme-based proxy selection,
+        // no_proxy exclusions, and URL-embedded proxy credentials — the
+        // previous separate get_proxy_config duplicated the parsing and
+        // ignored userinfo (arch 3.3.2).
+        let proxy = if config.proxy.use_proxy && crate::utils::is_url_proxied(url, config) {
+            Some(crate::utils::resolve_proxy(url, config))
         } else {
-            debug!("attempting HTTP/2 connection to {}:{}", host, port);
-            Self::connect_direct(&host, port, config)
+            None
+        };
+
+        match proxy {
+            Some(proxy) => {
+                debug!("attempting HTTP/2 connection via proxy {}:{}", proxy.host, proxy.port);
+                Self::connect_via_proxy(&host, port, config, proxy)
+            }
+            None => {
+                debug!("attempting HTTP/2 connection to {}:{}", host, port);
+                Self::connect_direct(&host, port, config)
+            }
         }
     }
 
@@ -221,8 +230,12 @@ impl H2Retriever {
     /// 2. Sends an HTTP CONNECT request to establish a tunnel
     /// 3. Performs TLS handshake over the tunnel
     /// 4. Performs HTTP/2 handshake
-    fn connect_via_proxy(host: &str, port: u16, config: &Config) -> Result<Self, RetrieveError> {
-        let proxy = get_proxy_config(config)?;
+    fn connect_via_proxy(
+        host: &str,
+        port: u16,
+        config: &Config,
+        proxy: crate::utils::ProxyInfo,
+    ) -> Result<Self, RetrieveError> {
 
         debug!("connecting to proxy {}:{}", proxy.host, proxy.port);
 
@@ -240,12 +253,14 @@ impl H2Retriever {
                 )))?;
         }
 
-        // Shared CONNECT request builder (arch 6.3-9), same as the H1 path.
+        // Shared CONNECT request builder (arch 6.3-9), same as the H1 path,
+        // with the same credential precedence (--proxy-user first, URL-
+        // embedded proxy userinfo fallback).
         let connect_req = ut_net::proxy::build_connect_request(
             host,
             port,
-            config.proxy.proxy_user.as_deref(),
-            config.proxy.proxy_password.as_deref(),
+            config.proxy.proxy_user.as_deref().or(proxy.user.as_deref()),
+            config.proxy.proxy_password.as_deref().or(proxy.password.as_deref()),
         );
         debug!("CONNECT request: {}", crate::utils::redact_sensitive_headers(connect_req.trim()));
         stream.write_all(connect_req.as_bytes())
@@ -257,7 +272,12 @@ impl H2Retriever {
                 format!("failed to flush CONNECT request: {}", e)
             )))?;
 
-        // Read CONNECT response
+        // Read CONNECT response. NOTE (arch 3.3.2): this intentionally does
+        // NOT reuse read_response_head — that helper performs buffered reads
+        // and returns post-header bytes as `leftover`, which would have to
+        // be re-injected before the TLS handshake. The H2 path converts the
+        // socket to a tokio stream, so byte-exact reads (no over-read) are
+        // the simplest correct approach; status parsing below is shared.
         let mut response = String::new();
         let mut buf = [0u8; 1];
         loop {
@@ -519,61 +539,6 @@ impl Drop for H2Retriever {
             h2_pool().put(self.host.clone(), self.port, client);
         }
     }
-}
-
-/// Proxy configuration for HTTP/2.
-struct ProxyConfig {
-    host: String,
-    port: u16,
-}
-
-/// Get proxy configuration from the main config.
-fn get_proxy_config(config: &Config) -> Result<ProxyConfig, RetrieveError> {
-    let proxy_url = config.proxy.https_proxy.as_ref()
-        .or(config.proxy.http_proxy.as_ref())
-        .ok_or_else(|| RetrieveError::Protocol(WgetError::Http2(
-            "HTTP/2 requires a proxy but no proxy is configured".into()
-        )))?;
-
-    // Proper URL parsing (P2-11): scheme-optional, userinfo-aware, and with
-    // scheme-appropriate default ports. The previous naive split(':') turned
-    // "http://proxy:3128/" into port "3128/" → parse failure → SILENT
-    // default 8080.
-    let raw = proxy_url.trim();
-    let (scheme_is_https, rest) = match raw.split_once("://") {
-        Some(("http", r)) => (false, r),
-        Some(("https", r)) => (true, r),
-        Some((scheme, _)) => {
-            return Err(RetrieveError::Protocol(WgetError::Http2(format!(
-                "unsupported proxy scheme in '{}'", scheme
-            ))));
-        }
-        None => (false, raw), // bare host[:port]
-    };
-    // Drop any userinfo and path/query components.
-    let after_userinfo = rest.split_once('@').map(|(_, r)| r).unwrap_or(rest);
-    let authority = after_userinfo
-        .split(['/', '?', '#'])
-        .next()
-        .unwrap_or(after_userinfo);
-    let (host, port) = match authority.rsplit_once(':') {
-        Some((h, p)) if !h.is_empty() => {
-            let port = p.parse::<u16>().map_err(|_| RetrieveError::Protocol(
-                WgetError::Http2(format!("invalid proxy port '{}' in '{}'", p, raw))
-            ))?;
-            (h.to_string(), port)
-        }
-        _ => {
-            if authority.is_empty() {
-                return Err(RetrieveError::Protocol(WgetError::Http2(format!(
-                    "invalid proxy URL '{}'", raw
-                ))));
-            }
-            (authority.to_string(), if scheme_is_https { 443 } else { 80 })
-        }
-    };
-
-    Ok(ProxyConfig { host, port })
 }
 
 /// Build a rustls `ClientConfig` for HTTP/2 from the application's TLS settings.
