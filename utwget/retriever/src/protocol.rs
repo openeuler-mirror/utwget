@@ -7,27 +7,20 @@ pub trait RateLimitedWrite: Write {
     fn limit(&mut self, bytes: usize);
 }
 
-pub struct RateLimitedWriter<'a, W: Write> {
-    inner: &'a mut W,
+/// Token bucket shared by [`RateLimitedWriter`] and
+/// [`OwnedRateLimitedWriter`] — the refill logic was previously duplicated
+/// verbatim in both structs (arch 3.3.5).
+struct TokenBucket {
     bytes_per_second: u64,
     bucket: u64,
     max_bucket: u64,
     last_refill: std::time::Instant,
 }
 
-pub struct OwnedRateLimitedWriter {
-    inner: Box<dyn Write>,
-    bytes_per_second: u64,
-    bucket: u64,
-    max_bucket: u64,
-    last_refill: std::time::Instant,
-}
-
-impl<'a, W: Write> RateLimitedWriter<'a, W> {
-    pub fn new(inner: &'a mut W, bytes_per_second: u64) -> Self {
+impl TokenBucket {
+    fn new(bytes_per_second: u64) -> Self {
         let bps = if bytes_per_second == 0 { u64::MAX } else { bytes_per_second };
-        RateLimitedWriter {
-            inner,
+        TokenBucket {
             bytes_per_second: bps,
             bucket: bps,
             max_bucket: bps,
@@ -41,40 +34,57 @@ impl<'a, W: Write> RateLimitedWriter<'a, W> {
         self.last_refill = now;
         let refill = (elapsed.as_secs_f64() * self.bytes_per_second as f64) as u64;
         self.bucket = (self.bucket + refill).min(self.max_bucket);
+    }
+
+    fn take(&mut self, want: usize) -> usize {
+        self.refill();
+        let available = self.bucket.min(want as u64) as usize;
+        self.bucket = self.bucket.saturating_sub(available as u64);
+        available
+    }
+
+    fn unlimited(&self) -> bool {
+        self.bytes_per_second == u64::MAX
+    }
+}
+
+pub struct RateLimitedWriter<'a, W: Write> {
+    inner: &'a mut W,
+    bucket: TokenBucket,
+}
+
+pub struct OwnedRateLimitedWriter {
+    inner: Box<dyn Write>,
+    bucket: TokenBucket,
+}
+
+impl<'a, W: Write> RateLimitedWriter<'a, W> {
+    pub fn new(inner: &'a mut W, bytes_per_second: u64) -> Self {
+        RateLimitedWriter {
+            inner,
+            bucket: TokenBucket::new(bytes_per_second),
+        }
     }
 }
 
 impl OwnedRateLimitedWriter {
     pub fn owned(inner: Box<dyn Write>, bytes_per_second: u64) -> Self {
-        let bps = if bytes_per_second == 0 { u64::MAX } else { bytes_per_second };
         OwnedRateLimitedWriter {
             inner,
-            bytes_per_second: bps,
-            bucket: bps,
-            max_bucket: bps,
-            last_refill: std::time::Instant::now(),
+            bucket: TokenBucket::new(bytes_per_second),
         }
-    }
-
-    fn refill(&mut self) {
-        let now = std::time::Instant::now();
-        let elapsed = now.duration_since(self.last_refill);
-        self.last_refill = now;
-        let refill = (elapsed.as_secs_f64() * self.bytes_per_second as f64) as u64;
-        self.bucket = (self.bucket + refill).min(self.max_bucket);
     }
 }
 
 impl<'a, W: Write> Write for RateLimitedWriter<'a, W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        if self.bytes_per_second == u64::MAX {
+        if self.bucket.unlimited() {
             return self.inner.write(buf);
         }
 
         let mut written = 0usize;
         while written < buf.len() {
-            self.refill();
-            let available = self.bucket.min((buf.len() - written) as u64) as usize;
+            let available = self.bucket.take(buf.len() - written);
             if available == 0 {
                 std::thread::sleep(Duration::from_millis(10));
                 continue;
@@ -84,7 +94,6 @@ impl<'a, W: Write> Write for RateLimitedWriter<'a, W> {
                 break;
             }
             written += n;
-            self.bucket = self.bucket.saturating_sub(n as u64);
         }
         Ok(written)
     }
@@ -96,14 +105,13 @@ impl<'a, W: Write> Write for RateLimitedWriter<'a, W> {
 
 impl Write for OwnedRateLimitedWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        if self.bytes_per_second == u64::MAX {
+        if self.bucket.unlimited() {
             return self.inner.write(buf);
         }
 
         let mut written = 0usize;
         while written < buf.len() {
-            self.refill();
-            let available = self.bucket.min((buf.len() - written) as u64) as usize;
+            let available = self.bucket.take(buf.len() - written);
             if available == 0 {
                 std::thread::sleep(Duration::from_millis(10));
                 continue;
@@ -113,7 +121,6 @@ impl Write for OwnedRateLimitedWriter {
                 break;
             }
             written += n;
-            self.bucket = self.bucket.saturating_sub(n as u64);
         }
         Ok(written)
     }
