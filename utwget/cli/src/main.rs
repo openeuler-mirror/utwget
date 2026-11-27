@@ -13,6 +13,7 @@
 //! 5. Run the download application
 
 mod args;
+mod askpass;
 mod exit_status;
 mod app;
 mod wgetrc;
