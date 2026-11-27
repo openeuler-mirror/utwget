@@ -3058,20 +3058,39 @@ impl Retriever {
     /// # Returns
     ///
     /// The duration to wait before the next retry.
+    /// Sleep between retry attempts, mirroring GNU wget's
+    /// sleep_between_retrievals (retr.c:1333-1375):
+    ///
+    /// - `--waitretry` with retry N (1-based): linear backoff — sleep
+    ///   N-1 seconds, capped at --waitretry. The previous exponential
+    ///   ×2^attempt schedule diverged from wget's documented linear
+    ///   behavior.
+    /// - otherwise `--wait`: fixed interval; with `--random-wait` a
+    ///   random duration in [0.5×wait, 1.5×wait] (the previous jitter of
+    ///   0..500 ms bore no relation to the configured wait).
     fn calculate_backoff(&self, attempt: u32) -> Duration {
-        let base = self.config.wait_retry.unwrap_or(Duration::from_secs(1));
-        let max_wait = Duration::from_secs(60);
-        let exponential = base.saturating_mul(2u32.saturating_pow(attempt));
-
-        let jitter = if self.config.random_wait {
-            let mut rng = rand::thread_rng();
-            let ms = rng.gen_range(0..=500);
-            Duration::from_millis(ms)
-        } else {
-            Duration::ZERO
-        };
-
-        (exponential + jitter).min(max_wait)
+        // `attempt` is 0-based here; wget's `count` is the 1-based retry
+        // number, so count = attempt + 2 for a retry sleep.
+        let count = attempt + 2;
+        if let Some(waitretry) = self.config.wait_retry {
+            let capped_secs = waitretry.as_secs();
+            let secs = if count as u64 <= capped_secs {
+                count as u64 - 1
+            } else {
+                capped_secs
+            };
+            return Duration::from_secs(secs.max(1));
+        }
+        if let Some(wait) = self.config.wait {
+            if !self.config.random_wait {
+                return wait;
+            }
+            // random_float() in wget yields [0, 1): 0.5 + r ∈ [0.5, 1.5).
+            let r: f64 = rand::thread_rng().gen_range(0.0..1.0);
+            let secs = (0.5 + r) * wait.as_secs_f64();
+            return Duration::from_secs_f64(secs);
+        }
+        Duration::ZERO
     }
 }
 
