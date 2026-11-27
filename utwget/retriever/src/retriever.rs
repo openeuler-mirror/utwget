@@ -117,6 +117,11 @@ pub struct Retriever {
     /// WARC-IP-Address, report 8.1-2). Captured in create_tcp_stream
     /// (&self method → Cell).
     last_server_ip: std::cell::Cell<Option<String>>,
+    /// Recursion guard for FTP directory downloads: retrieve_ftp descends
+    /// into subdirectories through nested retrieve calls, and without a cap
+    /// a pathological server (deep tree) could overflow the stack. The
+    /// registry's visited-check breaks *cycles*; this caps absolute depth.
+    pub(crate) ftp_dir_depth: std::cell::Cell<u32>,
     /// Redirect hops followed within the CURRENT redirect chain (session
     /// state). Arch 6.6-8: the `state.redirect_count` check in
     /// retrieve_inner never fired because every hop created a fresh
@@ -273,6 +278,7 @@ impl Retriever {
             redirect_method_suspended: false,
             chain_redirect_count: 0,
             last_server_ip: std::cell::Cell::new(None),
+            ftp_dir_depth: std::cell::Cell::new(0),
         };
 
         #[cfg(feature = "warc")]

@@ -11,7 +11,7 @@ use std::io;
 use std::path::Path;
 use std::time::Instant;
 
-use log::{info, warn};
+use log::{debug, info, warn};
 use ut_core::types::Scheme;
 use ut_core::url::ParsedUrl;
 use ut_core::WgetError;
@@ -22,6 +22,96 @@ use crate::types::{BodyResult, ProtocolState, RequestOptions, RetrieveError, Ret
 use crate::utils::apply_file_timestamp;
 
 impl Retriever {
+    /// Download an FTP directory: write the listing to `.listing`, then
+    /// retrieve every entry — files directly, subdirectories recursively
+    /// (GNU wget ftp_get_listing + ftp_retrieve_list/ftp_retrieve_dirs).
+    ///
+    /// Cycle protection: each directory URL is registered as visited (via
+    /// the .listing path) before its entries are processed, so symlink
+    /// loops terminate. Absolute depth is additionally capped at 128.
+    ///
+    /// The `.listing` file is removed after processing unless
+    /// `--no-remove-listing` is set.
+    fn download_ftp_listing(
+        &mut self,
+        url: &ParsedUrl,
+        entries: &[ut_ftp::FtpEntry],
+        local_dir: &Path,
+    ) -> Result<u64, RetrieveError> {
+        let listing_path = local_dir.join(".listing");
+        {
+            let mut text = String::new();
+            for e in entries {
+                text.push_str(&format!("{}\n", e.name));
+            }
+            fs::write(&listing_path, text).map_err(RetrieveError::Io)?;
+        }
+        // Mark this directory visited BEFORE descending — breaks cycles.
+        self.registry().register_download(&url.display(), &listing_path);
+
+        let mut total = 0u64;
+        let mut worst: Option<RetrieveError> = None;
+        let depth = self.ftp_dir_depth.get();
+        for e in entries {
+            if e.name == "." || e.name == ".." {
+                continue;
+            }
+            let child_path = if url.path.ends_with('/') {
+                format!("{}{}", url.path, e.name)
+            } else {
+                format!("{}/{}", url.path.trim_end_matches('/'), e.name)
+            };
+            // Percent-encode the entry name so URL parsing survives spaces
+            // and other raw bytes (M15). Directories get a trailing slash
+            // so the child retrieval takes the listing path.
+            let encoded = ut_core::url::encode_request_target(&child_path);
+            let child_url = format!("{}://{}:{}{}{}",
+                url.scheme.as_str(), url.host, url.port, encoded,
+                if e.is_dir { "/" } else { "" });
+            let outcome: Result<u64, RetrieveError> = if e.is_symlink {
+                // Symlinks can point anywhere (even outside the tree);
+                // wget only follows them with --retr-symlinks.
+                debug!("skipping FTP symlink {} (no --retr-symlinks)", e.name);
+                Ok(0)
+            } else if e.is_dir {
+                if depth >= 128 {
+                    warn!("FTP directory recursion deeper than 128 levels; stopping at {}", child_url);
+                    Ok(0)
+                } else {
+                    self.retrieve_new_chain_with_retry(&child_url)
+                        .map(|o| match o {
+                            RetrieveOutcome::Success(b) => b.bytes_read,
+                            _ => 0,
+                        })
+                }
+            } else {
+                self.retrieve_new_chain_with_retry(&child_url)
+                    .map(|o| match o {
+                        RetrieveOutcome::Success(b) => b.bytes_read,
+                        _ => 0,
+                    })
+            };
+            match outcome {
+                Ok(bytes) => total += bytes,
+                Err(err) => {
+                    warn!("FTP entry '{}' failed: {}", e.name, err);
+                    if worst.is_none() {
+                        worst = Some(err);
+                    }
+                }
+            }
+        }
+
+        // --no-remove-listing keeps the .listing file (wget default removes).
+        if self.config.ftp.remove_listing {
+            let _ = fs::remove_file(&listing_path);
+        }
+        match worst {
+            Some(e) => Err(e),
+            None => Ok(total),
+        }
+    }
+
     /// Perform an FTP or FTPS download.
     ///
     /// Handles both plain FTP and FTPS (explicit and implicit) connections,
@@ -135,6 +225,37 @@ impl Retriever {
             }
 
             let filename = path_segments.last().map(|s| s.as_str()).unwrap_or("index.html");
+
+            // Directory URL (trailing slash / empty file part): LIST it,
+            // save `.listing`, and download all entries (GNU wget
+            // ftp_retrieve_list) — not a bare RETR, which servers answer
+            // with 550. CWD into the FINAL segment too: the earlier loop
+            // only navigated to the parent.
+            if url.file.is_empty() || url.path.ends_with('/') {
+                if let Some(last) = path_segments.last() {
+                    ftps_client.cwd(last).map_err(RetrieveError::Ftp)?;
+                }
+                let entries = ftps_client
+                    .list(None)
+                    .map_err(|e| RetrieveError::Protocol(WgetError::FtpIo(format!("FTP LIST error: {}", e))))?;
+                let _ = ftps_client.quit();
+                let local_dir = output_path
+                    .parent()
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or_else(|| std::path::PathBuf::from("."));
+                fs::create_dir_all(&local_dir).map_err(RetrieveError::Io)?;
+                self.ftp_dir_depth.set(self.ftp_dir_depth.get() + 1);
+                let result = self.download_ftp_listing(url, &entries, &local_dir);
+                self.ftp_dir_depth.set(self.ftp_dir_depth.get() - 1);
+                let total = result?;
+                return Ok(RetrieveOutcome::Success(BodyResult {
+                    bytes_read: total,
+                    elapsed: start.elapsed(),
+                    local_file: None,
+                    content_type: None,
+                }));
+            }
+
             let file_size = ftps_client.size(filename).ok().flatten();
 
             // Handle directory creation
@@ -242,6 +363,35 @@ impl Retriever {
         }
 
         let filename = path_segments.last().map(|s| s.as_str()).unwrap_or("index.html");
+
+        // Directory URL: LIST + .listing + download entries (see the FTPS
+        // branch above; GNU wget ftp_retrieve_list). CWD into the FINAL
+        // segment too — the earlier loop only navigated to the parent.
+        if url.file.is_empty() || url.path.ends_with('/') {
+            if let Some(last) = path_segments.last() {
+                ftp_client.cwd(last).map_err(RetrieveError::Ftp)?;
+            }
+            let entries = ftp_client
+                .list(None)
+                .map_err(|e| RetrieveError::Ftp(e))?;
+            let _ = ftp_client.quit();
+            let local_dir = output_path
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| std::path::PathBuf::from("."));
+            fs::create_dir_all(&local_dir).map_err(RetrieveError::Io)?;
+            self.ftp_dir_depth.set(self.ftp_dir_depth.get() + 1);
+            let result = self.download_ftp_listing(url, &entries, &local_dir);
+            self.ftp_dir_depth.set(self.ftp_dir_depth.get() - 1);
+            let total = result?;
+            return Ok(RetrieveOutcome::Success(BodyResult {
+                bytes_read: total,
+                elapsed: start.elapsed(),
+                local_file: None,
+                content_type: None,
+            }));
+        }
+
         let file_size = ftp_client.size(filename).ok().flatten();
 
         // Handle directory creation based on --no-directories / --force-directories
