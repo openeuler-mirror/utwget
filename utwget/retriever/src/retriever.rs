@@ -35,7 +35,7 @@ use crate::types::{
     ResponseMeta, RetrieveError, RetrieveOutcome,
 };
 use crate::utils::{
-    adjust_file_extension, apply_file_timestamp, build_proxy_request, is_retryable,
+    adjust_file_extension, apply_file_timestamp, base64_encode, build_proxy_request, is_retryable,
     is_url_proxied, parse_content_disposition, resolve_proxy, rotate_backups, sanitize_filename,
     serialize_headers,
 };
@@ -132,6 +132,10 @@ pub struct Retriever {
     /// The HTTP method of the current request, used to skip body reading
     /// for HEAD responses (RFC 7230 §3.3: a HEAD response has no body).
     pending_method: ut_core::types::HttpMethod,
+    /// Hosts (host:port) that completed a successful Basic 401 exchange.
+    /// Later requests to these hosts send Basic credentials preemptively,
+    /// mirroring wget's basic_authed_hosts (http.c:421-460, 2500).
+    basic_authed_hosts: std::collections::HashSet<String>,
     /// URLs that were redirected from a POST/非GET request with 301/302/303,
     /// and therefore must be fetched with GET (and without body), per RFC 9110.
     redirect_get_method_urls: std::collections::HashSet<String>,
@@ -274,6 +278,7 @@ impl Retriever {
             pending_return_info: None,
             pending_keep_alive: false,
             pending_method: ut_core::types::HttpMethod::Get,
+            basic_authed_hosts: std::collections::HashSet::new(),
             redirect_get_method_urls: std::collections::HashSet::new(),
             redirect_method_suspended: false,
             chain_redirect_count: 0,
@@ -737,6 +742,19 @@ impl Retriever {
             } else {
                 None
             }
+        } else if self
+            .basic_authed_hosts
+            .contains(&basic_auth_host_key(&url.host, url.port))
+        {
+            // Preemptive Basic for a host that already completed a 401
+            // exchange in this session (wget maybe_send_basic_creds,
+            // http.c:421-460) — saves the repeated challenge round-trip.
+            creds.as_ref().map(|c| {
+                format!(
+                    "Basic {}",
+                    base64_encode(&format!("{}:{}", c.username, c.password.as_str()))
+                )
+            })
         } else {
             None
         };
@@ -1044,6 +1062,16 @@ impl Retriever {
                             }
                         }
                         auth_succeeded = true;
+                        // Register Basic-authenticated hosts so later
+                        // requests to the same host:port send credentials
+                        // preemptively (wget register_basic_auth_host
+                        // http.c:2500) — without the memory every request
+                        // in a session/recursive crawl repeats the 401
+                        // round-trip.
+                        if challenge.scheme == AuthScheme::Basic {
+                            self.basic_authed_hosts
+                                .insert(basic_auth_host_key(&url.host, url.port));
+                        }
                         break; // try next auth round (may be another 401 for NTLM)
                     }
                 }
@@ -3029,4 +3057,9 @@ impl Retriever {
 
         (exponential + jitter).min(max_wait)
     }
+}
+
+/// Key for the basic-auth host memory (P2-2): lowercase "host:port".
+fn basic_auth_host_key(host: &str, port: u16) -> String {
+    format!("{}:{}", host.to_ascii_lowercase(), port)
 }
