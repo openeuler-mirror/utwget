@@ -204,6 +204,7 @@ fn test_store_cookie() {
         persistent: false,
         samesite: ut_core::cookie::SameSite::Unspecified,
         host_only: true,
+        created: 0,
     };
 
     jar.store(cookie);
@@ -290,6 +291,7 @@ fn test_is_expired() {
         persistent: false,
         samesite: ut_core::cookie::SameSite::Unspecified,
         host_only: true,
+        created: 0,
     };
 
     // Cookie without expiration is not expired
