@@ -244,29 +244,8 @@ fn read_one_response_head_with_prefix<R: Read>(
 fn read_one_response_head<R: Read>(
     reader: &mut R,
 ) -> Result<(HttpResponse, Vec<u8>), RetrieveError> {
-    let mut buf: Vec<u8> = Vec::with_capacity(8192);
-    let mut tmp = [0u8; 8192];
-    let body_start = loop {
-        if let Some(end) = ut_http::response::find_header_end(&buf) {
-            break end;
-        }
-        if buf.len() > 64 * 1024 {
-            return Err(RetrieveError::Protocol(WgetError::Other(
-                "HTTP response headers too large (>64KB)".into(),
-            )));
-        }
-        let n = reader
-            .read(&mut tmp)
-            .map_err(|e| RetrieveError::Protocol(WgetError::ProtocolIo(format!("read response head: {}", e))))?;
-        if n == 0 {
-            // See the comment in read_one_response_head_with_prefix: this is
-            // a stale pooled connection — retryable on a fresh connection.
-            return Err(RetrieveError::Protocol(WgetError::StaleConnection));
-        }
-        buf.extend_from_slice(&tmp[..n]);
-    };
-    let response = ut_http::response::parse_response_head(&buf[..body_start])
-        .ok_or_else(|| RetrieveError::Protocol(WgetError::ProtocolIo("failed to parse HTTP response".into())))?;
-    let leftover: Vec<u8> = buf[body_start..].to_vec();
-    Ok((response, leftover))
+    // The no-prefix variant is the prefix variant with an empty buffer
+    // (arch 3.3.4: the two were near-identical copies).
+    let mut buf = Vec::new();
+    read_one_response_head_with_prefix(reader, &mut buf)
 }
