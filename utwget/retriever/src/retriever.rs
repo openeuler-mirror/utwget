@@ -869,7 +869,16 @@ impl Retriever {
         #[cfg(feature = "http2")]
         let mut response: HttpResponse = {
             let mut h2_response: Option<HttpResponse> = None;
-            if crate::h2_integration::should_use_http2(url, &self.config) {
+            // HTTP/2 is only attempted for idempotent requests (GET/HEAD):
+            // on late failures (e.g. the 64 MiB in-memory body cap hit
+            // after the request was sent) the code below transparently
+            // re-sends over HTTP/1.1, which would double-execute a POST
+            // (P2-11).
+            let h2_eligible = matches!(
+                req.method,
+                ut_http::request::HttpMethod::Get | ut_http::request::HttpMethod::Head
+            );
+            if h2_eligible && crate::h2_integration::should_use_http2(url, &self.config) {
                 debug!("attempting HTTP/2 for {}", url.display());
                 match crate::h2_integration::H2Retriever::connect(url, &self.config) {
                     Ok(mut h2_retriever) => match h2_retriever.send_request(&req) {

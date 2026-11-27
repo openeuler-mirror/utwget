@@ -199,7 +199,8 @@ impl H2Retriever {
         let mut tls_config = build_h2_tls_config(config)?;
         tls_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
 
-        let client = ut_http::h2::H2Client::connect(host, port, tls_config)
+        let connect_timeout = config.connect_timeout.or(config.timeout);
+        let client = ut_http::h2::H2Client::connect(host, port, tls_config, connect_timeout)
             .map_err(|e| RetrieveError::Protocol(WgetError::Http2(
                 format!("HTTP/2 connection failed: {}", e)
             )))?;
@@ -305,10 +306,12 @@ impl H2Retriever {
         tls_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
         let tls_connector = tokio_rustls::TlsConnector::from(Arc::new(tls_config));
 
-        let server_name = rustls::pki_types::ServerName::try_from(host.to_string())
-            .map_err(|e| RetrieveError::Protocol(WgetError::Http2(
-                format!("invalid server name: {}", e)
-            )))?;
+        let server_name = rustls::pki_types::ServerName::try_from(
+            ut_core::url::to_punycode(host).to_string(),
+        )
+        .map_err(|e| RetrieveError::Protocol(WgetError::Http2(
+            format!("invalid server name: {}", e)
+        )))?;
 
         let rt = h2_runtime().ok_or_else(|| RetrieveError::Protocol(WgetError::Http2(
             "failed to create H2 runtime (system resource limit?)".into()
@@ -442,9 +445,11 @@ impl H2Retriever {
 
         let mut headers = HeaderMap::new();
         for (name, value) in response.headers().iter() {
-            if let Ok(vs) = value.to_str() {
-                headers.insert(name.as_str().to_string(), vs.to_string());
-            }
+            // Lossy-convert instead of dropping: h2 header values are bytes,
+            // and a non-UTF-8 Set-Cookie (or similar) previously vanished
+            // from the response entirely.
+            let vs = String::from_utf8_lossy(value.as_bytes());
+            headers.insert(name.as_str().to_string(), vs.to_string());
         }
 
         // Pre-check Content-Length (when present) against the in-memory cap.
@@ -530,14 +535,42 @@ fn get_proxy_config(config: &Config) -> Result<ProxyConfig, RetrieveError> {
             "HTTP/2 requires a proxy but no proxy is configured".into()
         )))?;
 
-    // Parse proxy URL (format: host:port or http://host:port)
-    let proxy_str = proxy_url.trim_start_matches("http://").trim_start_matches("https://");
-    let parts: Vec<&str> = proxy_str.split(':').collect();
-    let host = parts[0].to_string();
-    let port = if parts.len() > 1 {
-        parts[1].parse().unwrap_or(8080)
-    } else {
-        8080
+    // Proper URL parsing (P2-11): scheme-optional, userinfo-aware, and with
+    // scheme-appropriate default ports. The previous naive split(':') turned
+    // "http://proxy:3128/" into port "3128/" → parse failure → SILENT
+    // default 8080.
+    let raw = proxy_url.trim();
+    let (scheme_is_https, rest) = match raw.split_once("://") {
+        Some(("http", r)) => (false, r),
+        Some(("https", r)) => (true, r),
+        Some((scheme, _)) => {
+            return Err(RetrieveError::Protocol(WgetError::Http2(format!(
+                "unsupported proxy scheme in '{}'", scheme
+            ))));
+        }
+        None => (false, raw), // bare host[:port]
+    };
+    // Drop any userinfo and path/query components.
+    let after_userinfo = rest.split_once('@').map(|(_, r)| r).unwrap_or(rest);
+    let authority = after_userinfo
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or(after_userinfo);
+    let (host, port) = match authority.rsplit_once(':') {
+        Some((h, p)) if !h.is_empty() => {
+            let port = p.parse::<u16>().map_err(|_| RetrieveError::Protocol(
+                WgetError::Http2(format!("invalid proxy port '{}' in '{}'", p, raw))
+            ))?;
+            (h.to_string(), port)
+        }
+        _ => {
+            if authority.is_empty() {
+                return Err(RetrieveError::Protocol(WgetError::Http2(format!(
+                    "invalid proxy URL '{}'", raw
+                ))));
+            }
+            (authority.to_string(), if scheme_is_https { 443 } else { 80 })
+        }
     };
 
     Ok(ProxyConfig { host, port })
