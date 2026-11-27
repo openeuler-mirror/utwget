@@ -19,7 +19,7 @@ fn test_hsts_store_new() {
 #[test]
 fn test_hsts_add_entry() {
     let mut store = HstsStore::new();
-    store.add("example.com", false, 86400);
+    store.add("example.com", 443, false, 86400);
 
     assert!(!store.is_empty());
     assert_eq!(store.len(), 1);
@@ -28,9 +28,9 @@ fn test_hsts_add_entry() {
 #[test]
 fn test_hsts_add_with_subdomains() {
     let mut store = HstsStore::new();
-    store.add("example.com", true, 86400);
+    store.add("example.com", 443, true, 86400);
 
-    let result = store.lookup("example.com");
+    let result = store.lookup("example.com", 443);
     assert!(result.is_some());
     assert!(result.unwrap()); // include_subdomains should be true
 }
@@ -38,9 +38,9 @@ fn test_hsts_add_with_subdomains() {
 #[test]
 fn test_hsts_add_without_subdomains() {
     let mut store = HstsStore::new();
-    store.add("example.com", false, 86400);
+    store.add("example.com", 443, false, 86400);
 
-    let result = store.lookup("example.com");
+    let result = store.lookup("example.com", 443);
     assert!(result.is_some());
     assert!(!result.unwrap()); // include_subdomains should be false
 }
@@ -52,45 +52,45 @@ fn test_hsts_add_without_subdomains() {
 #[test]
 fn test_lookup_exact_match() {
     let mut store = HstsStore::new();
-    store.add("example.com", false, 86400);
+    store.add("example.com", 443, false, 86400);
 
-    assert!(store.lookup("example.com").is_some());
-    assert!(store.lookup("other.com").is_none());
+    assert!(store.lookup("example.com", 443).is_some());
+    assert!(store.lookup("other.com", 443).is_none());
 }
 
 #[test]
 fn test_lookup_case_insensitive() {
     let mut store = HstsStore::new();
-    store.add("Example.COM", false, 86400);
+    store.add("Example.COM", 443, false, 86400);
 
-    assert!(store.lookup("example.com").is_some());
-    assert!(store.lookup("EXAMPLE.COM").is_some());
+    assert!(store.lookup("example.com", 443).is_some());
+    assert!(store.lookup("EXAMPLE.COM", 443).is_some());
 }
 
 #[test]
 fn test_lookup_subdomain() {
     let mut store = HstsStore::new();
-    store.add("example.com", true, 86400);
+    store.add("example.com", 443, true, 86400);
 
     // Subdomain should match when include_subdomains is true
-    assert!(store.lookup("www.example.com").is_some());
-    assert!(store.lookup("api.example.com").is_some());
-    assert!(store.lookup("deep.sub.example.com").is_some());
+    assert!(store.lookup("www.example.com", 443).is_some());
+    assert!(store.lookup("api.example.com", 443).is_some());
+    assert!(store.lookup("deep.sub.example.com", 443).is_some());
 }
 
 #[test]
 fn test_lookup_subdomain_not_included() {
     let mut store = HstsStore::new();
-    store.add("example.com", false, 86400);
+    store.add("example.com", 443, false, 86400);
 
     // Subdomain should NOT match when include_subdomains is false
-    assert!(store.lookup("www.example.com").is_none());
+    assert!(store.lookup("www.example.com", 443).is_none());
 }
 
 #[test]
 fn test_lookup_no_match() {
     let store = HstsStore::new();
-    assert!(store.lookup("example.com").is_none());
+    assert!(store.lookup("example.com", 443).is_none());
 }
 
 // ============================================================================
@@ -100,20 +100,20 @@ fn test_lookup_no_match() {
 #[test]
 fn test_should_upgrade_http_to_https() {
     let mut store = HstsStore::new();
-    store.add("example.com", false, 86400);
+    store.add("example.com", 443, false, 86400);
 
     // HTTP should be upgraded to HTTPS
-    let result = store.should_upgrade("example.com", Scheme::Http);
+    let result = store.should_upgrade("example.com", 443, Scheme::Http);
     assert_eq!(result, Scheme::Https);
 }
 
 #[test]
 fn test_should_upgrade_https_unchanged() {
     let mut store = HstsStore::new();
-    store.add("example.com", false, 86400);
+    store.add("example.com", 443, false, 86400);
 
     // HTTPS should remain HTTPS
-    let result = store.should_upgrade("example.com", Scheme::Https);
+    let result = store.should_upgrade("example.com", 443, Scheme::Https);
     assert_eq!(result, Scheme::Https);
 }
 
@@ -122,17 +122,17 @@ fn test_should_upgrade_no_hsts() {
     let store = HstsStore::new();
 
     // Without HSTS, HTTP should remain HTTP
-    let result = store.should_upgrade("example.com", Scheme::Http);
+    let result = store.should_upgrade("example.com", 443, Scheme::Http);
     assert_eq!(result, Scheme::Http);
 }
 
 #[test]
 fn test_should_upgrade_subdomain() {
     let mut store = HstsStore::new();
-    store.add("example.com", true, 86400);
+    store.add("example.com", 443, true, 86400);
 
     // Subdomain should also be upgraded
-    let result = store.should_upgrade("www.example.com", Scheme::Http);
+    let result = store.should_upgrade("www.example.com", 443, Scheme::Http);
     assert_eq!(result, Scheme::Https);
 }
 
@@ -143,30 +143,30 @@ fn test_should_upgrade_subdomain() {
 #[test]
 fn test_remove_entry() {
     let mut store = HstsStore::new();
-    store.add("example.com", false, 86400);
+    store.add("example.com", 443, false, 86400);
     assert_eq!(store.len(), 1);
 
-    store.remove("example.com");
+    store.remove("example.com", 443);
     assert!(store.is_empty());
 }
 
 #[test]
 fn test_remove_nonexistent() {
     let mut store = HstsStore::new();
-    store.add("example.com", false, 86400);
+    store.add("example.com", 443, false, 86400);
 
-    store.remove("other.com");
+    store.remove("other.com", 443);
     assert_eq!(store.len(), 1);
 }
 
 #[test]
 fn test_add_with_zero_max_age_removes() {
     let mut store = HstsStore::new();
-    store.add("example.com", false, 86400);
+    store.add("example.com", 443, false, 86400);
     assert_eq!(store.len(), 1);
 
     // Adding with max_age=0 should remove the entry
-    store.add("example.com", false, 0);
+    store.add("example.com", 443, false, 0);
     assert!(store.is_empty());
 }
 
@@ -177,8 +177,8 @@ fn test_add_with_zero_max_age_removes() {
 #[test]
 fn test_save_and_load() {
     let mut store = HstsStore::new();
-    store.add("example.com", false, 86400);
-    store.add("secure.com", true, 172800);
+    store.add("example.com", 443, false, 86400);
+    store.add("secure.com", 443, true, 172800);
 
     // Save to temp file
     let temp_path = std::env::temp_dir().join("utwget_hsts_test.json");
@@ -189,8 +189,8 @@ fn test_save_and_load() {
     store2.load_from_file(&temp_path).unwrap();
 
     assert_eq!(store2.len(), 2);
-    assert!(store2.lookup("example.com").is_some());
-    assert!(store2.lookup("secure.com").is_some());
+    assert!(store2.lookup("example.com", 443).is_some());
+    assert!(store2.lookup("secure.com", 443).is_some());
 
     // Cleanup
     let _ = fs::remove_file(&temp_path);
@@ -209,7 +209,7 @@ fn test_load_nonexistent_file() {
 #[test]
 fn test_merge_persisted() {
     let mut store1 = HstsStore::new();
-    store1.add("example.com", false, 86400);
+    store1.add("example.com", 443, false, 86400);
 
     // Save to temp file
     let temp_path = std::env::temp_dir().join("utwget_hsts_merge_test.json");
@@ -217,12 +217,12 @@ fn test_merge_persisted() {
 
     // Create another store and merge
     let mut store2 = HstsStore::new();
-    store2.add("other.com", true, 86400);
+    store2.add("other.com", 443, true, 86400);
     store2.merge_persisted(&temp_path);
 
     // Should have both entries
-    assert!(store2.lookup("example.com").is_some());
-    assert!(store2.lookup("other.com").is_some());
+    assert!(store2.lookup("example.com", 443).is_some());
+    assert!(store2.lookup("other.com", 443).is_some());
 
     // Cleanup
     let _ = fs::remove_file(&temp_path);
@@ -236,14 +236,14 @@ fn test_merge_persisted() {
 fn test_prune_expired() {
     let mut store = HstsStore::new();
     // Add entry with very short max-age
-    store.add("example.com", false, 1);
+    store.add("example.com", 443, false, 1);
 
     // Wait a bit
     std::thread::sleep(std::time::Duration::from_millis(1100));
 
     store.prune_expired();
     // Entry should be removed
-    assert!(store.lookup("example.com").is_none());
+    assert!(store.lookup("example.com", 443).is_none());
 }
 
 // ============================================================================
@@ -253,42 +253,42 @@ fn test_prune_expired() {
 #[test]
 fn test_empty_host() {
     let mut store = HstsStore::new();
-    store.add("", false, 86400);
+    store.add("", 443, false, 86400);
 
     // Empty host should still work
-    assert!(store.lookup("").is_some());
+    assert!(store.lookup("", 443).is_some());
 }
 
 #[test]
 fn test_very_long_max_age() {
     let mut store = HstsStore::new();
     // Very long max-age (10 years in seconds)
-    store.add("example.com", false, 10 * 365 * 24 * 60 * 60);
+    store.add("example.com", 443, false, 10 * 365 * 24 * 60 * 60);
 
-    assert!(store.lookup("example.com").is_some());
+    assert!(store.lookup("example.com", 443).is_some());
 }
 
 #[test]
 fn test_multiple_entries() {
     let mut store = HstsStore::new();
-    store.add("a.com", false, 86400);
-    store.add("b.com", true, 86400);
-    store.add("c.com", false, 86400);
+    store.add("a.com", 443, false, 86400);
+    store.add("b.com", 443, true, 86400);
+    store.add("c.com", 443, false, 86400);
 
     assert_eq!(store.len(), 3);
-    assert!(store.lookup("a.com").is_some());
-    assert!(store.lookup("b.com").is_some());
-    assert!(store.lookup("c.com").is_some());
+    assert!(store.lookup("a.com", 443).is_some());
+    assert!(store.lookup("b.com", 443).is_some());
+    assert!(store.lookup("c.com", 443).is_some());
 }
 
 #[test]
 fn test_update_existing() {
     let mut store = HstsStore::new();
-    store.add("example.com", false, 86400);
-    store.add("example.com", true, 172800); // Update with different values
+    store.add("example.com", 443, false, 86400);
+    store.add("example.com", 443, true, 172800); // Update with different values
 
     assert_eq!(store.len(), 1);
-    let result = store.lookup("example.com");
+    let result = store.lookup("example.com", 443);
     assert!(result.is_some());
     assert!(result.unwrap()); // Should have updated include_subdomains
 }
@@ -300,40 +300,40 @@ fn test_update_existing() {
 #[test]
 fn test_add_rejects_ipv4_address() {
     let mut store = HstsStore::new();
-    store.add("192.168.1.1", false, 86400);
+    store.add("192.168.1.1", 443, false, 86400);
     // IP addresses must not be stored (RFC 6797 §8.1)
-    assert!(store.lookup("192.168.1.1").is_none());
+    assert!(store.lookup("192.168.1.1", 443).is_none());
     assert!(store.is_empty());
 }
 
 #[test]
 fn test_add_rejects_ipv6_address() {
     let mut store = HstsStore::new();
-    store.add("::1", false, 86400);
-    assert!(store.lookup("::1").is_none());
+    store.add("::1", 443, false, 86400);
+    assert!(store.lookup("::1", 443).is_none());
     assert!(store.is_empty());
 }
 
 #[test]
 fn test_add_rejects_ipv6_full_address() {
     let mut store = HstsStore::new();
-    store.add("2001:db8::1", true, 86400);
-    assert!(store.lookup("2001:db8::1").is_none());
+    store.add("2001:db8::1", 443, true, 86400);
+    assert!(store.lookup("2001:db8::1", 443).is_none());
     assert!(store.is_empty());
 }
 
 #[test]
 fn test_add_from_header_rejects_ip_address() {
     let mut store = HstsStore::new();
-    store.add_from_header("10.0.0.1", "max-age=31536000; includeSubDomains");
+    store.add_from_header("10.0.0.1", 443, "max-age=31536000; includeSubDomains");
     // Should be silently rejected
-    assert!(store.lookup("10.0.0.1").is_none());
+    assert!(store.lookup("10.0.0.1", 443).is_none());
     assert!(store.is_empty());
 }
 
 #[test]
 fn test_add_from_header_accepts_hostname() {
     let mut store = HstsStore::new();
-    store.add_from_header("example.com", "max-age=31536000");
-    assert!(store.lookup("example.com").is_some());
+    store.add_from_header("example.com", 443, "max-age=31536000");
+    assert!(store.lookup("example.com", 443).is_some());
 }
