@@ -1868,6 +1868,17 @@ pub fn apply_args(config: &mut ut_core::Config, args: &Args) {
     if let Some(ref sp) = args.secure_protocol {
         if let Ok(p) = parse_secure_protocol_arg(sp) {
             config.tls.secure_protocol = p;
+        } else {
+            // wget accepts the legacy values at the CLI and fails at
+            // handshake with "The given SSL/TLS method is not supported"
+            // (gnutls.c). Surface the same message instead of a bare
+            // "invalid value" so users understand TLS 1.0/1.1/SSL are
+            // gone, not mistyped.
+            eprintln!(
+                "utwget: The given SSL/TLS method is not supported: --secure-protocol={}",
+                sp
+            );
+            std::process::exit(2);
         }
     }
 
