@@ -770,6 +770,7 @@ impl Retriever {
             opts.if_none_match.as_deref(),
             cookie_str.as_deref(),
             auth_header.as_deref(),
+            opts.use_proxy,
         );
 
         debug!("HTTP request: {} {}", req.method, req.path);
@@ -1057,6 +1058,7 @@ impl Retriever {
                             opts.if_none_match.as_deref(),
                             cookie_str.as_deref(),
                             Some(&auth_val),
+                            opts.use_proxy,
                         );
                         response = {
                             let (r, leftover, source, return_info) = self.do_http_request(&retry_req, url)?;

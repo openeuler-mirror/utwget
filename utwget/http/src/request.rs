@@ -236,6 +236,9 @@ pub fn build_request(
     if_none_match: Option<&str>,
     cookies: Option<&str>,
     authorization: Option<&str>,
+    // Whether the request goes through an HTTP proxy (adds
+    // Proxy-Connection: Keep-Alive, wget http.c:1983).
+    use_proxy: bool,
 ) -> HttpRequest {
     let method = method.unwrap_or_else(|| {
         config
@@ -315,7 +318,18 @@ pub fn build_request(
         req.header(crate::headers::REFERER, referer);
     }
 
-    if !config.http.keep_alive {
+    // Connection headers (GNU wget http.c:1977-1983): wget ALWAYS sends
+    // `Connection: Keep-Alive` (default opt.http_keep_alive is true) and
+    // `Proxy-Connection: Keep-Alive` when a proxy is in use. The previous
+    // code only sent `Connection: close` for --no-http-keep-alive —
+    // functionally equivalent on HTTP/1.1 but visible on the wire and to
+    // HTTP/1.0 intermediaries (P2-13).
+    if config.http.keep_alive {
+        req.header(crate::headers::CONNECTION, "Keep-Alive");
+        if use_proxy {
+            req.header("Proxy-Connection", "Keep-Alive");
+        }
+    } else {
         req.header(crate::headers::CONNECTION, "close");
     }
 
